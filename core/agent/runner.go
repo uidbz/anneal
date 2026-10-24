@@ -12,6 +12,7 @@ import (
 	"fyagent/core/config"
 	"fyagent/core/memory"
 	"fyagent/core/model"
+	"fyagent/core/skills"
 	"fyagent/core/tieindex"
 	"fyagent/core/uiapi"
 
@@ -35,6 +36,7 @@ type Runner struct {
 	mgr     *permission.Manager
 	index   *tieindex.Indexer
 	mem     *memory.Store
+	skills  *skills.Store
 
 	mu           sync.Mutex
 	sess         *session.Session
@@ -52,6 +54,9 @@ func (r *Runner) SetIndex(idx *tieindex.Indexer) { r.index = idx }
 
 // SetMemory attaches the memory store (nil or disabled = no memory tool).
 func (r *Runner) SetMemory(m *memory.Store) { r.mem = m }
+
+// SetSkills attaches the skill store (nil or disabled = no skill_manage).
+func (r *Runner) SetSkills(s *skills.Store) { r.skills = s }
 
 func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge, cwd string) (*Runner, error) {
 	r := &Runner{
@@ -145,6 +150,17 @@ func (r *Runner) run(id int, input string) {
 	if r.mem != nil && r.cfg.Memory.Enabled {
 		tools = append(tools, r.memoryTool())
 	}
+	if r.skills != nil && r.cfg.Skills.Enabled {
+		tools = append(tools, r.skillManageTool())
+	}
+	skillExt := r.skillLoader(ctx)
+	var exts []dive.Extension
+	if skillExt != nil {
+		exts = append(exts, skillExt)
+	}
+	if r.cfg.Agent.Subagents {
+		tools = append(tools, r.agentTool(provider, tools))
+	}
 
 	prompt := SystemPrompt(r.cwd, r.Mode())
 	hooks := dive.Hooks{
@@ -167,6 +183,7 @@ func (r *Runner) run(id int, input string) {
 		Model:              provider,
 		Tools:              tools,
 		Hooks:              hooks,
+		Extensions:         exts,
 		ToolIterationLimit: r.cfg.Agent.ToolIterationLimit,
 		Session:            sess,
 		ModelSettings: &dive.ModelSettings{
@@ -360,8 +377,8 @@ func newDeltaBatcher(b *uiapi.Bridge, run int) *deltaBatcher {
 }
 
 const (
-	batchChars  = 240
-	batchIdle   = 60 * time.Millisecond
+	batchChars = 240
+	batchIdle  = 60 * time.Millisecond
 )
 
 func (d *deltaBatcher) addText(s string) {

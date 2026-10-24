@@ -18,14 +18,14 @@ func Root() string {
 	return filepath.Join(home, ".fyagent")
 }
 
-func Config() string      { return filepath.Join(Root(), "config.json") }
-func Sessions() string    { return filepath.Join(Root(), "sessions") }
-func Memories() string    { return filepath.Join(Root(), "memories") }
-func Skills() string      { return filepath.Join(Root(), "skills") }
+func Config() string        { return filepath.Join(Root(), "config.json") }
+func Sessions() string      { return filepath.Join(Root(), "sessions") }
+func Memories() string      { return filepath.Join(Root(), "memories") }
+func Skills() string        { return filepath.Join(Root(), "skills") }
 func SkillsArchive() string { return filepath.Join(Root(), "skills-archive") }
-func Pending() string     { return filepath.Join(Root(), "pending") }
-func Bundled() string     { return filepath.Join(Root(), "bundled") }
-func Logs() string        { return filepath.Join(Root(), "logs") }
+func Pending() string       { return filepath.Join(Root(), "pending") }
+func Bundled() string       { return filepath.Join(Root(), "bundled") }
+func Logs() string          { return filepath.Join(Root(), "logs") }
 
 // Ensure creates the standard state directories.
 func Ensure() error {

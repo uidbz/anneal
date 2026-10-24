@@ -23,7 +23,7 @@ func (f *recapLLM) Generate(ctx context.Context, opts ...llm.Option) (*llm.Respo
 	}
 	f.got = len(req.Messages)
 	return &llm.Response{
-		Role:    llm.Assistant,
+		Role: llm.Assistant,
 		Content: []llm.Content{
 			&llm.TextContent{Text: "<summary>RECAP: earlier work summarized</summary>"},
 		},

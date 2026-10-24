@@ -10,8 +10,9 @@ import (
 
 	"fyagent/core/agent"
 	"fyagent/core/config"
-		"fyagent/core/memory"
+	"fyagent/core/memory"
 	"fyagent/core/model"
+	"fyagent/core/skills"
 	"fyagent/core/tieindex"
 	"fyagent/core/uiapi"
 )
@@ -25,6 +26,7 @@ type App struct {
 	Runner  *agent.Runner
 	Tie     *tieindex.Indexer
 	Mem     *memory.Store
+	Skills  *skills.Store
 
 	lastHealth string // dedupe provider.state events
 }
@@ -45,6 +47,8 @@ func New() (*App, error) {
 	a.Runner.SetIndex(a.Tie)
 	a.Mem = memory.NewStore(cfg.Memory)
 	a.Runner.SetMemory(a.Mem)
+	a.Skills = skills.NewStore(cfg.Skills)
+	a.Runner.SetSkills(a.Skills)
 	return a, nil
 }
 
@@ -129,6 +133,29 @@ func (a *App) AgentAPI() map[string]any {
 			return toJSON([]any{})
 		}
 		return toJSON(list)
+	}
+	api["skillsList"] = func() any { return toJSON(a.Skills.List()) }
+	api["skillPending"] = func() any {
+		list, err := a.Skills.ListPending()
+		if err != nil || list == nil {
+			return toJSON([]any{})
+		}
+		return toJSON(list)
+	}
+	api["respondSkill"] = func(id, decision string) any {
+		approve := decision == "approve"
+		op, result, err := a.Skills.Resolve(id, approve)
+		out := map[string]any{"type": "skill.resolved", "id": id,
+			"approved": approve, "error": "", "result": result}
+		if op != nil {
+			out["name"] = op.Name
+			out["action"] = op.Action
+		}
+		if err != nil {
+			out["error"] = err.Error()
+		}
+		a.Bridge.Emit(out)
+		return nil
 	}
 	api["respondMemory"] = func(id, decision string) any {
 		approve := decision == "approve"

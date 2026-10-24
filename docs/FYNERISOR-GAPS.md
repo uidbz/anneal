@@ -12,6 +12,7 @@ fynerisor to it until the next release.
 | 2 | `Markdown` text immutable after creation — no `SetText` / writable `.Text` | chat transcript, streaming views | **fixed on fynerisor main** (45e3eca, issue #3) |
 | 3 | Containers lacked `Append`/`Remove`/`Refresh`; Border no slot setters; Scroll no SetContent | dynamic views without full `SetContent` rebuilds | **fixed on fynerisor main** (dc84d6b, issue #4) |
 | 4 | `tie.connect`: namespace/collection options silently overridden by config-file `[Collections.*]`/`DefaultCollection` (also hijacks the connect URL) | M4 session_search against local tie | **fixed on fynerisor main** (1c0e93f, issue #5) |
+| 5 | No synchronous script compile-check — `LoadScript` is fire-and-forget, errors only surface async via stderr from `Execute()` | CI gate for UI scripts (`fyagent -check-ui`) | **fixed on fynerisor main** (0b826e9, issue #6) — `Window.CompileScript()` |
 
 ## Workarounds currently in use (fyagent)
 

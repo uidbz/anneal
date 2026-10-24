@@ -27,8 +27,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/http"
 	"log"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -41,13 +41,13 @@ import (
 
 // Indexer owns the tie connection and the incremental index state.
 type Indexer struct {
-	cfg      config.Tie
+	cfg        config.Tie
 	collection string
 
-	mu       sync.Mutex
-	tc       *client.TieClient // nil = degraded (not connected)
-	indexed  map[string]int    // sessionID -> messages indexed so far
-	lastErr  string
+	mu      sync.Mutex
+	tc      *client.TieClient // nil = degraded (not connected)
+	indexed map[string]int    // sessionID -> messages indexed so far
+	lastErr string
 }
 
 // New builds an indexer. Connection is lazy: a tie outage never blocks

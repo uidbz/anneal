@@ -31,8 +31,8 @@ const (
 type Op struct {
 	ID      string `json:"id"`
 	TS      string `json:"ts"`
-	Target  string `json:"target"` // memory | user
-	Action  string `json:"action"` // add | patch | remove
+	Target  string `json:"target"`            // memory | user
+	Action  string `json:"action"`            // add | patch | remove
 	Content string `json:"content,omitempty"` // add: entry; patch: replacement
 	Old     string `json:"old,omitempty"`     // patch/remove: unique substring
 	New     string `json:"new,omitempty"`     // patch: replacement text

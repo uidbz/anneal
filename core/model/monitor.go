@@ -25,7 +25,7 @@ const (
 type Health struct {
 	State     string   `json:"state"`
 	Endpoint  string   `json:"endpoint"`
-	Model     string   `json:"model"`     // resolved model id
+	Model     string   `json:"model"` // resolved model id
 	Models    []string `json:"models"`
 	CtxWindow int      `json:"ctx_window"` // provider-reported context window
 	Error     string   `json:"error"`
@@ -120,8 +120,8 @@ func (m *Monitor) ProbeNow() {
 		default:
 			var doc struct {
 				Data []struct {
-					ID    string `json:"id"`
-					Meta  struct {
+					ID   string `json:"id"`
+					Meta struct {
 						Nctx int `json:"n_ctx"`
 					} `json:"meta"`
 				} `json:"data"`

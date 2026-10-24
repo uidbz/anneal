@@ -186,4 +186,3 @@ func resultText(v *llm.ToolResultContent) string {
 		return fmt.Sprint(c)
 	}
 }
-

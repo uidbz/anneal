@@ -11,7 +11,7 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 - [x] **M3** Sessions UI + permission modes + approval bridge + todo
 - [x] **M4** tie index + session_search + compaction
 - [x] **M5** memory stores + memory tool + staging
-- [ ] **M6** skills + skill_manage + subagents + slash commands
+- [x] **M6** skills + skill_manage + subagents + slash commands
 - [ ] **M7** background review + journey + notifications
 - [ ] **M8** MCP + polish
 - [ ] **M9** headless CLI (fyagent-headless)
@@ -46,6 +46,17 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Shipped to fynerisor main: **a0280fb** app.Quit/window.Close (#2), **45e3eca** Markdown SetText/.Text (#3), **dc84d6b** container Append/Remove/Refresh + Border setters + Scroll.SetContent (#4), **1c0e93f** tie.connect options vs config.toml (#5). Tests added upstream; all green (pre-existing tie test was #5 itself).
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
+
+### 2026-10-24 — M6 done (skills + skill_manage + subagents + slash commands)
+- `core/skills`: SKILL.md dirs under `~/.fyagent/skills` (agentskills frontmatter, validated by dive's `skill.ParseContent`); create/patch (unique-substring)/write_file (path-escape guarded)/remove→`skills-archive/<name>-<ts>`; staging mirror of memory (`pending/skills/<id>.json`, cap 10, `Preview` diff for UI).
+- Skills at runtime: dive `skill.Loader` as **Extension** per run — dirs: `~/.fyagent/skills`, `./.fyagent/skills`, project `.claude/.agents/.dive` read-compat + `skills.extra_dirs`; gives the `Skill` tool + catalog reminder + rules for free. New skills visible next run (loader rebuilt per run).
+- Subagents: dive `toolkit/orchestration.NewAgentTool` with **custom AgentFactory** — default factory spawns UNGUARDED agents; ours re-attaches `permission.HookFromManager` + iteration cap 40. Types: general-purpose / explore / plan.
+- `skill_manage` FuncTool (list/view/create/patch/write_file/remove) + staging + UI cards (`respondSkill`).
+- UI: slash commands `/help /new /sessions /plan /build /skills /memory /index /quit`; keybinds Ctrl+N (new), Ctrl+B (sessions), Ctrl+D (stop) via `window.AddShortcut`.
+- Config: default allow list now includes `session_search memory skill_manage Skill` (their safety gate is write_approval staging); `Agent` keeps prompting.
+- **fynerisor issue #6** filed+fixed upstream (0b826e9): `Window.CompileScript()` (risor.Compile wrapper). New `fyagent -check-ui` flag; main.risor now compile-checked at EVERY boot (fail-fast, kills the M2 "black window" failure class). Found a stale-`else` bug in the M4 UI code this way — the main UI had never been compiled since M3!
+- e2e (live Strata): create markhor-skill → next session `Skill` tool loads it → answer begins SNOWLEOPARD; Agent(explore) subagent finds add.go through its own tools; skill store unit tests all green.
+- Next: M7 background review + journey + notifications.
 
 ### 2026-10-24 — M5 done (memory stores + memory tool + staging)
 - `core/memory`: MEMORY.md/USER.md under `~/.fyagent/memories`, caps 2200/1375 (config), atomic writes; ops add/patch/remove (patch/remove = **unique-substring** match, count-checked), dup-guard (case/whitespace-normalized entry compare), final-size batch check, injection scanner (instruction-override/role-forgery/`<system-reminder` patterns rejected — memory is re-injected forever).

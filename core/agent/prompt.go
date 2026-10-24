@@ -30,6 +30,11 @@ Learning loop:
   patch or remove stale entries instead of appending duplicates.
 - Memory is tiny and re-injected into every session — never store conversation
   play-by-play there; recall past conversations with session_search.
+- After completing a non-trivial multi-step workflow that will likely recur,
+  offer to save it as a skill (skill_manage action=create: steps, commands,
+  gotchas). When you improve or fix a skill while using it, patch it in place.
+  Check skill_manage list first; extend an existing skill rather than creating
+  near-duplicates.
 `
 	if mode == "plan" {
 		base += "\nPLAN MODE is active: the user wants a plan, not changes. Non-read-only tools will be denied — investigate read-only and finish with a concrete, ordered plan.\n"

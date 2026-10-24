@@ -64,7 +64,7 @@ type Review struct {
 // Tie configures the tie-backed episodic index (session_search).
 type Tie struct {
 	Enabled    bool   `json:"enabled"`
-	Collection string `json:"collection"` // tie config collection name
+	Collection string `json:"collection"`  // tie config collection name
 	ConfigName string `json:"config_name"` // tie client config (client.LoadConfig); "" = default
 }
 
@@ -101,7 +101,7 @@ func Default() *Config {
 		},
 		Agent: Agent{
 			PermissionMode:     "default",
-			Allow:              []string{"Read", "Glob", "Grep", "ListDirectory", "todo"},
+			Allow:              []string{"Read", "Glob", "Grep", "ListDirectory", "todo", "session_search", "memory", "skill_manage", "Skill"},
 			Ask:                []string{"Bash", "Write", "Edit", "WebFetch"},
 			Deny:               nil,
 			ToolIterationLimit: 80,

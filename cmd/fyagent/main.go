@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"flag"
+		"flag"
 	"fmt"
 	"log"
 	"os"
@@ -18,6 +18,7 @@ import (
 
 func main() {
 	rebuild := flag.Bool("rebuild-index", false, "re-index all sessions into tie and exit")
+	checkUI := flag.Bool("check-ui", false, "compile the UI script and exit")
 	flag.Parse()
 
 	a, err := app.New()
@@ -52,6 +53,13 @@ func main() {
 		log.Fatalf("fyagent: UI missing: %v", err)
 	}
 	fw.LoadScript(src)
+	if err := fw.CompileScript(); err != nil {
+		log.Fatalf("fyagent: UI compile: %v", err)
+	}
+	if *checkUI {
+		fmt.Println("fyagent: UI compiles")
+		return
+	}
 	fw.Execute()
 	a.Bridge.Ready() // core events may flow from here (fynerisor channel exists)
 

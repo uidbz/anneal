@@ -18,6 +18,7 @@ import (
 	"fyagent/core/tieindex"
 	"fyagent/core/uiapi"
 
+	"github.com/deepnoodle-ai/dive/experimental/mcp"
 	"github.com/deepnoodle-ai/dive/llm"
 )
 
@@ -28,11 +29,12 @@ type App struct {
 	Monitor *model.Monitor
 	Bridge  *uiapi.Bridge
 	Runner  *agent.Runner
-	Tie      *tieindex.Indexer
-	Mem      *memory.Store
-	Skills   *skills.Store
-	Review   *review.Manager
-	Journey  *journey.Log
+	Tie     *tieindex.Indexer
+	Mem     *memory.Store
+	Skills  *skills.Store
+	Review  *review.Manager
+	Journey *journey.Log
+	MCP     *mcp.Manager
 
 	lastHealth string // dedupe provider.state events
 }
@@ -128,6 +130,7 @@ func (a *App) Start(ctx context.Context) {
 	if a.Cfg.Review.Enabled {
 		go a.Review.Start(ctx)
 	}
+	go a.ConnectMCP(ctx)
 }
 
 // AgentAPI is the `agent` global exposed to Risor scripts.

@@ -104,6 +104,18 @@ skillRows = (arr, i, acc) => {
     return skillRows(arr, i + 1, acc + [row])
 }
 
+let mcpText = (arr, i, nconn, ntools) => ""
+mcpText = (arr, i, nconn, ntools) => {
+    if (i >= len(arr)) {
+        if (len(arr) == 0) { return "" }
+        return "mcp: " + sprintf("%d/%d up, %d tools", nconn, len(arr), ntools)
+    }
+    let s = arr[i]
+    let c = nconn
+    if (s.connected) { c = nconn + 1 }
+    return mcpText(arr, i + 1, c, ntools + s.tools)
+}
+
 let ledgerText = (arr, i, acc) => acc
 ledgerText = (arr, i, acc) => {
     if (i >= len(arr)) { return acc }
@@ -162,7 +174,8 @@ let submit = () => {}         // placeholder
 let statusLbl = label("model server: connecting…")
 let usageLbl = label("")
 let tieLbl = label("")
-let rightCol = container.NewVBox([usageLbl, tieLbl])
+let mcpLbl = label("")
+let rightCol = container.NewVBox([usageLbl, tieLbl, mcpLbl])
 let statusRow = container.NewBorder(nil, nil, nil, rightCol, statusLbl)
 
 let modeBtn = widget.NewButton("", () => {
@@ -353,6 +366,9 @@ agent.on((evtJson) => {
         let s = evt.state
         if (!s.enabled) { tieLbl.Text = "" } else if (s.online) { tieLbl.Text = "index: " + s.collection } else { tieLbl.Text = "index: offline" }
         return
+    }
+    if (t == "mcp.state") {
+        mcpLbl.Text = mcpText(evt.servers, 0, 0, 0)
     }
     if (t == "tie.rebuilt") {
         if (evt.error != "") {

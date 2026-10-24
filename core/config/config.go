@@ -68,6 +68,22 @@ type Tie struct {
 	ConfigName string `json:"config_name"` // tie client config (client.LoadConfig); "" = default
 }
 
+// MCPServer mirrors dive's mcp.ServerConfig (stdio via Command or
+// streamable HTTP via URL), Anthropic mcp.json-shaped.
+type MCPServer struct {
+	Type    string            `json:"type,omitempty"` // stdio|http (inferred if empty)
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	Disabled bool           `json:"disabled,omitempty"`
+}
+
+type MCP struct {
+	Enabled bool                  `json:"enabled"`
+	Servers map[string]MCPServer  `json:"servers"`
+}
+
 type UI struct {
 	UIDir string `json:"ui_dir"` // overrides embedded UI scripts
 }
@@ -80,6 +96,7 @@ type Config struct {
 	Skills     Skills     `json:"skills"`
 	Review     Review     `json:"review"`
 	Tie        Tie        `json:"tie"`
+	MCP        MCP        `json:"mcp"`
 	UI         UI         `json:"ui"`
 
 	path string `json:"-"`
@@ -112,6 +129,7 @@ func Default() *Config {
 		Skills:     Skills{Enabled: true, WriteApproval: false, ExtraDirs: nil},
 		Review:     Review{Enabled: true, DeferUntilIdle: true, IdleSettleS: 45, MaxAgeS: 1800, MaxInputTokens: 48000, Notify: true},
 		Tie:        Tie{Enabled: true, Collection: "fyagent", ConfigName: ""},
+		MCP:        MCP{Enabled: true, Servers: map[string]MCPServer{}},
 		UI:         UI{},
 	}
 }

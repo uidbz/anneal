@@ -19,6 +19,7 @@ import (
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/experimental/compaction"
+	"github.com/deepnoodle-ai/dive/experimental/mcp"
 	"github.com/deepnoodle-ai/dive/llm"
 	"github.com/deepnoodle-ai/dive/permission"
 	"github.com/deepnoodle-ai/dive/session"
@@ -39,6 +40,7 @@ type Runner struct {
 	mem     *memory.Store
 	skills  *skills.Store
 	review  *review.Manager
+	mcp     *mcp.Manager
 	lastAct time.Time
 
 	mu           sync.Mutex
@@ -185,6 +187,7 @@ func (r *Runner) run(id int, input string) {
 	if r.cfg.Agent.Subagents {
 		tools = append(tools, r.agentTool(provider, tools))
 	}
+	tools = append(tools, mcpTools(r.mcp)...)
 
 	prompt := SystemPrompt(r.cwd, r.Mode())
 	hooks := dive.Hooks{

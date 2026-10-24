@@ -1,16 +1,23 @@
-// fyagent UI — M2: chat transcript, streaming, tool cards, provider status.
+// fyagent UI — M3: sessions, permission approval inbox, plan/build modes,
+// todo panel, plus M2 chat (transcript, streaming, tool cards, usage).
 // Risor v2 constraints (see fynerisor skill): no for/while, no map/filter,
 // no ternary, if (cond) needs parens, missing map keys error on dot-access,
 // keyword keys (in/out) break dot-access, free vars resolve at compile time
-// (placeholder-rebind for circular layouts). Containers have no Append — we
-// re-compose the layout on structural changes; widgets persist. Arrays
-// support `+` concat.
+// (placeholder-rebind for circular layouts; recursion via pre-declared slot).
+// Containers have no Append — re-compose the layout on changes; widgets
+// persist. Arrays support `+` concat; strings support [0:n] slices.
 require(["v0.9", "@gui", "@json", "@strings"])
 
 // ---------- state ----------
-let widgets = []      // finalized blocks
+let widgets = []      // finalized transcript blocks
 let tail = nil        // optional streaming tail (always visually last)
 let tailBuf = ""
+let mode = "default"
+let sessOpen = false
+let sessList = []     // {id,title,updated,events}
+let permCards = []    // pending perm.request events
+let todos = []        // {content,status}
+let sessID = ""
 
 // ---------- helpers ----------
 let md = (text) => {
@@ -25,12 +32,84 @@ let label = (text) => {
     return l
 }
 
-// placeholder, real implementation defined below (compile-time capture!)
-let submit = () => {}
+let short = (s, n) => {
+    if (len(s) <= n) { return s }
+    return s[0:n] + "…"
+}
+
+// recursive list builders (pre-declared slots so bodies can self-reference)
+let sessBtns = (arr, i, acc) => acc
+sessBtns = (arr, i, acc) => {
+    if (i >= len(arr)) { return acc }
+    let s = arr[i]
+    let t = s.title
+    if (t == "") { t = s.id }
+    let b = widget.NewButton(short(t, 34), () => { agent.openSession(s.id) })
+    return sessBtns(arr, i + 1, acc + [b])
+}
+
+let permRows = (arr, i, acc) => acc
+permRows = (arr, i, acc) => {
+    if (i >= len(arr)) { return acc }
+    let c = arr[i]
+    let info = label("🔐 " + c.tool + " — " + c.message + " [once | session: " + short(c.grant, 40) + "]\n" + strings.replace_all(c.input, "\n", " "))
+    let row = container.NewBorder(nil, nil, nil, container.NewHBox([
+        widget.NewButton("allow", () => { agent.respondPerm(c.id, "allow") }),
+        widget.NewButton("session", () => { agent.respondPerm(c.id, "session") }),
+        widget.NewButton("deny", () => { agent.respondPerm(c.id, "deny") }),
+    ]), info)
+    return permRows(arr, i + 1, acc + [row])
+}
+
+let keepCards = (arr, i, dropID, acc) => acc
+keepCards = (arr, i, dropID, acc) => {
+    if (i >= len(arr)) { return acc }
+    if (arr[i].id != dropID) { return keepCards(arr, i + 1, dropID, acc + [arr[i]]) }
+    return keepCards(arr, i + 1, dropID, acc)
+}
+
+let todoRows = (arr, i, acc) => acc
+todoRows = (arr, i, acc) => {
+    if (i >= len(arr)) { return acc }
+    let it = arr[i]
+    let g = "☐"
+    if (it.status == "in_progress") { g = "▶" }
+    if (it.status == "done") { g = "☑" }
+    if (it.status == "cancelled") { g = "✖" }
+    return todoRows(arr, i + 1, acc + [label(g + " " + short(it.content, 44))])
+}
+
+let blockFrom = (b) => {
+    if (b.kind == "user") { return md("> " + b.text) }
+    if (b.kind == "assistant") { return md(b.text) }
+    if (b.kind == "tool") { return label("🔧 " + b.name + " " + strings.replace_all(b.input, "\n", " ")) }
+    let mark = "✔"
+    if (b.error) { mark = "✖" }
+    if (b.name != "") { mark = mark + " " + b.name + ":" }
+    return label("  " + mark + " " + strings.replace_all(b.text, "\n", " "))
+}
+
+let rebuild = (arr, i, acc) => acc
+rebuild = (arr, i, acc) => {
+    if (i >= len(arr)) { return acc }
+    return rebuild(arr, i + 1, acc + [blockFrom(arr[i])])
+}
+
+// ---------- widgets & layout ----------
+let toggleSessions = () => {} // placeholder (compile-time capture)
+let submit = () => {}         // placeholder
 
 let statusLbl = label("model server: connecting…")
 let usageLbl = label("")
-let top = container.NewBorder(nil, nil, nil, usageLbl, statusLbl)
+let statusRow = container.NewBorder(nil, nil, nil, usageLbl, statusLbl)
+
+let modeBtn = widget.NewButton("", () => {
+    if (mode == "plan") { agent.setMode("default") } else { agent.setMode("plan") }
+})
+let newBtn = widget.NewButton("+ new", () => { agent.newSession() })
+let sessBtn = widget.NewButton("sessions", () => { toggleSessions() })
+let toolbar = container.NewHBox([modeBtn, newBtn, sessBtn])
+let header = container.NewBorder(nil, nil, nil, toolbar, statusRow)
 
 let entry = widget.NewEntry()
 entry.PlaceHolder = "describe a task — Enter to send"
@@ -40,19 +119,31 @@ let bottom = container.NewBorder(nil, nil, nil, container.NewHBox([
     widget.NewButton("stop", () => { agent.interrupt() }),
 ]), entry)
 
-let relayout = () => {
+let compose = () => {
     let all = widgets
     if (tail != nil) {
         all = all + [tail]
     }
     let sc = container.NewScroll(container.NewVBox(all))
-    window.SetContent(container.NewBorder(top, bottom, nil, nil, sc))
+    let topParts = [header]
+    if (permCards != []) {
+        topParts = topParts + permRows(permCards, 0, [])
+    }
+    let left = nil
+    if (sessOpen) {
+        left = container.NewVBox([widget.NewButton("« close", () => { toggleSessions() })] + sessBtns(sessList, 0, []))
+    }
+    let right = nil
+    if (todos != []) {
+        right = container.NewVBox([label("todos:")] + todoRows(todos, 0, []))
+    }
+    window.SetContent(container.NewBorder(container.NewVBox(topParts), bottom, left, right, sc))
     sc.ScrollToBottom()
 }
 
 let addBlock = (w) => {
     widgets = widgets + [w]
-    relayout()
+    compose()
 }
 
 let ensureTail = () => {
@@ -70,10 +161,20 @@ let closeTail = (w) => {
         }
         tail = nil
         tailBuf = ""
-        relayout()
+        compose()
     } else if (w != nil) {
         addBlock(w)
     }
+}
+
+toggleSessions = () => {
+    if (sessOpen) {
+        sessOpen = false
+    } else {
+        sessList = json.parse(agent.sessions())
+        sessOpen = true
+    }
+    compose()
 }
 
 submit = () => {
@@ -97,12 +198,62 @@ let showHealth = (h) => {
     }
 }
 
+let clearRun = () => {
+    widgets = []
+    tail = nil
+    tailBuf = ""
+    permCards = []
+    todos = []
+}
+
 agent.on((evtJson) => {
     let evt = json.parse(evtJson)
     let t = evt.type
 
     if (t == "provider.state") {
         showHealth(evt.health)
+        return
+    }
+    if (t == "mode.changed") {
+        mode = evt.mode
+        if (mode == "plan") { modeBtn.Text = "📋 plan" } else { modeBtn.Text = "🛠 build" }
+        compose()
+        return
+    }
+    if (t == "session.started") {
+        clearRun()
+        sessID = evt.id
+        sessOpen = false
+        window.SetStatus("session " + short(evt.id, 15))
+        compose()
+        return
+    }
+    if (t == "session.opened") {
+        clearRun()
+        sessID = evt.id
+        sessOpen = false
+        widgets = rebuild(evt.blocks, 0, [])
+        window.SetStatus("session " + short(evt.id, 15))
+        compose()
+        return
+    }
+    if (t == "session.error") {
+        addBlock(label("⚠ session " + evt.id + ": " + evt.error))
+        return
+    }
+    if (t == "todo.updated") {
+        todos = evt.items
+        compose()
+        return
+    }
+    if (t == "perm.request") {
+        permCards = permCards + [evt]
+        compose()
+        return
+    }
+    if (t == "perm.resolved") {
+        permCards = keepCards(permCards, 0, evt.id, [])
+        compose()
         return
     }
     if (t == "run.started") {
@@ -151,7 +302,7 @@ agent.on((evtJson) => {
 
 // ---------- boot ----------
 showHealth(json.parse(agent.probe()))
-relayout()
+compose()
 window.Resize(980, 680)
 window.SetStatus("fyagent")
 print("BOOT-DONE")

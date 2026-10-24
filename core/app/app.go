@@ -33,7 +33,10 @@ func New() (*App, error) {
 	a := &App{Cfg: cfg, Bridge: uiapi.New()}
 	a.Monitor = model.NewMonitor(cfg.Provider, a.onHealth)
 	wd, _ := os.Getwd()
-	a.Runner = agent.NewRunner(cfg, a.Monitor, a.Bridge, wd)
+	a.Runner, err = agent.NewRunner(cfg, a.Monitor, a.Bridge, wd)
+	if err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 
@@ -66,6 +69,24 @@ func (a *App) AgentAPI() map[string]any {
 		a.Runner.Interrupt()
 		return nil
 	}
+	api["sessions"] = func() any { return a.Runner.SessionsJSON() }
+	api["newSession"] = func() any {
+		a.Runner.NewSession()
+		return nil
+	}
+	api["openSession"] = func(id string) any {
+		a.Runner.OpenSession(id)
+		return nil
+	}
+	api["respondPerm"] = func(id, action string) any {
+		a.Runner.RespondPerm(id, action)
+		return nil
+	}
+	api["setMode"] = func(mode string) any {
+		a.Runner.SetMode(mode)
+		return nil
+	}
+	api["mode"] = func() any { return a.Runner.Mode() }
 	api["quit"] = func() any {
 		go func() {
 			time.Sleep(150 * time.Millisecond) // let pending events flush

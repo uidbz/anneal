@@ -14,6 +14,7 @@ import (
 	"fyagent/core/uiapi"
 
 	"github.com/deepnoodle-ai/dive"
+	"github.com/deepnoodle-ai/dive/permission"
 	"github.com/deepnoodle-ai/dive/session"
 	"github.com/deepnoodle-ai/dive/toolkit"
 )
@@ -24,16 +25,37 @@ type Runner struct {
 	monitor *model.Monitor
 	bridge  *uiapi.Bridge
 	cwd     string
+	store   *session.FileStore
+	mgr     *permission.Manager
 
-	mu       sync.Mutex
-	sess     *session.Session
-	cancel   context.CancelFunc
-	runSeq   int
-	running  bool
+	mu           sync.Mutex
+	sess         *session.Session
+	sessID       string
+	todos        []todoItem
+	cancel       context.CancelFunc
+	runSeq       int
+	running      bool
+	permSeq      int
+	pendingPerms map[string]chan *dive.DialogOutput
 }
 
-func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge, cwd string) *Runner {
-	return &Runner{cfg: cfg, monitor: monitor, bridge: bridge, cwd: cwd, sess: session.New("current")}
+func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge, cwd string) (*Runner, error) {
+	r := &Runner{
+		cfg:          cfg,
+		monitor:      monitor,
+		bridge:       bridge,
+		cwd:          cwd,
+		pendingPerms: make(map[string]chan *dive.DialogOutput),
+	}
+	r.mgr = permission.NewManager(permConfig(cfg), &uiDialog{r: r})
+	if err := r.initStore(); err != nil {
+		return nil, err
+	}
+	// Replay the resumed session once the UI handler is attached (queued).
+	blocks := transcriptBlocks(context.Background(), r.sess)
+	bridge.Emit(map[string]any{"type": "session.opened", "id": r.sessID, "title": r.sess.Title(), "blocks": blocks})
+	bridge.Emit(map[string]any{"type": "mode.changed", "mode": r.Mode()})
+	return r, nil
 }
 
 // Send starts a run; at most one run is active.
@@ -61,11 +83,7 @@ func (r *Runner) Interrupt() {
 }
 
 func (r *Runner) run(id int, input string) {
-	defer func() {
-		r.mu.Lock()
-		r.running, r.cancel = false, nil
-		r.mu.Unlock()
-	}()
+	defer r.clearRunning() // safety net for early returns / panics
 
 	h := r.monitor.Current()
 	if h.State == model.StateConnecting {
@@ -88,9 +106,16 @@ func (r *Runner) run(id int, input string) {
 
 	provider := model.NewProvider(r.cfg.Provider, h.Model)
 
+	r.mu.Lock()
+	sess := r.sess
+	r.mu.Unlock()
+	if sess.Title() == "" {
+		sess.SetTitle(clip(input, 60))
+	}
+
 	agent, err := dive.NewAgent(dive.AgentOptions{
 		Name:         "fyagent",
-		SystemPrompt: SystemPrompt(r.cwd),
+		SystemPrompt: SystemPrompt(r.cwd, r.Mode()),
 		Model:        provider,
 		Tools: []dive.Tool{
 			toolkit.NewReadFileTool(),
@@ -102,9 +127,13 @@ func (r *Runner) run(id int, input string) {
 			toolkit.NewListDirectoryTool(),
 			toolkit.NewBashTool(),
 			toolkit.NewFetchTool(),
+			r.todoTool(),
+		},
+		Hooks: dive.Hooks{
+			PreToolUse: []dive.PreToolUseHook{permission.HookFromManager(r.mgr)},
 		},
 		ToolIterationLimit: r.cfg.Agent.ToolIterationLimit,
-		Session:            r.sess,
+		Session:            sess,
 		ModelSettings: &dive.ModelSettings{
 			MaxTokens:   dive.Ptr(r.cfg.Provider.MaxTokens),
 			Temperature: dive.Ptr(r.cfg.Provider.Temperature),
@@ -175,10 +204,30 @@ func (r *Runner) run(id int, input string) {
 			}
 		}
 	}
+	// Persist session-scoped state (title, todo list) — event appends
+	// don't rewrite the header.
+	r.mu.Lock()
+	items := append([]todoItem{}, r.todos...)
+	r.mu.Unlock()
+	if len(items) > 0 {
+		sess.SetMetadata("todos", items)
+	}
+	_ = r.store.Put(context.Background(), sess)
+	// Clear before announcing completion: a UI that chains sends on
+	// run.finished must not hit run.busy.
+	r.clearRunning()
 	r.emit(out)
 }
 
+// clearRunning marks the runner idle (always before run.finished emits).
+func (r *Runner) clearRunning() {
+	r.mu.Lock()
+	r.running, r.cancel = false, nil
+	r.mu.Unlock()
+}
+
 func (r *Runner) finishRun(id int, ok bool, text, errMsg string, in, outTok, ctxPct int) {
+	r.clearRunning()
 	r.emit(map[string]any{"type": "run.finished", "run": id, "ok": ok,
 		"text": text, "error": errMsg,
 		"usage": map[string]any{"tin": in, "tout": outTok}, "ctx_pct": ctxPct})

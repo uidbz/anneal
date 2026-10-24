@@ -101,7 +101,7 @@ func Default() *Config {
 		},
 		Agent: Agent{
 			PermissionMode:     "default",
-			Allow:              []string{"Read", "Glob", "Grep", "ListDirectory"},
+			Allow:              []string{"Read", "Glob", "Grep", "ListDirectory", "todo"},
 			Ask:                []string{"Bash", "Write", "Edit", "WebFetch"},
 			Deny:               nil,
 			ToolIterationLimit: 80,

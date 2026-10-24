@@ -8,7 +8,7 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 - [x] **M0** Skeleton: module + deps, GUI opens, Go↔Risor event round-trip
 - [x] **M1** Config + Strata provider + HealthMonitor + settings tab
 - [x] **M2** Agent loop + streaming chat + toolkit + stop + usage status
-- [ ] **M3** Sessions UI + permission modes + approval bridge + todo
+- [x] **M3** Sessions UI + permission modes + approval bridge + todo
 - [ ] **M4** tie index + session_search + compaction
 - [ ] **M5** memory stores + memory tool + staging
 - [ ] **M6** skills + skill_manage + subagents + slash commands
@@ -40,6 +40,22 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - [ ] (nice) constants exposure for `fyne.TextWrap*` instead of raw ints
 
 ## Notes (newest first)
+
+### 2026-10-24 — fynerisor gaps fixed upstream (issues #2–#5 closed)
+- User green-lit fixing fynerisor directly (issue-first). Local checkout `/go/src/github.com/uidbz/fynerisor`; fyagent `go.mod` now `replace`s fynerisor to it until a release ships these.
+- Shipped to fynerisor main: **a0280fb** app.Quit/window.Close (#2), **45e3eca** Markdown SetText/.Text (#3), **dc84d6b** container Append/Remove/Refresh + Border setters + Scroll.SetContent (#4), **1c0e93f** tie.connect options vs config.toml (#5). Tests added upstream; all green (pre-existing tie test was #5 itself).
+- Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
+- Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
+
+### 2026-10-24 — M3 done (sessions + permissions + plan/build + todo)
+- Sessions: dive `session.FileStore` under `~/.fyagent/sessions`; boot resumes most recent; sidebar lists/restores (transcript replay as normalized blocks); title = first task (flushed via `store.Put` after run — appends never rewrite the header).
+- Permissions: `permission.Manager` + `HookFromManager` PreToolUse; approval inbox bridged via `dive.Dialog` impl (event out, channel back; interrupt ⇒ deny). Actions: allow / session-grant (`AllowSession`, exact-specifier semantics from dive) / deny.
+- **Gotcha**: dive evaluates ask rules *before* the mode gate, so plan mode would *prompt* instead of deny — the Dialog now auto-denies non-`ReadOnlyHint` tools in plan mode. todo tool marked ReadOnlyHint (planning is read-only).
+- Modes: plan/build toggle (`agent.setMode`), persisted in config; plan adds a system-prompt note.
+- todo tool (`dive.FuncTool`): full-list `set`/`list`; `todo.updated` events → right panel; list persisted in session **metadata** and restored on resume/reopen.
+- Race fixed: `running` must clear *before* `run.finished` is emitted (UI chained-send hit `run.busy`).
+- e2e (live Strata, 4 phases): Bash ask→session grant→ok; todo events; plan mode: Write denied with NO prompt, Glob allowed; sessions n=1, reopen replay 40 blocks, todos restored. (One earlier e2e run died mid-Bash ~50s, rc=0, unreproduced twice since — watching.)
+- `timeout`+fyne note: this fyne honors SIGTERM → graceful exit (rc=0 under `timeout` when the *harness* kills the wrapper); don't read too much into rc.
 
 ### 2026-10-24 — fynerisor gap tracking + upstream issues
 - New living tracker `docs/FYNERISOR-GAPS.md`; policy: hit a gap → add row → file issue (gh, uidbz).

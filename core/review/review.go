@@ -1,0 +1,376 @@
+// Package review implements fyagent's background self-improvement loop
+// (Hermes-style): finished sessions are queued for a review that runs only
+// while the user is idle; a small bounded reviewer agent (read-only tools +
+// memory + skill_manage + session_search) mines transcript digests for
+// durable lessons. Notifications derive from the tool ledger, never from
+// model prose (small models happily claim saves they did not make).
+package review
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"fyagent/core/config"
+	"fyagent/core/memory"
+	"fyagent/core/skills"
+	"fyagent/core/tieindex"
+
+	"github.com/deepnoodle-ai/dive"
+	"github.com/deepnoodle-ai/dive/llm"
+	"github.com/deepnoodle-ai/dive/toolkit"
+)
+
+// LedgerEntry records one concrete lesson write by the reviewer.
+type LedgerEntry struct {
+	Kind    string `json:"kind"` // memory | skill
+	Target  string `json:"target,omitempty"`
+	Action  string `json:"action"`
+	Name    string `json:"name,omitempty"`
+	Content string `json:"content,omitempty"`
+	Result  string `json:"result"`
+}
+
+// Event is what the UI/bridge sees.
+type Event struct {
+	Type    string        `json:"type"` // review.start | review.done | review.skipped
+	Session string        `json:"session"`
+	Reason  string        `json:"reason"`
+	Ledger  []LedgerEntry `json:"ledger"`
+	Error   string        `json:"error"`
+}
+
+// Manager owns the review queue and the idle scheduler.
+type Manager struct {
+	cfg      config.Review
+	memCfg   config.Memory
+	skillCfg config.Skills
+	mem      *memory.Store
+	sk       *skills.Store
+	idx      *tieindex.Indexer
+	// Digest renders one session's transcript for the reviewer (injected by
+	// the app layer, which owns the session store). Bounded by MaxInputTokens.
+	Digest func(ctx context.Context, sessionID string) string
+	// Model builds the reviewer's LLM lazily (same server, budgeted input).
+	Model func() llm.LLM
+
+	emit func(any) // bridge passthrough (Event values + stage cards)
+
+	mu       sync.Mutex
+	queue    []string
+	firstQue time.Time
+	running  bool // review currently executing
+	busy     func() bool
+	lastAct  func() time.Time
+	cancel   context.CancelFunc
+	notify   func()
+}
+
+func NewManager(cfg config.Review, memCfg config.Memory, skCfg config.Skills,
+	mem *memory.Store, sk *skills.Store, idx *tieindex.Indexer,
+	emit func(any), model func() llm.LLM) *Manager {
+	return &Manager{cfg: cfg, memCfg: memCfg, skillCfg: skCfg, mem: mem, sk: sk, idx: idx, emit: emit, Model: model,
+		Digest:  func(context.Context, string) string { return "" },
+		busy:    func() bool { return false },
+		lastAct: func() time.Time { return time.Now() },
+		notify:  func() {}}
+}
+
+// SetActivityHooks wires the "is the user active" probes from the runner.
+func (m *Manager) SetActivityHooks(busy func() bool, lastActivity func() time.Time) {
+	m.busy, m.lastAct = busy, lastActivity
+}
+
+// Enqueue records sessions for later review (deduped).
+func (m *Manager) Enqueue(sessionIDs ...string) {
+	if !m.cfg.Enabled {
+		return
+	}
+	m.mu.Lock()
+	for _, id := range sessionIDs {
+		if id == "" {
+			continue
+		}
+		dup := false
+		for _, s := range m.queue {
+			if s == id {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			m.queue = append(m.queue, id)
+		}
+	}
+	if len(m.queue) > 0 && m.firstQue.IsZero() {
+		m.firstQue = time.Now()
+	}
+	m.mu.Unlock()
+	m.notify()
+}
+
+// LearnNow triggers a manual review pass as soon as the agent is idle
+// (idle-settle wait is bypassed for the queued batch).
+func (m *Manager) LearnNow() {
+	m.mu.Lock()
+	m.firstQue = time.Now().Add(-time.Duration(m.cfg.IdleSettleS+1) * time.Second)
+	if m.firstQue.IsZero() {
+		m.firstQue = time.Now()
+	}
+	m.mu.Unlock()
+	m.notify()
+}
+
+// Interrupt preempts a running review; its batch is requeued.
+func (m *Manager) Interrupt() {
+	m.mu.Lock()
+	c := m.cancel
+	m.mu.Unlock()
+	if c != nil {
+		c()
+	}
+}
+
+// Start runs the scheduler loop until ctx is done.
+func (m *Manager) Start(ctx context.Context) {
+	wake := make(chan struct{}, 1)
+	m.notify = func() {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-wake:
+		case <-tick.C:
+		}
+		for m.shouldRun() {
+			m.runOnce(ctx)
+		}
+	}
+}
+
+func (m *Manager) shouldRun() bool {
+	m.mu.Lock()
+	n, running := len(m.queue), m.running
+	first := m.firstQue
+	m.mu.Unlock()
+	if n == 0 || running {
+		return false
+	}
+	if m.busy() {
+		return false
+	}
+	if m.cfg.DeferUntilIdle {
+		settle := time.Duration(m.cfg.IdleSettleS) * time.Second
+		forced := time.Since(first) >= time.Duration(m.cfg.MaxAgeS)*time.Second
+		if !forced && time.Since(m.lastAct()) < settle {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *Manager) runOnce(ctx context.Context) {
+	m.mu.Lock()
+	batch := m.queue
+	m.queue = nil
+	m.firstQue = time.Time{}
+	m.running = true
+	m.mu.Unlock()
+
+	rctx, cancel := context.WithCancel(ctx)
+	m.mu.Lock()
+	m.cancel = cancel
+	m.mu.Unlock()
+
+	sessions := strings.Join(batch, ",")
+	m.emit(Event{Type: "review.start", Session: sessions, Ledger: []LedgerEntry{}})
+
+	ledger := []LedgerEntry{}
+	tools := m.reviewerTools(&ledger)
+	agent, err := dive.NewAgent(dive.AgentOptions{
+		Name:               "fyagent-review",
+		SystemPrompt:       reviewerPrompt,
+		Model:              m.Model(),
+		Tools:              tools,
+		ToolIterationLimit: 6,
+	})
+
+	var runErr error
+	if err == nil {
+		digest := ""
+		for _, sid := range batch {
+			if sid == "" {
+				continue
+			}
+			digest += m.Digest(ctx, sid) + "\n---\n"
+			if len(digest) > m.cfg.MaxInputTokens*4 { // ~4 bytes/token
+				break
+			}
+		}
+		if strings.TrimSpace(digest) == "" {
+			m.emit(Event{Type: "review.skipped", Session: sessions, Reason: "empty digest", Ledger: ledger})
+		} else {
+			_, runErr = agent.CreateResponse(rctx, dive.WithInput("Transcript digest(s) follow.\n\n"+digest))
+		}
+	}
+
+	preempted := rctx.Err() != nil
+	m.mu.Lock()
+	m.running = false
+	m.cancel = nil
+	m.mu.Unlock()
+
+	if preempted {
+		m.Enqueue(batch...)
+		m.emit(Event{Type: "review.skipped", Session: sessions, Reason: "preempted by user", Ledger: ledger})
+		return
+	}
+	evt := Event{Type: "review.done", Session: sessions, Ledger: ledger}
+	if runErr != nil {
+		evt.Error = runErr.Error()
+	}
+	if err != nil {
+		evt.Error = err.Error()
+	}
+	m.emit(evt)
+}
+
+const reviewerPrompt = `You are fyagent's background self-improvement reviewer. You are given digest(s) of recent conversation transcripts (user messages, assistant replies, tool calls).
+
+Your job: mine them for things worth remembering, and save them:
+- Corrections the user made, conventions they stated, environment/project facts learned, user preferences -> memory tool (target 'memory' or 'user'). Keep each entry one short line.
+- Multi-step workflows that will recur (with commands/gotchas) -> skill_manage create (or patch an existing skill when you learn improvements). Check skill_manage list first.
+- Stale/wrong existing memories: patch or remove them.
+
+Rules: be selective (a few high-value lessons beat many trivia); do not store conversation play-by-play; no secrets/credentials; you may use Read/Glob/Grep/ListDirectory/session_search to verify facts, nothing that mutates the workspace. When done, reply with a one-line summary of what you saved (or 'nothing worth saving').`
+
+func (m *Manager) reviewerTools(ledger *[]LedgerEntry) []dive.Tool {
+	tools := []dive.Tool{
+		toolkit.NewReadFileTool(),
+		toolkit.NewGlobTool(),
+		toolkit.NewGrepTool(),
+		toolkit.NewListDirectoryTool(),
+	}
+	type memIn struct {
+		Target  string `json:"target"`
+		Action  string `json:"action"`
+		Content string `json:"content,omitempty"`
+		Old     string `json:"old,omitempty"`
+		New     string `json:"new,omitempty"`
+		Reason  string `json:"reason,omitempty"`
+	}
+	tools = append(tools, dive.FuncTool("memory",
+		"Save/patch/remove durable facts (same store the main agent uses; writes may be staged for user approval).",
+		func(ctx context.Context, in *memIn) (*dive.ToolResult, error) {
+			op := &memory.Op{Target: in.Target, Action: in.Action, Content: in.Content,
+				Old: in.Old, New: in.New, Reason: in.Reason, Source: "review"}
+			if err := m.mem.Validate(op); err != nil {
+				return dive.NewToolResultText("memory: " + err.Error()), nil
+			}
+			if m.cfgWriteApprovalMemory() {
+				staged, err := m.mem.Stage(op)
+				if err != nil {
+					return dive.NewToolResultText("memory: " + err.Error()), nil
+				}
+				*ledger = append(*ledger, LedgerEntry{Kind: "memory", Target: in.Target,
+					Action: in.Action, Content: in.Content, Result: "staged " + staged.ID})
+				m.emit(map[string]any{"type": "memory.stage", "op": staged})
+				return dive.NewToolResultText("memory: staged (id " + staged.ID + ") for user approval."), nil
+			}
+			content, err := m.mem.Apply(op)
+			if err != nil {
+				return dive.NewToolResultText("memory: " + err.Error()), nil
+			}
+			*ledger = append(*ledger, LedgerEntry{Kind: "memory", Target: in.Target,
+				Action: in.Action, Content: in.Content, Result: fmt.Sprintf("applied (%d chars)", len(content))})
+			return dive.NewToolResultText("memory: applied."), nil
+		},
+		dive.WithFuncToolAnnotations(&dive.ToolAnnotations{ReadOnlyHint: true, Title: "Memory (review)"})))
+
+	type skIn struct {
+		Action      string `json:"action"`
+		Name        string `json:"name,omitempty"`
+		Description string `json:"description,omitempty"`
+		Content     string `json:"content,omitempty"`
+		Old         string `json:"old,omitempty"`
+		New         string `json:"new,omitempty"`
+		Reason      string `json:"reason,omitempty"`
+	}
+	tools = append(tools, dive.FuncTool("skill_manage",
+		"List/view/create/patch/remove skills (same store as the main agent; writes may be staged).",
+		func(ctx context.Context, in *skIn) (*dive.ToolResult, error) {
+			switch in.Action {
+			case "list":
+				var sb strings.Builder
+				for _, it := range m.sk.List() {
+					fmt.Fprintf(&sb, "- %s: %s\n", it.Name, it.Description)
+				}
+				return dive.NewToolResultText(sb.String()), nil
+			case "view":
+				c, err := m.sk.View(in.Name)
+				if err != nil {
+					return dive.NewToolResultText("skill_manage: " + err.Error()), nil
+				}
+				return dive.NewToolResultText(c), nil
+			}
+			op := &skills.Op{Action: in.Action, Name: in.Name, Description: in.Description,
+				Content: in.Content, Old: in.Old, New: in.New, Reason: in.Reason, Source: "review"}
+			if err := m.sk.Validate(op); err != nil {
+				return dive.NewToolResultText("skill_manage: " + err.Error()), nil
+			}
+			if m.cfgWriteApprovalSkills() {
+				staged, err := m.sk.Stage(op)
+				if err != nil {
+					return dive.NewToolResultText("skill_manage: " + err.Error()), nil
+				}
+				*ledger = append(*ledger, LedgerEntry{Kind: "skill", Action: in.Action,
+					Name: in.Name, Result: "staged " + staged.ID})
+				m.emit(map[string]any{"type": "skill.stage", "op": staged})
+				return dive.NewToolResultText("skill_manage: staged (id " + staged.ID + ") for user approval."), nil
+			}
+			res, err := m.sk.Apply(op)
+			if err != nil {
+				return dive.NewToolResultText("skill_manage: " + err.Error()), nil
+			}
+			*ledger = append(*ledger, LedgerEntry{Kind: "skill", Action: in.Action,
+				Name: in.Name, Result: res})
+			return dive.NewToolResultText("skill_manage: " + res), nil
+		},
+		dive.WithFuncToolAnnotations(&dive.ToolAnnotations{ReadOnlyHint: true, Title: "Skill manager (review)"})))
+
+	if m.idx != nil && m.idx.Enabled() {
+		type qIn struct {
+			Query string `json:"query"`
+			Limit int    `json:"limit,omitempty"`
+		}
+		tools = append(tools, dive.FuncTool("session_search",
+			"Search past sessions for context.",
+			func(ctx context.Context, in *qIn) (*dive.ToolResult, error) {
+				hits, err := m.idx.Search(in.Query, in.Limit)
+				if err != nil {
+					return dive.NewToolResultText("session_search: " + err.Error()), nil
+				}
+				var sb strings.Builder
+				for _, h := range hits {
+					fmt.Fprintf(&sb, "- [%s] %s %s: %s\n", h.SessionID, h.MsgAt, h.Role, h.Snippet)
+				}
+				return dive.NewToolResultText(sb.String()), nil
+			},
+			dive.WithFuncToolAnnotations(&dive.ToolAnnotations{ReadOnlyHint: true, Title: "Session search (review)"})))
+	}
+	return tools
+}
+
+// cfgWriteApproval* reflect the same config the main tools use; the Manager
+// keeps the config struct so writes obey write_approval consistently.
+func (m *Manager) cfgWriteApprovalMemory() bool { return m.memCfg.WriteApproval }
+func (m *Manager) cfgWriteApprovalSkills() bool { return m.skillCfg.WriteApproval }

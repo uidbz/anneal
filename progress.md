@@ -12,7 +12,7 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 - [x] **M4** tie index + session_search + compaction
 - [x] **M5** memory stores + memory tool + staging
 - [x] **M6** skills + skill_manage + subagents + slash commands
-- [ ] **M7** background review + journey + notifications
+- [x] **M7** background review + journey + notifications
 - [ ] **M8** MCP + polish
 - [ ] **M9** headless CLI (fyagent-headless)
 
@@ -46,6 +46,15 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Shipped to fynerisor main: **a0280fb** app.Quit/window.Close (#2), **45e3eca** Markdown SetText/.Text (#3), **dc84d6b** container Append/Remove/Refresh + Border setters + Scroll.SetContent (#4), **1c0e93f** tie.connect options vs config.toml (#5). Tests added upstream; all green (pre-existing tie test was #5 itself).
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
+
+### 2026-10-24 — M7 done (background review + journey + notifications)
+- `core/review`: queue of finished sessions (dedupe) + idle scheduler: runs only when not busy and idle ≥ `review.idle_settle_s`, max-age (`max_age_s`) fallback, batch drain, requeue on preemption (foreground `Send` cancels via `Interrupt`), `LearnNow()` manual trigger.
+- Reviewer = bounded dive agent (iter cap 6): Read/Glob/Grep/ListDir + memory + skill_manage + session_search; `source:"review"`; respects write_approval staging (emits memory.stage/skill.stage cards like the main tools). **Tool ledger** drives notifications — never model prose (guards fake-save claims).
+- Digests: `Runner.Digest` renders bounded per-message transcripts (600-char clips, MaxInputTokens*4 bytes) from the FileStore.
+- `core/journey`: ~/.fyagent/journey.jsonl timeline via a Bridge tap (memory/skill writes incl. staged-approvals + review batches); `/journey` + `/learn` slash cmds; review.start/done/skipped → status + transcript notices (ledger lines listed).
+- Tests: scripted-LLM reviewer tests (apply+ledger exactness, staging events+pending source=review), idle/max-age/busy gating. Live e2e: run → idle 3s → reviewer PATCHED the memory entry (consolidation) → journey shows 2 entries.
+- Bridge: `agent.learnNow()`, `agent.journey(n)`.
+- Next: M8 MCP + polish.
 
 ### 2026-10-24 — M6 done (skills + skill_manage + subagents + slash commands)
 - `core/skills`: SKILL.md dirs under `~/.fyagent/skills` (agentskills frontmatter, validated by dive's `skill.ParseContent`); create/patch (unique-substring)/write_file (path-escape guarded)/remove→`skills-archive/<name>-<ts>`; staging mirror of memory (`pending/skills/<id>.json`, cap 10, `Preview` diff for UI).

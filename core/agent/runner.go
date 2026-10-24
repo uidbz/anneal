@@ -12,6 +12,7 @@ import (
 	"fyagent/core/config"
 	"fyagent/core/memory"
 	"fyagent/core/model"
+	"fyagent/core/review"
 	"fyagent/core/skills"
 	"fyagent/core/tieindex"
 	"fyagent/core/uiapi"
@@ -37,6 +38,8 @@ type Runner struct {
 	index   *tieindex.Indexer
 	mem     *memory.Store
 	skills  *skills.Store
+	review  *review.Manager
+	lastAct time.Time
 
 	mu           sync.Mutex
 	sess         *session.Session
@@ -57,6 +60,9 @@ func (r *Runner) SetMemory(m *memory.Store) { r.mem = m }
 
 // SetSkills attaches the skill store (nil or disabled = no skill_manage).
 func (r *Runner) SetSkills(s *skills.Store) { r.skills = s }
+
+// SetReview attaches the background review manager (nil = no loop).
+func (r *Runner) SetReview(m *review.Manager) { r.review = m }
 
 func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge, cwd string) (*Runner, error) {
 	r := &Runner{
@@ -87,9 +93,27 @@ func (r *Runner) Send(input string) {
 	}
 	r.running = true
 	r.runSeq++
+	r.lastAct = time.Now()
 	id := r.runSeq
 	r.mu.Unlock()
+	if r.review != nil {
+		r.review.Interrupt() // foreground preempts background
+	}
 	go r.run(id, input)
+}
+
+// Busy reports whether a foreground run is active.
+func (r *Runner) Busy() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.running
+}
+
+// LastActivity is when the most recent run ended (idle scheduler input).
+func (r *Runner) LastActivity() time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastAct
 }
 
 // Interrupt soft-cancels the active run (running tool calls finish first).
@@ -266,6 +290,9 @@ func (r *Runner) run(id int, input string) {
 	}
 	_ = r.store.Put(context.Background(), sess)
 	r.indexSessionNow(sess, h.Model)
+	if r.review != nil {
+		r.review.Enqueue(sess.ID())
+	}
 	// Clear before announcing completion: a UI that chains sends on
 	// run.finished must not hit run.busy.
 	r.clearRunning()
@@ -276,6 +303,7 @@ func (r *Runner) run(id int, input string) {
 func (r *Runner) clearRunning() {
 	r.mu.Lock()
 	r.running, r.cancel = false, nil
+	r.lastAct = time.Now()
 	r.mu.Unlock()
 }
 

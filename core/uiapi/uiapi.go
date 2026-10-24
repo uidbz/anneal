@@ -31,6 +31,14 @@ type Bridge struct {
 	callFunc object.CallFunc
 	queue    []string // events queued before handler registration / Ready
 	ready    bool     // true once fw.Execute has created the callback channel
+	tap      func(any) // optional observer of every emitted event (journey log)
+}
+
+// SetTap installs an observer invoked on every Emit (before delivery).
+func (b *Bridge) SetTap(fn func(any)) {
+	b.mu.Lock()
+	b.tap = fn
+	b.mu.Unlock()
 }
 
 // New creates the bridge; call Attach once the fynerisor window exists and
@@ -87,6 +95,9 @@ func (b *Bridge) Emit(v any) {
 		return
 	}
 	b.mu.Lock()
+	if b.tap != nil {
+		b.tap(v)
+	}
 	if !b.ready || b.handler == nil {
 		if len(b.queue) < 4096 {
 			b.queue = append(b.queue, string(data))

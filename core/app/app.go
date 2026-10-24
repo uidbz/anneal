@@ -10,11 +10,15 @@ import (
 
 	"fyagent/core/agent"
 	"fyagent/core/config"
+	"fyagent/core/journey"
 	"fyagent/core/memory"
 	"fyagent/core/model"
+	"fyagent/core/review"
 	"fyagent/core/skills"
 	"fyagent/core/tieindex"
 	"fyagent/core/uiapi"
+
+	"github.com/deepnoodle-ai/dive/llm"
 )
 
 const healthInterval = 10 * time.Second
@@ -24,9 +28,11 @@ type App struct {
 	Monitor *model.Monitor
 	Bridge  *uiapi.Bridge
 	Runner  *agent.Runner
-	Tie     *tieindex.Indexer
-	Mem     *memory.Store
-	Skills  *skills.Store
+	Tie      *tieindex.Indexer
+	Mem      *memory.Store
+	Skills   *skills.Store
+	Review   *review.Manager
+	Journey  *journey.Log
 
 	lastHealth string // dedupe provider.state events
 }
@@ -49,7 +55,57 @@ func New() (*App, error) {
 	a.Runner.SetMemory(a.Mem)
 	a.Skills = skills.NewStore(cfg.Skills)
 	a.Runner.SetSkills(a.Skills)
+	a.Journey = journey.New()
+	a.Bridge.SetTap(a.journeyTap)
+	a.Review = review.NewManager(cfg.Review, cfg.Memory, cfg.Skills, a.Mem, a.Skills, a.Tie,
+		a.Bridge.Emit,
+		func() llm.LLM {
+			h := a.Monitor.Current()
+			return model.NewProvider(cfg.Provider, h.Model)
+		})
+	a.Review.Digest = func(ctx context.Context, sid string) string {
+		return a.Runner.Digest(ctx, sid, cfg.Review.MaxInputTokens*4)
+	}
+	a.Review.SetActivityHooks(a.Runner.Busy, a.Runner.LastActivity)
+	a.Runner.SetReview(a.Review)
 	return a, nil
+}
+
+// journeyTap appends self-improvement events to the journey log.
+func (a *App) journeyTap(v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	var e map[string]any
+	if json.Unmarshal(data, &e) != nil {
+		return
+	}
+	switch e["type"] {
+	case "memory.updated":
+		a.Journey.Append("memory-"+toStr(e["action"]), map[string]any{"target": toStr(e["target"])})
+	case "memory.resolved":
+		if e["approved"] == true && e["error"] == "" {
+			a.Journey.Append("memory-"+toStr(e["action"]), map[string]any{"target": toStr(e["target"]), "staged": true})
+		}
+	case "skill.applied":
+		a.Journey.Append("skill-"+toStr(e["action"]), map[string]any{"name": toStr(e["name"])})
+	case "skill.resolved":
+		if e["approved"] == true && e["error"] == "" {
+			a.Journey.Append("skill-"+toStr(e["action"]), map[string]any{"name": toStr(e["name"]), "staged": true})
+		}
+	case "review.done":
+		if ledger, ok := e["ledger"].([]any); ok && len(ledger) > 0 {
+			a.Journey.Append("review", map[string]any{"session": toStr(e["session"]), "lessons": len(ledger)})
+		}
+	}
+}
+
+func toStr(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }
 
 // ConnectTie connects the tie index (blocking; call off the GUI path) and
@@ -69,6 +125,9 @@ func (a *App) ConnectTie() {
 func (a *App) Start(ctx context.Context) {
 	a.Monitor.Start(ctx, healthInterval)
 	go a.ConnectTie() // never blocks the GUI; degrades gracefully
+	if a.Cfg.Review.Enabled {
+		go a.Review.Start(ctx)
+	}
 }
 
 // AgentAPI is the `agent` global exposed to Risor scripts.
@@ -129,6 +188,14 @@ func (a *App) AgentAPI() map[string]any {
 		if err != nil {
 			return toJSON([]any{})
 		}
+		if list == nil {
+			return toJSON([]any{})
+		}
+		return toJSON(list)
+	}
+	api["learnNow"] = func() any { a.Review.LearnNow(); return nil }
+	api["journey"] = func(limit int) any {
+		list := a.Journey.Tail(limit)
 		if list == nil {
 			return toJSON([]any{})
 		}

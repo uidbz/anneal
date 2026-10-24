@@ -104,6 +104,23 @@ skillRows = (arr, i, acc) => {
     return skillRows(arr, i + 1, acc + [row])
 }
 
+let ledgerText = (arr, i, acc) => acc
+ledgerText = (arr, i, acc) => {
+    if (i >= len(arr)) { return acc }
+    let e = arr[i]
+    let what = e.kind
+    if (e.name != "") { what = what + " " + e.name }
+    if (e.content != "") { what = what + " (" + short(e.content, 50) + ")" }
+    return ledgerText(arr, i + 1, acc + "\n  • " + what + " [" + e.action + "] " + e.result)
+}
+
+let journeyText = (arr, i, acc) => acc
+journeyText = (arr, i, acc) => {
+    if (i >= len(arr)) { return acc }
+    let e = arr[i]
+    return journeyText(arr, i + 1, acc + "\n" + e.ts + "  " + e.kind)
+}
+
 let keepCards = (arr, i, dropID, acc) => acc
 keepCards = (arr, i, dropID, acc) => {
     if (i >= len(arr)) { return acc }
@@ -238,7 +255,7 @@ skillListText = (arr, i, acc) => {
 let slash = (text) => {
     let cmd = strings.split(text, " ")[0]
     if (cmd == "/help") {
-        addBlock(label("commands: /new /sessions /plan /build /skills /memory /index /quit  (shortcuts: Ctrl+N new, Ctrl+B sessions, Ctrl+D stop)"))
+        addBlock(label("commands: /new /sessions /plan /build /skills /memory /index /journey /learn /quit  (shortcuts: Ctrl+N new, Ctrl+B sessions, Ctrl+D stop)"))
         return
     }
     if (cmd == "/new") { addBlock(label("⁘ new session")); agent.newSession(); return }
@@ -257,6 +274,12 @@ let slash = (text) => {
         return
     }
     if (cmd == "/index") { agent.rebuildIndex(); addBlock(label("⁘ session index rebuild requested")); return }
+    if (cmd == "/learn") { agent.learnNow(); addBlock(label("🧠 learning pass queued (runs when idle)")); return }
+    if (cmd == "/journey") {
+        let js = json.parse(agent.journey(25))
+        if (js == []) { addBlock(label("journey: empty")) } else { addBlock(label("journey (newest last):" + journeyText(js, 0, ""))) }
+        return
+    }
     if (cmd == "/quit") { agent.quit(); return }
     addBlock(label("unknown command " + cmd + " — try /help"))
 }
@@ -394,6 +417,29 @@ agent.on((evtJson) => {
             addBlock(label("✖ skill op rejected: " + evt.name))
         }
         compose()
+        return
+    }
+    if (t == "review.start") {
+        window.SetStatus("reviewing…")
+        addBlock(label("🧠 background review started"))
+        return
+    }
+    if (t == "review.skipped") {
+        window.SetStatus("ready")
+        if (evt.reason != "preempted by user") {
+            addBlock(label("🧠 review skipped: " + evt.reason))
+        }
+        return
+    }
+    if (t == "review.done") {
+        window.SetStatus("ready")
+        if (evt.error != "") {
+            addBlock(label("⚠ background review: " + evt.error))
+        } else if (len(evt.ledger) == 0) {
+            addBlock(label("🧠 review: nothing worth saving"))
+        } else {
+            addBlock(label("🧠 review saved " + sprintf("%d", len(evt.ledger)) + " lessons:" + ledgerText(evt.ledger, 0, "")))
+        }
         return
     }
     if (t == "run.started") {

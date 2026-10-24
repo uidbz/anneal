@@ -82,6 +82,9 @@ func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge,
 	blocks := transcriptBlocks(context.Background(), r.sess)
 	bridge.Emit(map[string]any{"type": "session.opened", "id": r.sessID, "title": r.sess.Title(), "blocks": blocks})
 	bridge.Emit(map[string]any{"type": "mode.changed", "mode": r.Mode()})
+	if len(r.todos) > 0 {
+		bridge.Emit(map[string]any{"type": "todo.updated", "items": append([]todoItem{}, r.todos...)})
+	}
 	return r, nil
 }
 
@@ -184,10 +187,10 @@ func (r *Runner) run(id int, input string) {
 	if skillExt != nil {
 		exts = append(exts, skillExt)
 	}
+	tools = append(tools, mcpTools(r.mcp)...)
 	if r.cfg.Agent.Subagents {
 		tools = append(tools, r.agentTool(provider, tools))
 	}
-	tools = append(tools, mcpTools(r.mcp)...)
 
 	prompt := SystemPrompt(r.cwd, r.Mode())
 	hooks := dive.Hooks{
@@ -288,9 +291,8 @@ func (r *Runner) run(id int, input string) {
 	r.mu.Lock()
 	items := append([]todoItem{}, r.todos...)
 	r.mu.Unlock()
-	if len(items) > 0 {
-		sess.SetMetadata("todos", items)
-	}
+	// Always persist: an empty list must overwrite a stale one.
+	sess.SetMetadata("todos", items)
 	_ = r.store.Put(context.Background(), sess)
 	r.indexSessionNow(sess, h.Model)
 	if r.review != nil {

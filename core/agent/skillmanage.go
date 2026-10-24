@@ -107,10 +107,18 @@ func (r *Runner) skillLoader(ctx context.Context) *skill.Loader {
 // fyagent's permission hooks (the default factory would spawn unguarded
 // agents) and a bounded iteration limit.
 func (r *Runner) agentTool(provider llm.LLM, tools []dive.Tool) dive.Tool {
+	// explore/plan are research roles: keep them read-only w.r.t. fyagent's
+	// own state too (no memory/skill writes).
+	readOnly := func(def *subagent.Definition) *subagent.Definition {
+		d := *def
+		d.DisallowedTools = append(append([]string{}, def.DisallowedTools...),
+			"memory", "skill_manage", "Skill")
+		return &d
+	}
 	types := map[string]*subagent.Definition{
 		"general-purpose": subagent.GeneralPurpose,
-		"explore":         subagent.Explore,
-		"plan":            subagent.Plan,
+		"explore":         readOnly(subagent.Explore),
+		"plan":            readOnly(subagent.Plan),
 	}
 	return orchestration.NewAgentTool(orchestration.AgentToolOptions{
 		Subagents:   types,

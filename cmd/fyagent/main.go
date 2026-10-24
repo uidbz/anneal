@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-		"flag"
+	"flag"
 	"fmt"
 	"log"
 	"os"

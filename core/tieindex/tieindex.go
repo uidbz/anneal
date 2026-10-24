@@ -193,12 +193,10 @@ func (x *Indexer) IndexSession(sd SessionData) error {
 		if m.Tool != "" {
 			b.Add(mid, "tool", m.Tool)
 		}
-		b.Add(mid, "turn", fmt.Sprintf("%06d", m.Position))
+		b.Set(mid, "turn", []string{fmt.Sprintf("%06d", m.Position)})
 		b.Set(mid, "msg-at", []string{now})
 		b.Set(mid, "snippet", []string{snippet(m.Text, 400)})
-		for _, w := range tokens(m.Text, 300) {
-			b.Add(mid, "tag", w)
-		}
+		b.Set(mid, "tag", tokens(m.Text, 300)) // Set: re-index replaces stale tokens
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

@@ -29,8 +29,8 @@ type Bridge struct {
 	mu       sync.Mutex
 	handler  *object.Closure
 	callFunc object.CallFunc
-	queue    []string // events queued before handler registration / Ready
-	ready    bool     // true once fw.Execute has created the callback channel
+	queue    []string  // events queued before handler registration / Ready
+	ready    bool      // true once fw.Execute has created the callback channel
 	tap      func(any) // optional observer of every emitted event (journey log)
 }
 

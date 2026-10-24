@@ -74,4 +74,3 @@ func (a *App) emitMCPState() {
 	}
 	a.Bridge.Emit(map[string]any{"type": "mcp.state", "servers": out})
 }
-

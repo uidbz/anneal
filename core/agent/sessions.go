@@ -128,9 +128,8 @@ func (r *Runner) OpenSession(id string) {
 	todos := append([]todoItem{}, r.todos...)
 	r.mu.Unlock()
 	r.emit(map[string]any{"type": "session.opened", "id": id, "title": sess.Title(), "blocks": blocks})
-	if len(todos) > 0 {
-		r.emit(map[string]any{"type": "todo.updated", "items": todos})
-	}
+	// Always emit: an empty list must clear the previous session's panel.
+	r.emit(map[string]any{"type": "todo.updated", "items": todos})
 }
 
 func (r *Runner) busy() bool {

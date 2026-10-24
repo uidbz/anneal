@@ -213,6 +213,9 @@ func main() {
 			cancel()
 			os.Exit(130)
 		}
+		<-sig // second signal: hard exit
+		cancel()
+		os.Exit(130)
 	}()
 
 	runTask := func(task string) int {

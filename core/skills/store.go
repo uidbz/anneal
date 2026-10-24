@@ -272,6 +272,8 @@ func clip(s string, n int) string {
 func (s *Store) pendDir() string { return filepath.Join(paths.Pending(), "skills") }
 
 func (s *Store) Stage(op *Op) (*Op, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	ents, _ := os.ReadDir(s.pendDir())
 	count := 0
 	for _, e := range ents {

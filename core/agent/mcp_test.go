@@ -10,9 +10,9 @@ import (
 
 type captureTool struct{ got any }
 
-func (c *captureTool) Name() string         { return "cap" }
-func (c *captureTool) Description() string  { return "" }
-func (c *captureTool) Schema() *dive.Schema { return nil }
+func (c *captureTool) Name() string                       { return "cap" }
+func (c *captureTool) Description() string                { return "" }
+func (c *captureTool) Schema() *dive.Schema               { return nil }
 func (c *captureTool) Annotations() *dive.ToolAnnotations { return nil }
 func (c *captureTool) Call(ctx context.Context, input any) (*dive.ToolResult, error) {
 	c.got = input

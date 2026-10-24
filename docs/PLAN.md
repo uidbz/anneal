@@ -1,0 +1,176 @@
+# fyagent — plan
+
+A self-improving, opencode-style desktop coding agent in Go.
+
+- **Agent runtime:** [dive](https://github.com/deepnoodle-ai/dive) — generate→tool-call→repeat loop, Claude-Code-shaped toolkit, permissions, sessions, skills, subagents, compaction, MCP.
+- **GUI:** [fynerisor](https://github.com/uidbz/fynerisor) — Fyne desktop window whose UI is written in **Risor scripts** (the whole GUI lives in Risor; missing widget bindings get added upstream to fynerisor, v0.9.0+).
+- **Model:** [Strata](https://github.com/Niko1221/Strata) local inference server, OpenAI Chat Completions at `http://127.0.0.1:8081/v1/chat/completions`, model `qwen3.8-flash-next-iq3_s`, 256K context (verified live on this machine; default port is 8080, this machine serves on 8081).
+- **Learning loop:** Hermes-Agent-style (Nous Research): agent-authored skills, bounded MEMORY.md/USER.md, cross-session recall, background self-improvement review, write-approval staging, journey timeline.
+- **Episodic memory backend:** [tie](https://github.com/uidbz/tie) triple store (instead of SQLite) — sessions and word-token index live in a dedicated tie collection.
+
+## 0. Decisions (locked)
+
+1. Name: **fyagent** (module `fyagent`, binary `fyagent`, state in `~/.fyagent/`).
+2. Session search / episodic memory uses **tie**, not SQLite.
+3. The **whole GUI is Risor** (`ui/*.risor`); if a component is missing, it is added to fynerisor, not hardcoded in Go.
+4. **MCP and the headless CLI ship in the first delivery.**
+
+## 1. Environment facts (verified 2026-10-24)
+
+- Go 1.27.2; CGO/Fyne toolchain works (fynerisor builds here).
+- Strata serve live: `GET /v1/models` → `qwen3.8-flash-next-iq3_s`, `n_ctx: 262144`, port 8081 on this box.
+- Port 8080 is occupied by `pwplay-server` → endpoint is always configurable; health probe distinguishes *unreachable* vs *wrong service* (404 on `/v1/models`).
+- tie: user config at `~/.config/tie/config.toml`; triplestore at `http://storage:1161` (reachable), filehosts at `:1162`. fyagent uses its own collection (`[Collections.fyagent]` or `--tie-collection`).
+- dive `providers/openaicompletions` supports `WithEndpoint`, `WithModel`, `WithAPIKey`, `WithStreamTimeouts(firstEvent, idle)`, `WithMaxRetries`, Generate + Stream, reasoning params — exactly what Strata needs.
+- tie queries match **exact association values** (tag algebra); the server reverse-indexes *all* relations when unconfigured (`nil reverseRelations ⇒ index everything`) ⇒ word-token AND search works (unless the server pins `ReverseRelations`).
+- dive extras used: `permission.Manager` (modes default/plan/acceptEdits/bypassPermissions/dontAsk), `skill.Loader` (SKILL.md dirs, agentskills-compatible), `session.FileStore` (JSONL, turns), `subagent` pkg (explore/plan prompts), `experimental/{compaction,mcp,todo}`.
+- fynerisor v0.9.0 GUI API: `gui.NewApp`, `WithGlobal`, `LoadScript/Execute/ShowAndRun`, `(*Window).Do` for cross-thread GUI updates, `widget.NewMarkdown/RichText/MultiLineEntry/List/Tree/Accordion/Toolbar`, dialogs, shortcuts.
+
+## 2. Architecture
+
+```
+fyagent (single Go binary, CGO for Fyne)
+├─ GUI shell (fynerisor)  ◄──bridge──  ui/*.risor  (go:embed, disk-overridable)
+│      ▲ events (window.Do)  /  calls (non-blocking)
+├─ core (pure Go): SessionMgr RunMgr PermissionBridge MemoryStore
+│   SkillStore(+skill_manage) TieIndex ReviewQueue Config Event-bus
+├─ agent runtime (dive): hooks + extensions
+│   tools: toolkit + memory + skill_manage + session_search + todowrite
+│          + task(subagent) + skill + mcp
+└─ OpenAI Chat Completions (SSE, tools) ──► Strata :8081
+```
+
+All intelligence/state lives in Go; the Risor layer is presentation + interaction only. The same core runs headless (`fynerisor/core`, no Fyne).
+
+## 3. Repository layout
+
+```
+fyagent/
+├── cmd/fyagent/main.go            # GUI entry
+├── cmd/fyagent-headless/main.go   # same core, flag CLI, no Fyne
+├── core/
+│   ├── config/        config schema, env overrides, atomic save
+│   ├── model/         strata provider factory + HealthMonitor (/health,/v1/models)
+│   ├── agent/         dive.NewAgent composition; system-prompt assembly; event mapping
+│   ├── session/       dive FileStore wrapper (titles, project scoping, fork)
+│   ├── tieindex/      tie collection schema + indexer + word-token search
+│   ├── memory/        MEMORY.md/USER.md store, memory tool, injection scanner
+│   ├── skill/         skill dirs, skill_manage tool, staging, archive, usage ledger
+│   ├── review/        background self-improvement fork (defer-until-idle queue)
+│   ├── permission/    permission.Manager + dive.Dialog → GUI approval bridge
+│   ├── uiapi/         the `agent` global exposed to Risor + event marshaling
+│   └── paths/         ~/.fyagent resolution
+├── ui/                main/chat/sessions/approvals/skills/memory/settings .risor
+├── skills/            bundled starter skills (SKILL.md dirs)
+├── subagents/         subagent .md definitions
+├── internal/testutil/ fake OpenAI server (scripted tool rounds) for CI
+└── docs/ PLAN.md, CONFIG.md
+```
+
+State (per user):
+
+```
+~/.fyagent/
+├── config.json
+├── sessions/<id>.jsonl        # dive session.FileStore — conversation truth
+├── memories/MEMORY.md USER.md
+├── skills/…                   # agent-authored (create_dir); skills-archive/<date>/ for deletes
+├── pending/{skills,memory}/<id>.json   # staged writes (write_approval)
+├── usage.jsonl  logs/fyagent.log
+```
+
+Project-level: `./.fyagent/skills/`, read-compat `./.claude/skills/`, `./.agents/skills/`, context file `./AGENTS.md`.
+
+## 4. tie episodic index (`core/tieindex`)
+
+Conversation truth stays in dive JSONL; tie is the searchable index and can be rebuilt from disk (`fyagent index rebuild`). Collection `fyagent` in the user's tie triplestore.
+
+Schema (all values exact-match triples; search = reverse-association AND algebra):
+
+```
+(sessionID, tie-type,    session)      (sessionID, title, <t>)
+(sessionID, project,     <abs path>)   (sessionID, updated-at, <RFC3339-UTC>)
+(sessionID, model,       <id>)         (sessionID, session-msg, <msgID>)
+
+(msgID, tie-type,   session-msg)       (msgID, session-of, <sessionID>)
+(msgID, role,       user|assistant|tool)
+(msgID, tool,       <tool name>)       (msgID, turn, <n>)
+(msgID, msg-at,     <RFC3339-UTC>)     (msgID, snippet, <first ~400 chars>)
+(msgID, word,       <lowercased token, len≥3, capped ~300/msg>)
+```
+
+- `msgID = sha1(sessionID + turn + index)` (hex), stable across re-index.
+- **search** tool: tokens → `QuerySpec{Terms: toks, Scope: "session-msg", SortByValue: "updated-at", Descending: true, Expand: true}`; seed = reverse assoc of token[0], AND-intersect the rest — word-exact boolean search, ms-latency, zero LLM cost.
+- scroll/browse: load JSONL session, window around hit's turn.
+- Missing/stale collection: indexer creates on demand; degraded mode logs and keeps agent functional.
+
+## 5. opencode-parity features
+
+| opencode | fyagent | M |
+|---|---|---|
+| sessions list/resume/fork | FileStore + sidebar + tie titles | M3 |
+| plan/build modes + approvals | permission.ModePlan + approval inbox | M3 |
+| subagents | dive subagent pkg, `task` tool | M6 |
+| todo | experimental/todo | M3 |
+| MCP | experimental/mcp toolset | M8 |
+| compaction | experimental/compaction @82% ctx | M4 |
+| keybinds, slash cmds | window.AddShortcut, `/skill` routing | M2/M6 |
+| status bar | tok in/out, tok/s, ctx% | M2 |
+| config | ~/.fyagent/config.json | M1 |
+| headless CLI | cmd/fyagent-headless | M9 |
+
+## 6. Self-improvement (Hermes loop)
+
+- **memory tool**: MEMORY.md (2200 ch) + USER.md (1375 ch); ops add/patch/remove (unique-substring match), batch checked on final size; frozen snapshot at session start via model-only `ContextReminder`; dup-guard; injection scanner; `write_approval` staging.
+- **skill_manage**: create/patch/write_file/remove→archive/list/view in `~/.fyagent/skills`; SKILL.md standard (dive loader scans it); staging + GUI diff.
+- **session_search**: tie-backed (§4).
+- **background review**: PostGeneration enqueues; runs only when idle (no run + Strata quiet ≥45 s, coalescing, max-age fallback, re-queue on preemption); reviewer = small dive agent (memory + skill_manage + read-only), digest replay, iteration cap 6, input-token cap; notifications emitted from the **tool ledger** (never from model prose — guards against small models claiming saves they didn't make); `learnNow()` manual trigger.
+- **journey**: timeline of skill_events + memory_events in the GUI.
+- System-prompt learning rules: save corrections/conventions/env facts via `memory`; after non-trivial workflows offer `skill_manage` create; patch skills in place when improved during use; prefer `session_search` over memory bloat.
+
+## 7. GUI (all Risor)
+
+- Bridge is fire-and-forget + JSON events: `agent.send/interrupt/setMode/newSession/resume/fork/deleteSession/listSessions/pendingApprovals/answerApproval/pendingWrites/approveWrite/rejectWrite/writeDiff/skills/skillView/skillDelete/learnNow/memory/userProfile/memoryEdit/journey/provider/config/saveConfig/on(callback)`.
+- Events: `run.started, text.delta, thinking.delta, tool.start, tool.result, run.finished{usage,reason}, approval.requested, approval.resolved, staged.created, learned{kind,name,gist}, provider.state, session.updated`; deltas batched at 50 ms; every handler wrapped in `window.Do`.
+- Layout: toolbar (mode Select, model/status) | sessions sidebar + Skills/Memory/Journey tabs | markdown transcript (streaming plain tail block → finalized blocks; collapsible tool cards) | MultiLineEntry input with slash-commands; approval bar with Ctrl+Y/Ctrl+Shift+Y/Ctrl+N.
+- Ctrl+R reloads the UI script without touching the core (fynerisor superpower).
+- Missing bindings get upstreamed to fynerisor as needed (tracked in progress.md).
+
+## 8. Security
+
+permission.Manager rules/modes first; path policy (project + ~/.fyagent; deny `.ssh`, `.aws`, secrets); bash guard (danger patterns, no writes to ~/.fyagent); store writes injection-scanned; skills deletions archive; MCP tools ask-by-default; API keys env-only, never logged.
+
+## 9. Milestones (M0–M9)
+
+- **M0** Skeleton: go.mod, GUI opens, Go↔Risor echo round-trip. ✔ gate: event storm ≥50/s no freeze.
+- **M1** Config + Strata health + settings tab. ✔ gate: shows model id; wrong-service detected; hot endpoint change.
+- **M2** Agent loop + streaming chat + toolkit + stop button + usage status. ✔ gate: real fix-a-test task on Strata.
+- **M3** Sessions UI, permissions/plan-build modes, approval bridge, todo. ✔ gate: plan mode strips Write; approvals round-trip.
+- **M4** tie index + session_search + compaction. ✔ gate: cross-launch search <50 ms; 40-turn run stays under window.
+- **M5** memory stores + tool + staging. ✔ gate: correction lands, snapshot re-injected next session.
+- **M6** skills consumption + skill_manage + subagents + slash cmds. ✔ gate: "save what we did" → loads next session.
+- **M7** background review + journey + notifications. ✔ gate: idle-time consolidation observable.
+- **M8** MCP + polish (logs, toggles, sparklines).
+- **M9** headless CLI (`fyagent-headless -p "…"`).
+
+≈7–9 focused days; M0–M5 ≈ 4.
+
+## 10. Testing
+
+- Unit tests: config, memory, skill store, tieindex (against tie test-env `:2161/:2162` when up, else skip), uiapi bridge as plain Go.
+- Fake OpenAI server (`httptest`, scripted tool-call rounds, SSE) → deterministic agent/permission/compaction/review tests; CI never needs Strata.
+- `make e2e-strata` manual gate against live Strata.
+- Golden system-prompt snapshots; GUI kept thin, manual 10-click checklist per milestone.
+
+## 11. Risks → mitigations
+
+| Risk | Mitigation |
+|---|---|
+| local model misses `memory`/skill tool calls | tool-ledger ground truth; results echo file state; prompt rules; retry on unknown tool |
+| GPU contention (review/compaction vs interactive) | defer-until-idle queue; token caps; high compaction threshold (256K ctx) |
+| port 8080 conflict / endpoint drift | HealthMonitor states; endpoint in config + settings UI |
+| slow prompt processing stalls streams | generous first-event stream timeout; visible thinking state; dive retries |
+| Risor VM threading | non-blocking API; JSON payloads; window.Do everywhere; delta batching |
+| dive experimental API churn | pinned go.mod; thin wrappers in core/ |
+| prompt-injection via learned stores | write-time scanner; staging mode; journey pruning |
+| tie server restricted ReverseRelations | detect at startup; degrade session_search with warning (JSONL browse still works) |

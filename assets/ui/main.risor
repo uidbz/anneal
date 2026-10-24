@@ -15,13 +15,13 @@ let tailBuf = ""
 // ---------- helpers ----------
 let md = (text) => {
     let m = widget.NewMarkdown(text)
-    m.Wrapping = 1
+    m.Wrapping = constants.TextWrapBreak
     return m
 }
 
 let label = (text) => {
     let l = widget.NewLabel(text)
-    l.Wrapping = 1
+    l.Wrapping = constants.TextWrapBreak
     return l
 }
 

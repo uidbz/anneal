@@ -14,7 +14,7 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 - [x] **M6** skills + skill_manage + subagents + slash commands
 - [x] **M7** background review + journey + notifications
 - [x] **M8** MCP + polish
-- [ ] **M9** headless CLI (fyagent-headless)
+- [x] **M9** headless CLI (fyagent-headless)
 
 Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes below).
 
@@ -46,6 +46,12 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Shipped to fynerisor main: **a0280fb** app.Quit/window.Close (#2), **45e3eca** Markdown SetText/.Text (#3), **dc84d6b** container Append/Remove/Refresh + Border setters + Scroll.SetContent (#4), **1c0e93f** tie.connect options vs config.toml (#5). Tests added upstream; all green (pre-existing tie test was #5 itself).
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
+
+### 2026-10-25 — M9 done (fyagent-headless) — ALL MILESTONES DONE
+- `cmd/fyagent-headless`: same core (config/sessions/tie/memory/skills/review/MCP), no GUI. `-p "task"` one-shot (exit 0/1), `-i` REPL (/new /interrupt /quit), `-json` raw JSONL event stream (exact events the GUI gets), `-v`, `--session ID` resume, `--new`, permission policy: `-yolo` (bypassPermissions mode) / `-allow a,b,*` (answers prompts; anything unlisted denied when no policy given), `--learn` runs the review pass after the task.
+- Event sink = Bridge tap (sees every emitted event; handlers dispatched on goroutines to stay off the lock path). SIGINT interrupts a running task, double-ctrl-C exits.
+- Live e2e: one-shot Bash run + policy auto-allow + usage line + exit 0; REPL streamed "hello repl"; JSONL shows the full event vocabulary incl. memory.updated (agent saved a fact itself); `-p "Just reply hi." -learn` → `🧠 review saved 4 lessons`.
+- **M0–M9 complete.** Next: self code-review + fixes + full documentation pass.
 
 ### 2026-10-24 — M8 done (MCP)
 - `config.MCP{Enabled, Servers}` — Anthropic-mcp.json-shaped (command/args/env/url, type inferred stdio|http); dive `experimental/mcp` (own module, tagged separately — v1.9.0).

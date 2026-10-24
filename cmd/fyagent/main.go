@@ -4,11 +4,14 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
 	"fyagent/assets"
 	"fyagent/core/app"
 
+	"fyne.io/fyne/v2"
 	"github.com/uidbz/fynerisor/gui"
+	"github.com/uidbz/fynerisor/gui/guithread"
 )
 
 func main() {
@@ -36,6 +39,12 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	a.Start(ctx)
+
+	// GLFW/Wayland ignores pre-show Resize hints; force the size once the
+	// main loop is live.
+	time.AfterFunc(500*time.Millisecond, func() {
+		guithread.Do(func() { fw.FyneWindow.Resize(fyne.NewSize(1100, 750)) })
+	})
 
 	fw.ShowAndRun()
 }

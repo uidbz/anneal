@@ -1,61 +1,157 @@
-// fyagent UI — M1 shell (provider status + bridge smoke; full UI lands in M2)
-// Note: Risor v2 has no for/while loops and no ternary — use higher-order
-// functions, if/else, and builtins (len, sprintf, map, filter).
+// fyagent UI — M2: chat transcript, streaming, tool cards, provider status.
+// Risor v2 constraints (see fynerisor skill): no for/while, no map/filter,
+// no ternary, if (cond) needs parens, missing map keys error on dot-access,
+// keyword keys (in/out) break dot-access, free vars resolve at compile time
+// (placeholder-rebind for circular layouts). Containers have no Append — we
+// re-compose the layout on structural changes; widgets persist. Arrays
+// support `+` concat.
 require(["v0.9", "@gui", "@json", "@strings"])
 
-let statusLbl = widget.NewLabel("model server: connecting…")
-statusLbl.Wrapping = 1 // TextWrapSoft
-let logLbl = widget.NewLabel("fyagent — waiting for events…")
-logLbl.Wrapping = 1
+// ---------- state ----------
+let widgets = []      // finalized blocks
+let tail = nil        // optional streaming tail (always visually last)
+let tailBuf = ""
+
+// ---------- helpers ----------
+let md = (text) => {
+    let m = widget.NewMarkdown(text)
+    m.Wrapping = 1
+    return m
+}
+
+let label = (text) => {
+    let l = widget.NewLabel(text)
+    l.Wrapping = 1
+    return l
+}
+
+// placeholder, real implementation defined below (compile-time capture!)
+let submit = () => {}
+
+let statusLbl = label("model server: connecting…")
+let usageLbl = label("")
+let top = container.NewBorder(nil, nil, nil, usageLbl, statusLbl)
 
 let entry = widget.NewEntry()
-entry.PlaceHolder = "type something, press the button"
+entry.PlaceHolder = "describe a task — Enter to send"
 
-let count = 0
-let scroll = container.NewScroll(logLbl)
+let bottom = container.NewBorder(nil, nil, nil, container.NewHBox([
+    widget.NewButton("send", () => { submit() }),
+    widget.NewButton("stop", () => { agent.interrupt() }),
+]), entry)
 
+let relayout = () => {
+    let all = widgets
+    if (tail != nil) {
+        all = all + [tail]
+    }
+    let sc = container.NewScroll(container.NewVBox(all))
+    window.SetContent(container.NewBorder(top, bottom, nil, nil, sc))
+    sc.ScrollToBottom()
+}
+
+let addBlock = (w) => {
+    widgets = widgets + [w]
+    relayout()
+}
+
+let ensureTail = () => {
+    if (tail == nil) {
+        tailBuf = ""
+        tail = label("")
+    }
+}
+
+// closeTail replaces the streaming tail (if any) with block w; nil drops it.
+let closeTail = (w) => {
+    if (tail != nil) {
+        if (w != nil) {
+            widgets = widgets + [w]
+        }
+        tail = nil
+        tailBuf = ""
+        relayout()
+    } else if (w != nil) {
+        addBlock(w)
+    }
+}
+
+submit = () => {
+    let text = strings.trim(entry.Text, " \t\n")
+    if (text == "") { return }
+    entry.Text = ""
+    addBlock(md("> " + text))
+    agent.send(text)
+}
+
+entry.OnSubmitted(() => { submit() })
+
+// ---------- events ----------
 let showHealth = (h) => {
     if (h.state == "online") {
-        statusLbl.Text = sprintf("model: %s · ctx: %d · %s", h.model, h.ctx_window, h.state)
-    } else if (h.error != nil && h.error != "") {
+        statusLbl.Text = sprintf("model: %s · ctx: %d", h.model, h.ctx_window)
+    } else if (h.error != "") {
         statusLbl.Text = sprintf("model server: %s — %s", h.state, h.error)
     } else {
         statusLbl.Text = sprintf("model server: %s", h.state)
     }
-    window.SetStatus(sprintf("fyagent · %s", h.state))
 }
 
 agent.on((evtJson) => {
     let evt = json.parse(evtJson)
-    if (evt.type == "provider.state") {
+    let t = evt.type
+
+    if (t == "provider.state") {
         showHealth(evt.health)
-        print(sprintf("ui: provider %s model=%s", evt.health.state, evt.health.model))
+        return
     }
-    count = count + 1
-    let note = evt.type
-    if (evt.type == "echo" || evt.type == "pong") {
-        note = sprintf("%s %s", evt.type, evt.text)
+    if (t == "run.started") {
+        window.SetStatus("running…")
+        usageLbl.Text = "running…"
+        return
     }
-    logLbl.Text = logLbl.Text + "\n[" + sprintf("%03d", count) + "] " + note
-    if (count > 200) {
-        logLbl.Text = note
-        count = 1
+    if (t == "run.busy") {
+        window.SetStatus("a run is already active")
+        return
     }
-    scroll.ScrollToBottom()
+    if (t == "text.delta") {
+        ensureTail()
+        tailBuf = tailBuf + evt.text
+        tail.Text = tailBuf
+        return
+    }
+    if (t == "message.final") {
+        closeTail(md(evt.text))
+        return
+    }
+    if (t == "tool.start") {
+        closeTail(label("🔧 " + evt.name + " " + strings.replace_all(evt.input, "\n", " ")))
+        return
+    }
+    if (t == "tool.result") {
+        let mark = "✔"
+        if (evt.error) { mark = "✖" }
+        addBlock(label("  " + mark + " " + evt.name + ": " + strings.replace_all(evt.preview, "\n", " ")))
+        return
+    }
+    if (t == "run.finished") {
+        closeTail(nil)
+        if (evt.ok) {
+            window.SetStatus("ready")
+            let u = evt.usage
+            usageLbl.Text = sprintf("in: %d · out: %d · ctx: %d%%", u.tin, u.tout, evt.ctx_pct)
+        } else {
+            window.SetStatus("error")
+            usageLbl.Text = ""
+            addBlock(label("⚠ " + evt.error))
+        }
+        return
+    }
 })
 
-let sendBtn = widget.NewButton("echo → go → here", () => {
-    agent.echo(entry.Text)
-})
-
-let probeBtn = widget.NewButton("probe", () => {
-    showHealth(json.parse(agent.probe()))
-})
-
-// initial snapshot (probe result is also emitted asynchronously)
+// ---------- boot ----------
 showHealth(json.parse(agent.probe()))
-
-let bottom = container.NewBorder(nil, nil, nil, container.NewHBox([sendBtn, probeBtn]), entry)
-window.SetContent(container.NewBorder(nil, bottom, statusLbl, nil, scroll))
-window.Resize(820, 520)
-agent.ping()
+relayout()
+window.Resize(980, 680)
+window.SetStatus("fyagent")
+print("BOOT-DONE")

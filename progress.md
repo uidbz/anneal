@@ -7,7 +7,7 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 
 - [x] **M0** Skeleton: module + deps, GUI opens, Go↔Risor event round-trip
 - [x] **M1** Config + Strata provider + HealthMonitor + settings tab
-- [ ] **M2** Agent loop + streaming chat + toolkit + stop + usage status
+- [x] **M2** Agent loop + streaming chat + toolkit + stop + usage status
 - [ ] **M3** Sessions UI + permission modes + approval bridge + todo
 - [ ] **M4** tie index + session_search + compaction
 - [ ] **M5** memory stores + memory tool + staging
@@ -40,6 +40,13 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - [ ] (nice) constants exposure for `fyne.TextWrap*` instead of raw ints
 
 ## Notes (newest first)
+
+### 2026-10-24 — M2 done (agent loop + streaming chat) + black-window debug
+- `core/agent`: dive Runner (toolkit Read/Write/Edit/TextEditor/Glob/Grep/ListDir/Bash/Fetch, in-mem session, iteration cap), delta batching (240 chars/60 ms), normalized event payloads (every key always present).
+- **E2E gate on live Strata** (twice): fixed a seeded bug in `/tmp/opencode/demo` (`a-b`→`a+b`) via Edit tool, verified with Bash `go test`, streamed summary, `run.finished ok=true`.
+- Black-window report debugged: Risor **parse/compile errors killed the script before SetContent**. Culprits: map key `in` (`u.in` → reserved word → renamed `tin/tout`); closures capture free vars at compile time (placeholder-rebind pattern for circular layouts); no `map` builtin (recomposed layout via array `+`). Verified rendering with swaymsg + grim + pixel stats (theme #181819, widgets present). sway tiles full-size — window "size" is the tile, pre-show Resize ignored (GLFW/Wayland).
+- fynerisor learnings recorded as a skill: **~/.agents/skills/fynerisor/SKILL.md** (bridge pattern, functionCalls/Ready threading, Risor v2 gotchas, `strings.trim(s,cutset)` arity, `json.parse`, no `strings.replace`/`map`, app.Quit unbound → `agent.quit`, GoFunc reflection limits, debug via `risor.Eval` + file bisection).
+- Next: M3 sessions + permissions + plan/build modes.
 
 ### 2026-10-24 — M1 done (config + Strata health)
 - `core/paths`, `core/config` (JSON, defaults, env overrides, atomic save), `core/model` (dive provider factory + HealthMonitor), `core/app` (glue: AgentAPI = bridge + provider/config/probe/saveConfig).

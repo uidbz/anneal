@@ -5,8 +5,10 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"time"
 
+	"fyagent/core/agent"
 	"fyagent/core/config"
 	"fyagent/core/model"
 	"fyagent/core/uiapi"
@@ -18,6 +20,7 @@ type App struct {
 	Cfg     *config.Config
 	Monitor *model.Monitor
 	Bridge  *uiapi.Bridge
+	Runner  *agent.Runner
 
 	lastHealth string // dedupe provider.state events
 }
@@ -29,6 +32,8 @@ func New() (*App, error) {
 	}
 	a := &App{Cfg: cfg, Bridge: uiapi.New()}
 	a.Monitor = model.NewMonitor(cfg.Provider, a.onHealth)
+	wd, _ := os.Getwd()
+	a.Runner = agent.NewRunner(cfg, a.Monitor, a.Bridge, wd)
 	return a, nil
 }
 
@@ -52,6 +57,21 @@ func (a *App) AgentAPI() map[string]any {
 		a.Monitor.SetProvider(a.Cfg.Provider)
 		a.Bridge.Emit(map[string]any{"type": "config.changed"})
 		return toJSON(map[string]any{"ok": true})
+	}
+	api["send"] = func(input string) any {
+		a.Runner.Send(input)
+		return nil
+	}
+	api["interrupt"] = func() any {
+		a.Runner.Interrupt()
+		return nil
+	}
+	api["quit"] = func() any {
+		go func() {
+			time.Sleep(150 * time.Millisecond) // let pending events flush
+			os.Exit(0)
+		}()
+		return nil
 	}
 	return api
 }

@@ -1,26 +1,46 @@
-// fyagent UI — M0 smoke shell (replaced by the full UI in M2+)
-// Note: Risor v2 has no for/while loops and no ternary — keep scripts to
-// higher-order functions, if/else, and builtins (len, sprintf, map, filter).
+// fyagent UI — M1 shell (provider status + bridge smoke; full UI lands in M2)
+// Note: Risor v2 has no for/while loops and no ternary — use higher-order
+// functions, if/else, and builtins (len, sprintf, map, filter).
 require(["v0.9", "@gui", "@json", "@strings"])
 
-let logLbl = widget.NewLabel("fyagent M0 skeleton — waiting for events…")
-logLbl.Wrapping = 1 // TextWrapSoft
+let statusLbl = widget.NewLabel("model server: connecting…")
+statusLbl.Wrapping = 1 // TextWrapSoft
+let logLbl = widget.NewLabel("fyagent — waiting for events…")
+logLbl.Wrapping = 1
+
 let entry = widget.NewEntry()
 entry.PlaceHolder = "type something, press the button"
 
 let count = 0
 let scroll = container.NewScroll(logLbl)
 
+let showHealth = (h) => {
+    if (h.state == "online") {
+        statusLbl.Text = sprintf("model: %s · ctx: %d · %s", h.model, h.ctx_window, h.state)
+    } else if (h.error != nil && h.error != "") {
+        statusLbl.Text = sprintf("model server: %s — %s", h.state, h.error)
+    } else {
+        statusLbl.Text = sprintf("model server: %s", h.state)
+    }
+    window.SetStatus(sprintf("fyagent · %s", h.state))
+}
+
 agent.on((evtJson) => {
     let evt = json.parse(evtJson)
+    if (evt.type == "provider.state") {
+        showHealth(evt.health)
+        print(sprintf("ui: provider %s model=%s", evt.health.state, evt.health.model))
+    }
     count = count + 1
-    let line = sprintf("[%03d %s] %s", count, evt.type, evt.text)
-    logLbl.Text = logLbl.Text + "\n" + line
+    let note = evt.type
+    if (evt.type == "echo" || evt.type == "pong") {
+        note = sprintf("%s %s", evt.type, evt.text)
+    }
+    logLbl.Text = logLbl.Text + "\n[" + sprintf("%03d", count) + "] " + note
     if (count > 200) {
-        logLbl.Text = line
+        logLbl.Text = note
         count = 1
     }
-    print("ui: " + line)
     scroll.ScrollToBottom()
 })
 
@@ -28,12 +48,14 @@ let sendBtn = widget.NewButton("echo → go → here", () => {
     agent.echo(entry.Text)
 })
 
-let pingBtn = widget.NewButton("ping", () => {
-    agent.ping()
+let probeBtn = widget.NewButton("probe", () => {
+    showHealth(json.parse(agent.probe()))
 })
 
-let bottom = container.NewBorder(nil, nil, nil, container.NewHBox([sendBtn, pingBtn]), entry)
-window.SetContent(container.NewBorder(nil, bottom, nil, nil, scroll))
-window.Resize(720, 480)
-window.SetStatus("fyagent M0: bridge up")
-agent.ping() // startup round-trip: proves core→script event delivery
+// initial snapshot (probe result is also emitted asynchronously)
+showHealth(json.parse(agent.probe()))
+
+let bottom = container.NewBorder(nil, nil, nil, container.NewHBox([sendBtn, probeBtn]), entry)
+window.SetContent(container.NewBorder(nil, bottom, statusLbl, nil, scroll))
+window.Resize(820, 520)
+agent.ping()

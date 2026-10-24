@@ -6,7 +6,7 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 ## Milestones
 
 - [x] **M0** Skeleton: module + deps, GUI opens, Go↔Risor event round-trip
-- [ ] **M1** Config + Strata provider + HealthMonitor + settings tab
+- [x] **M1** Config + Strata provider + HealthMonitor + settings tab
 - [ ] **M2** Agent loop + streaming chat + toolkit + stop + usage status
 - [ ] **M3** Sessions UI + permission modes + approval bridge + todo
 - [ ] **M4** tie index + session_search + compaction
@@ -40,6 +40,12 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - [ ] (nice) constants exposure for `fyne.TextWrap*` instead of raw ints
 
 ## Notes (newest first)
+
+### 2026-10-24 — M1 done (config + Strata health)
+- `core/paths`, `core/config` (JSON, defaults, env overrides, atomic save), `core/model` (dive provider factory + HealthMonitor), `core/app` (glue: AgentAPI = bridge + provider/config/probe/saveConfig).
+- Health states verified live: pwplay-on-8080 → `wrong_service` (404 on /v1/models), Strata :8081 → `online model=qwen3.8-flash-next-iq3_s`, ctx 262144 reported.
+- fynerisor threading truth: `window.Do` sends on the `functionCalls` channel **created in `Execute()`**; callbacks run on the script goroutine (serialized with main). Bridge now gates delivery behind `Ready()` (called after Execute) — events before that are queued. vmguard contention retry kept as defense.
+- Next: M2 dive agent + streaming chat transcript.
 
 ### 2026-10-24 — M0 done (skeleton + bridge)
 - `cmd/fyagent` boots fynerisor, embeds `assets/ui/main.risor` (`FYAGENT_UI_DIR` overrides for hot dev).

@@ -29,10 +29,12 @@ type Bridge struct {
 	mu       sync.Mutex
 	handler  *object.Closure
 	callFunc object.CallFunc
-	queue    []string // events queued before a handler is registered
+	queue    []string // events queued before handler registration / Ready
+	ready    bool     // true once fw.Execute has created the callback channel
 }
 
-// New creates the bridge; call Attach once the fynerisor window exists.
+// New creates the bridge; call Attach once the fynerisor window exists and
+// Ready after fw.Execute (its callback channel only exists from then on).
 func New() *Bridge {
 	return &Bridge{}
 }
@@ -47,17 +49,37 @@ func (b *Bridge) Attach(fw *gui.Window) {
 // closure from Go goroutines (guarded by vmguard).
 func (b *Bridge) setOn(cb *object.Closure, callFunc object.CallFunc) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	b.handler, b.callFunc = cb, callFunc
-	queued := b.queue
+	ready, queued := b.ready, b.queue
+	if ready {
+		b.queue = nil
+	}
+	b.mu.Unlock()
+	if ready {
+		for _, ev := range queued {
+			b.dispatch(ev)
+		}
+	}
+}
+
+// Ready opens event delivery; call right after fw.Execute, which creates the
+// fynerisor callback channel that window.Do sends on.
+func (b *Bridge) Ready() {
+	b.mu.Lock()
+	b.ready = true
+	queued, haveHandler := b.queue, b.handler != nil
 	b.queue = nil
-	for _, ev := range queued {
-		b.dispatch(ev)
+	b.mu.Unlock()
+	if haveHandler {
+		for _, ev := range queued {
+			b.dispatch(ev)
+		}
 	}
 }
 
 // Emit publishes a core event to the script handler as JSON. Safe from any
-// goroutine. Events emitted before on() are buffered (bounded).
+// goroutine. Events emitted before Ready or before a handler is registered
+// are buffered (bounded).
 func (b *Bridge) Emit(v any) {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -65,8 +87,8 @@ func (b *Bridge) Emit(v any) {
 		return
 	}
 	b.mu.Lock()
-	if b.handler == nil {
-		if len(b.queue) < 512 {
+	if !b.ready || b.handler == nil {
+		if len(b.queue) < 4096 {
 			b.queue = append(b.queue, string(data))
 		}
 		b.mu.Unlock()
@@ -85,9 +107,9 @@ func (b *Bridge) dispatch(jsonStr string) {
 
 func (b *Bridge) deliver(jsonStr string, attempt int) {
 	b.mu.Lock()
-	fw := b.fw
+	fw, ready := b.fw, b.ready
 	b.mu.Unlock()
-	if fw == nil {
+	if fw == nil || !ready {
 		return
 	}
 	fw.Do(func() {

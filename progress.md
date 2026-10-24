@@ -9,7 +9,7 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 - [x] **M1** Config + Strata provider + HealthMonitor + settings tab
 - [x] **M2** Agent loop + streaming chat + toolkit + stop + usage status
 - [x] **M3** Sessions UI + permission modes + approval bridge + todo
-- [ ] **M4** tie index + session_search + compaction
+- [x] **M4** tie index + session_search + compaction
 - [ ] **M5** memory stores + memory tool + staging
 - [ ] **M6** skills + skill_manage + subagents + slash commands
 - [ ] **M7** background review + journey + notifications
@@ -46,6 +46,15 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Shipped to fynerisor main: **a0280fb** app.Quit/window.Close (#2), **45e3eca** Markdown SetText/.Text (#3), **dc84d6b** container Append/Remove/Refresh + Border setters + Scroll.SetContent (#4), **1c0e93f** tie.connect options vs config.toml (#5). Tests added upstream; all green (pre-existing tie test was #5 itself).
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
+
+### 2026-10-24 — M4 done (tie index + session_search + compaction)
+- `core/tieindex`: rebuildable word-token index in tie collection `fyagent` (schema in §4 of PLAN); msgID=sha1(sess:pos); incremental per-session indexing after each run (`-rebuild-index` flag + `agent.rebuildIndex()` for full rebuilds); degraded mode never blocks the agent (probe = any HTTP answer counts).
+- **tie gotcha (big)**: triplestore queries match by **key** unless `Reverse: true`; and reverse hits only cover the server's **reverse-relation whitelist** — the live server reverse-indexes `tag` + `tie-type` only. Private relations (`word`) are invisible to value search. Schema fix: tokens under relation **`tag`**; role/snippet/etc as forward attrs via `Expand`. (Recorded in tie skill.)
+- `session_search` tool (FuncTool, ReadOnlyHint): token AND-search via `QuerySpec{Terms, Reverse, Scope:"session-msg", SortByValue:"msg-at"}` + client-side collision filter; grouped hits w/ title/date/snippet.
+- Compaction: custom `preGenCompactionHook` (PreGeneration, est tokens≈bytes/4, `CompactMessages`, state event) + `compaction.MidTurnCompactionHook` (in-run, notify → `compaction.done` UI line); threshold = ctxWindow × pct (82% default), floor 8000.
+- UI: tie status label in header (`tie.state`), `tie.rebuilt` + `compaction.done` transcript notices.
+- Gates: live tie roundtrip **search latency ~2 ms** (gate <50 ms ✔); e2e cross-launch recall OK (driver A marks session with "markhor mountains" → driver B fresh session → model calls session_search → snippet found); compaction hook unit-tested w/ scripted recap LLM (+ threshold math).
+- Next: M5 memory stores + memory tool + staging.
 
 ### 2026-10-24 — M3 done (sessions + permissions + plan/build + todo)
 - Sessions: dive `session.FileStore` under `~/.fyagent/sessions`; boot resumes most recent; sidebar lists/restores (transcript replay as normalized blocks); title = first task (flushed via `store.Put` after run — appends never rewrite the header).

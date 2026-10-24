@@ -11,6 +11,7 @@ import (
 	"fyagent/core/agent"
 	"fyagent/core/config"
 	"fyagent/core/model"
+	"fyagent/core/tieindex"
 	"fyagent/core/uiapi"
 )
 
@@ -21,6 +22,7 @@ type App struct {
 	Monitor *model.Monitor
 	Bridge  *uiapi.Bridge
 	Runner  *agent.Runner
+	Tie     *tieindex.Indexer
 
 	lastHealth string // dedupe provider.state events
 }
@@ -37,11 +39,28 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	a.Tie = tieindex.New(cfg.Tie)
+	a.Runner.SetIndex(a.Tie)
 	return a, nil
+}
+
+// ConnectTie connects the tie index (blocking; call off the GUI path) and
+// reports the result as a tie.state event. Safe to retry.
+func (a *App) ConnectTie() {
+	if !a.Tie.Enabled() {
+		return
+	}
+	if err := a.Tie.Connect(); err != nil {
+		a.Tie.LogState()
+	} else {
+		a.Tie.LogState()
+	}
+	a.Bridge.Emit(map[string]any{"type": "tie.state", "state": a.Tie.State()})
 }
 
 func (a *App) Start(ctx context.Context) {
 	a.Monitor.Start(ctx, healthInterval)
+	go a.ConnectTie() // never blocks the GUI; degrades gracefully
 }
 
 // AgentAPI is the `agent` global exposed to Risor scripts.
@@ -87,6 +106,18 @@ func (a *App) AgentAPI() map[string]any {
 		return nil
 	}
 	api["mode"] = func() any { return a.Runner.Mode() }
+	api["tieState"] = func() any { return toJSON(a.Tie.State()) }
+	api["rebuildIndex"] = func() any {
+		go func() {
+			n, err := a.Runner.RebuildIndex(context.Background())
+			msg := map[string]any{"type": "tie.rebuilt", "sessions": n, "error": ""}
+			if err != nil {
+				msg["error"] = err.Error()
+			}
+			a.Bridge.Emit(msg)
+		}()
+		return nil
+	}
 	api["quit"] = func() any {
 		go func() {
 			time.Sleep(150 * time.Millisecond) // let pending events flush

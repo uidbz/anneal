@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -15,9 +17,26 @@ import (
 )
 
 func main() {
+	rebuild := flag.Bool("rebuild-index", false, "re-index all sessions into tie and exit")
+	flag.Parse()
+
 	a, err := app.New()
 	if err != nil {
 		log.Fatalf("fyagent: %v", err)
+	}
+
+	if *rebuild {
+		if err := a.Tie.Connect(); err != nil {
+			log.Fatalf("fyagent: tie connect: %v", err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		n, err := a.Runner.RebuildIndex(ctx)
+		if err != nil {
+			log.Fatalf("fyagent: rebuild: %v", err)
+		}
+		fmt.Printf("fyagent: re-indexed %d sessions\n", n)
+		return
 	}
 
 	fw := gui.NewApp("fyagent",

@@ -101,7 +101,9 @@ let submit = () => {}         // placeholder
 
 let statusLbl = label("model server: connecting…")
 let usageLbl = label("")
-let statusRow = container.NewBorder(nil, nil, nil, usageLbl, statusLbl)
+let tieLbl = label("")
+let rightCol = container.NewVBox([usageLbl, tieLbl])
+let statusRow = container.NewBorder(nil, nil, nil, rightCol, statusLbl)
 
 let modeBtn = widget.NewButton("", () => {
     if (mode == "plan") { agent.setMode("default") } else { agent.setMode("plan") }
@@ -239,6 +241,25 @@ agent.on((evtJson) => {
     }
     if (t == "session.error") {
         addBlock(label("⚠ session " + evt.id + ": " + evt.error))
+        return
+    }
+    if (t == "tie.state") {
+        let s = evt.state
+        if (!s.enabled) { tieLbl.Text = "" }
+        else if (s.online) { tieLbl.Text = "index: " + s.collection }
+        else { tieLbl.Text = "index: offline" }
+        return
+    }
+    if (t == "tie.rebuilt") {
+        if (evt.error != "") {
+            addBlock(label("⚠ index rebuild: " + evt.error))
+        } else {
+            addBlock(label("✔ index rebuilt: " + sprintf("%d sessions", evt.sessions)))
+        }
+        return
+    }
+    if (t == "compaction.done") {
+        addBlock(label(sprintf("🗜 context compacted: %d → %d tokens (%d msgs)", evt.before, evt.after, evt.msgs)))
         return
     }
     if (t == "todo.updated") {

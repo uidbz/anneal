@@ -11,13 +11,18 @@ import (
 
 	"fyagent/core/config"
 	"fyagent/core/model"
+	"fyagent/core/tieindex"
 	"fyagent/core/uiapi"
 
 	"github.com/deepnoodle-ai/dive"
+	"github.com/deepnoodle-ai/dive/experimental/compaction"
+	"github.com/deepnoodle-ai/dive/llm"
 	"github.com/deepnoodle-ai/dive/permission"
 	"github.com/deepnoodle-ai/dive/session"
 	"github.com/deepnoodle-ai/dive/toolkit"
 )
+
+func nowUTC() time.Time { return time.Now().UTC() }
 
 // Runner owns the conversation session and executes one task turn at a time.
 type Runner struct {
@@ -27,6 +32,7 @@ type Runner struct {
 	cwd     string
 	store   *session.FileStore
 	mgr     *permission.Manager
+	index   *tieindex.Indexer
 
 	mu           sync.Mutex
 	sess         *session.Session
@@ -38,6 +44,9 @@ type Runner struct {
 	permSeq      int
 	pendingPerms map[string]chan *dive.DialogOutput
 }
+
+// SetIndex attaches the tie index (nil or disabled = no session_search).
+func (r *Runner) SetIndex(idx *tieindex.Indexer) { r.index = idx }
 
 func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge, cwd string) (*Runner, error) {
 	r := &Runner{
@@ -113,25 +122,42 @@ func (r *Runner) run(id int, input string) {
 		sess.SetTitle(clip(input, 60))
 	}
 
+	tools := []dive.Tool{
+		toolkit.NewReadFileTool(),
+		toolkit.NewWriteFileTool(),
+		toolkit.NewEditTool(),
+		toolkit.NewTextEditorTool(),
+		toolkit.NewGlobTool(),
+		toolkit.NewGrepTool(),
+		toolkit.NewListDirectoryTool(),
+		toolkit.NewBashTool(),
+		toolkit.NewFetchTool(),
+		r.todoTool(),
+	}
+	if r.index != nil && r.index.Enabled() {
+		tools = append(tools, r.sessionSearchTool())
+	}
+
+	prompt := SystemPrompt(r.cwd, r.Mode())
+	hooks := dive.Hooks{
+		PreToolUse: []dive.PreToolUseHook{permission.HookFromManager(r.mgr)},
+	}
+	if r.cfg.Compaction.Enabled {
+		threshold := compactionThreshold(h.CtxWindow, r.cfg.Compaction.ThresholdPct)
+		hooks.PreGeneration = []dive.PreGenerationHook{r.preGenCompactionHook(provider, prompt, threshold)}
+		hooks.PreIteration = []dive.PreIterationHook{
+			compaction.MidTurnCompactionHook(provider, threshold,
+				compaction.WithMidTurnSystemPrompt(prompt),
+				compaction.WithMidTurnNotify(r.notifyCompaction)),
+		}
+	}
+
 	agent, err := dive.NewAgent(dive.AgentOptions{
-		Name:         "fyagent",
-		SystemPrompt: SystemPrompt(r.cwd, r.Mode()),
-		Model:        provider,
-		Tools: []dive.Tool{
-			toolkit.NewReadFileTool(),
-			toolkit.NewWriteFileTool(),
-			toolkit.NewEditTool(),
-			toolkit.NewTextEditorTool(),
-			toolkit.NewGlobTool(),
-			toolkit.NewGrepTool(),
-			toolkit.NewListDirectoryTool(),
-			toolkit.NewBashTool(),
-			toolkit.NewFetchTool(),
-			r.todoTool(),
-		},
-		Hooks: dive.Hooks{
-			PreToolUse: []dive.PreToolUseHook{permission.HookFromManager(r.mgr)},
-		},
+		Name:               "fyagent",
+		SystemPrompt:       prompt,
+		Model:              provider,
+		Tools:              tools,
+		Hooks:              hooks,
 		ToolIterationLimit: r.cfg.Agent.ToolIterationLimit,
 		Session:            sess,
 		ModelSettings: &dive.ModelSettings{
@@ -213,6 +239,7 @@ func (r *Runner) run(id int, input string) {
 		sess.SetMetadata("todos", items)
 	}
 	_ = r.store.Put(context.Background(), sess)
+	r.indexSessionNow(sess, h.Model)
 	// Clear before announcing completion: a UI that chains sends on
 	// run.finished must not hit run.busy.
 	r.clearRunning()
@@ -224,6 +251,52 @@ func (r *Runner) clearRunning() {
 	r.mu.Lock()
 	r.running, r.cancel = false, nil
 	r.mu.Unlock()
+}
+
+// compactionThreshold maps ctx window + config percentage to a token budget
+// (dive estimates tokens as ~bytes/4, so this is intentionally approximate).
+func compactionThreshold(ctxWindow, pct int) int {
+	if ctxWindow <= 0 {
+		return compaction.DefaultContextTokenThreshold
+	}
+	if pct <= 0 || pct > 95 {
+		pct = 82
+	}
+	t := ctxWindow * pct / 100
+	if t < 8000 {
+		t = 8000
+	}
+	return t
+}
+
+func (r *Runner) notifyCompaction(ev *compaction.CompactionEvent) {
+	r.emit(map[string]any{"type": "compaction.done",
+		"before": ev.TokensBefore, "after": ev.TokensAfter, "msgs": ev.MessagesCompacted})
+}
+
+// preGenCompactionHook compacts persisted between-turn history when the
+// (estimated) context exceeds threshold; keeps the full transcript readable
+// via AllMessages, the summary is what the model sees next.
+func (r *Runner) preGenCompactionHook(provider llm.LLM, prompt string, threshold int) dive.PreGenerationHook {
+	return func(ctx context.Context, hctx *dive.HookContext) error {
+		est := 0
+		for _, m := range hctx.Messages {
+			est += len(m.Text()) / 4
+		}
+		if est < threshold {
+			return nil
+		}
+		compacted, ev, err := compaction.CompactMessages(ctx, provider, hctx.Messages, prompt, "", est)
+		if err != nil {
+			return nil // best effort
+		}
+		hctx.Messages = compacted
+		if hctx.Values != nil {
+			hctx.Values[dive.StateKeyCompactionEvent] = ev
+		}
+		r.notifyCompaction(ev)
+		return nil
+	}
 }
 
 func (r *Runner) finishRun(id int, ok bool, text, errMsg string, in, outTok, ctxPct int) {

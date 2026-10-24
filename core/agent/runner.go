@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"fyagent/core/config"
+	"fyagent/core/memory"
 	"fyagent/core/model"
 	"fyagent/core/tieindex"
 	"fyagent/core/uiapi"
@@ -33,6 +34,7 @@ type Runner struct {
 	store   *session.FileStore
 	mgr     *permission.Manager
 	index   *tieindex.Indexer
+	mem     *memory.Store
 
 	mu           sync.Mutex
 	sess         *session.Session
@@ -47,6 +49,9 @@ type Runner struct {
 
 // SetIndex attaches the tie index (nil or disabled = no session_search).
 func (r *Runner) SetIndex(idx *tieindex.Indexer) { r.index = idx }
+
+// SetMemory attaches the memory store (nil or disabled = no memory tool).
+func (r *Runner) SetMemory(m *memory.Store) { r.mem = m }
 
 func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge, cwd string) (*Runner, error) {
 	r := &Runner{
@@ -137,14 +142,18 @@ func (r *Runner) run(id int, input string) {
 	if r.index != nil && r.index.Enabled() {
 		tools = append(tools, r.sessionSearchTool())
 	}
+	if r.mem != nil && r.cfg.Memory.Enabled {
+		tools = append(tools, r.memoryTool())
+	}
 
 	prompt := SystemPrompt(r.cwd, r.Mode())
 	hooks := dive.Hooks{
 		PreToolUse: []dive.PreToolUseHook{permission.HookFromManager(r.mgr)},
 	}
+	hooks.PreGeneration = []dive.PreGenerationHook{r.memoryReminderHook()}
 	if r.cfg.Compaction.Enabled {
 		threshold := compactionThreshold(h.CtxWindow, r.cfg.Compaction.ThresholdPct)
-		hooks.PreGeneration = []dive.PreGenerationHook{r.preGenCompactionHook(provider, prompt, threshold)}
+		hooks.PreGeneration = append(hooks.PreGeneration, r.preGenCompactionHook(provider, prompt, threshold))
 		hooks.PreIteration = []dive.PreIterationHook{
 			compaction.MidTurnCompactionHook(provider, threshold,
 				compaction.WithMidTurnSystemPrompt(prompt),

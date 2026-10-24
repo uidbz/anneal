@@ -10,6 +10,7 @@ import (
 
 	"fyagent/core/agent"
 	"fyagent/core/config"
+		"fyagent/core/memory"
 	"fyagent/core/model"
 	"fyagent/core/tieindex"
 	"fyagent/core/uiapi"
@@ -23,6 +24,7 @@ type App struct {
 	Bridge  *uiapi.Bridge
 	Runner  *agent.Runner
 	Tie     *tieindex.Indexer
+	Mem     *memory.Store
 
 	lastHealth string // dedupe provider.state events
 }
@@ -41,6 +43,8 @@ func New() (*App, error) {
 	}
 	a.Tie = tieindex.New(cfg.Tie)
 	a.Runner.SetIndex(a.Tie)
+	a.Mem = memory.NewStore(cfg.Memory)
+	a.Runner.SetMemory(a.Mem)
 	return a, nil
 }
 
@@ -107,6 +111,43 @@ func (a *App) AgentAPI() map[string]any {
 	}
 	api["mode"] = func() any { return a.Runner.Mode() }
 	api["tieState"] = func() any { return toJSON(a.Tie.State()) }
+	api["memoryView"] = func() any {
+		m, _ := a.Mem.Read("memory")
+		u, _ := a.Mem.Read("user")
+		return toJSON(map[string]any{
+			"memory": m, "user": u,
+			"memory_cap": a.Cfg.Memory.MemoryCharLimit,
+			"user_cap":   a.Cfg.Memory.UserCharLimit,
+		})
+	}
+	api["memoryPending"] = func() any {
+		list, err := a.Mem.ListPending()
+		if err != nil {
+			return toJSON([]any{})
+		}
+		if list == nil {
+			return toJSON([]any{})
+		}
+		return toJSON(list)
+	}
+	api["respondMemory"] = func(id, decision string) any {
+		approve := decision == "approve"
+		op, content, err := a.Mem.Resolve(id, approve)
+		out := map[string]any{"type": "memory.resolved", "id": id,
+			"approved": approve, "error": ""}
+		if op != nil {
+			out["target"] = op.Target
+			out["action"] = op.Action
+		}
+		if err != nil {
+			out["error"] = err.Error()
+		} else if approve {
+			a.Bridge.Emit(map[string]any{"type": "memory.updated",
+				"target": out["target"], "action": out["action"], "content": content})
+		}
+		a.Bridge.Emit(out)
+		return nil
+	}
 	api["rebuildIndex"] = func() any {
 		go func() {
 			n, err := a.Runner.RebuildIndex(context.Background())

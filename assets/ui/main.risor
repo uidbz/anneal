@@ -16,6 +16,7 @@ let mode = "default"
 let sessOpen = false
 let sessList = []     // {id,title,updated,events}
 let permCards = []    // pending perm.request events
+let memCards = []     // staged memory ops awaiting approval
 let todos = []        // {content,status}
 let sessID = ""
 
@@ -59,6 +60,26 @@ permRows = (arr, i, acc) => {
         widget.NewButton("deny", () => { agent.respondPerm(c.id, "deny") }),
     ]), info)
     return permRows(arr, i + 1, acc + [row])
+}
+
+let opText = (c) => {
+    if (c.action == "add") { return "+ " + c.content }
+    if (c.action == "patch") { return short(c.old, 60) + "  →  " + short(c.new, 60) }
+    return "- " + c.old
+}
+
+let memRows = (arr, i, acc) => acc
+memRows = (arr, i, acc) => {
+    if (i >= len(arr)) { return acc }
+    let c = arr[i]
+    let why = ""
+    if (c.reason != "") { why = "  (“ + c.reason + "”)" }
+    let info = label("💾 memory[" + c.target + "] " + c.action + " via " + c.source + why + "\n" + strings.replace_all(opText(c), "\n", " "))
+    let row = container.NewBorder(nil, nil, nil, container.NewHBox([
+        widget.NewButton("approve", () => { agent.respondMemory(c.id, "approve") }),
+        widget.NewButton("reject", () => { agent.respondMemory(c.id, "reject") }),
+    ]), info)
+    return memRows(arr, i + 1, acc + [row])
 }
 
 let keepCards = (arr, i, dropID, acc) => acc
@@ -130,6 +151,9 @@ let compose = () => {
     let topParts = [header]
     if (permCards != []) {
         topParts = topParts + permRows(permCards, 0, [])
+    }
+    if (memCards != []) {
+        topParts = topParts + memRows(memCards, 0, [])
     }
     let left = nil
     if (sessOpen) {
@@ -277,6 +301,23 @@ agent.on((evtJson) => {
         compose()
         return
     }
+    if (t == "memory.stage") {
+        memCards = memCards + [evt.op]
+        compose()
+        return
+    }
+    if (t == "memory.resolved") {
+        memCards = keepCards(memCards, 0, evt.id, [])
+        if (evt.error != "") {
+            addBlock(label("⚠ memory approval " + evt.id + ": " + evt.error))
+        } else if (evt.approved) {
+            addBlock(label("✔ memory saved: " + evt.target + " " + evt.action))
+        } else {
+            addBlock(label("✖ memory op rejected: " + evt.target + " " + evt.action))
+        }
+        compose()
+        return
+    }
     if (t == "run.started") {
         window.SetStatus("running…")
         usageLbl.Text = "running…"
@@ -323,6 +364,7 @@ agent.on((evtJson) => {
 
 // ---------- boot ----------
 showHealth(json.parse(agent.probe()))
+memCards = json.parse(agent.memoryPending())
 compose()
 window.Resize(980, 680)
 window.SetStatus("fyagent")

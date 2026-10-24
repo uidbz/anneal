@@ -10,7 +10,7 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 - [x] **M2** Agent loop + streaming chat + toolkit + stop + usage status
 - [x] **M3** Sessions UI + permission modes + approval bridge + todo
 - [x] **M4** tie index + session_search + compaction
-- [ ] **M5** memory stores + memory tool + staging
+- [x] **M5** memory stores + memory tool + staging
 - [ ] **M6** skills + skill_manage + subagents + slash commands
 - [ ] **M7** background review + journey + notifications
 - [ ] **M8** MCP + polish
@@ -46,6 +46,15 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Shipped to fynerisor main: **a0280fb** app.Quit/window.Close (#2), **45e3eca** Markdown SetText/.Text (#3), **dc84d6b** container Append/Remove/Refresh + Border setters + Scroll.SetContent (#4), **1c0e93f** tie.connect options vs config.toml (#5). Tests added upstream; all green (pre-existing tie test was #5 itself).
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
+
+### 2026-10-24 — M5 done (memory stores + memory tool + staging)
+- `core/memory`: MEMORY.md/USER.md under `~/.fyagent/memories`, caps 2200/1375 (config), atomic writes; ops add/patch/remove (patch/remove = **unique-substring** match, count-checked), dup-guard (case/whitespace-normalized entry compare), final-size batch check, injection scanner (instruction-override/role-forgery/`<system-reminder` patterns rejected — memory is re-injected forever).
+- Staging (`memory.write_approval=true`): ops persist `~/.fyagent/pending/memory/<id>.json`, dedupe identical, queue cap 10, survive restart (`agent.memoryPending()`); `respondMemory(id, approve|reject)` → apply/drop + `memory.stage`/`memory.resolved` events; tool tells the model it is NOT saved yet (no fake-save prose).
+- Snapshot injection: PreGeneration hook → `dive.SetSystemReminder(msgs, "fyagent-memory", snapshot)` — named block in first user message, **frozen per session** (only inserted if absent), compaction-safe (re-added if lost). UI: memory approval cards (approve/reject) in the inbox row.
+- System prompt: learning-loop rules (what belongs in memory vs session_search; patch stale entries).
+- e2e (live Strata): direct add → new session → model recalls "tabs for indentation" **without tools** (snapshot worked); staging: mid-check file untouched → approve → updated; memory unit tests (caps, dup, injection, queue, resolve).
+- Risor gotcha: `else` must be on the same line as the closing `}` (newline-terminated statements) — split `}\nelse {` = parse error.
+- Next: M6 skills + skill_manage + subagents + slash commands.
 
 ### 2026-10-24 — M4 done (tie index + session_search + compaction)
 - `core/tieindex`: rebuildable word-token index in tie collection `fyagent` (schema in §4 of PLAN); msgID=sha1(sess:pos); incremental per-session indexing after each run (`-rebuild-index` flag + `agent.rebuildIndex()` for full rebuilds); degraded mode never blocks the agent (probe = any HTTP answer counts).

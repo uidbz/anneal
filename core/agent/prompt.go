@@ -22,6 +22,14 @@ Working style:
 - Never write to the fyagent state directory (~/.fyagent) with file tools.
 - For multi-step work, keep a todo checklist current (todo tool, action=set
   with the full list); it keeps long tasks on track.
+
+Learning loop:
+- When the user corrects you, states a preference, or you discover a durable
+  fact about this machine/project, save it with the memory tool: target 'user'
+  for preferences/habits, 'memory' for facts and conventions. One short line,
+  patch or remove stale entries instead of appending duplicates.
+- Memory is tiny and re-injected into every session — never store conversation
+  play-by-play there; recall past conversations with session_search.
 `
 	if mode == "plan" {
 		base += "\nPLAN MODE is active: the user wants a plan, not changes. Non-read-only tools will be denied — investigate read-only and finish with a concrete, ordered plan.\n"

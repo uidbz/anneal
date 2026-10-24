@@ -5,7 +5,7 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 
 ## Milestones
 
-- [ ] **M0** Skeleton: module + deps, GUI opens, Go↔Risor event round-trip
+- [x] **M0** Skeleton: module + deps, GUI opens, Go↔Risor event round-trip
 - [ ] **M1** Config + Strata provider + HealthMonitor + settings tab
 - [ ] **M2** Agent loop + streaming chat + toolkit + stop + usage status
 - [ ] **M3** Sessions UI + permission modes + approval bridge + todo
@@ -34,7 +34,19 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - 2026-10-24 — dive JSONL FileStore stays conversation truth; tie is the rebuildable search index (collection `fyagent`). Word-token triples give exact-match AND search (tie has no FTS).
 - 2026-10-24 — git: local repo, conventional commits per milestone/sub-step.
 
+## Upstream TODO (fynerisor)
+
+- [ ] `Markdown.SetText(string)` / writable `Text` attr (chat transcripts need updatable blocks)
+- [ ] (nice) constants exposure for `fyne.TextWrap*` instead of raw ints
+
 ## Notes (newest first)
+
+### 2026-10-24 — M0 done (skeleton + bridge)
+- `cmd/fyagent` boots fynerisor, embeds `assets/ui/main.risor` (`FYAGENT_UI_DIR` overrides for hot dev).
+- Bridge (`core/uiapi`): `agent.on(cb)` captures the VM CallFunc; Go→script events dispatch as JSON strings via `fw.Do` + `vmguard.Call`, reschedule-on-contention. Startup `agent.ping()` round-trip verified live: `ui: [001 pong]`.
+- fynerisor gap (upstream candidate): **Markdown has no `SetText`/`Text`** — transcript design uses writable `Label` for streaming + appended immutable `Markdown` blocks.
+- Risor v2 notes for the UI layer: **no `while`/`for` loops, no ternary**; no list `.len()`/`.slice()` (builtin `len()` exists, no `slice()`); `if (cond)` needs parens; json module is `json.parse`/`json.marshal`; `strings.join` via `@strings`.
+- Next: M1 config + Strata health.
 
 ### 2026-10-24 — repo initialized
 - git repo created (`main` branch); `docs/PLAN.md` (full plan), `progress.md`, README, .gitignore committed.

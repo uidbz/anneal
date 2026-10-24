@@ -1,0 +1,39 @@
+// fyagent UI — M0 smoke shell (replaced by the full UI in M2+)
+// Note: Risor v2 has no for/while loops and no ternary — keep scripts to
+// higher-order functions, if/else, and builtins (len, sprintf, map, filter).
+require(["v0.9", "@gui", "@json", "@strings"])
+
+let logLbl = widget.NewLabel("fyagent M0 skeleton — waiting for events…")
+logLbl.Wrapping = 1 // TextWrapSoft
+let entry = widget.NewEntry()
+entry.PlaceHolder = "type something, press the button"
+
+let count = 0
+let scroll = container.NewScroll(logLbl)
+
+agent.on((evtJson) => {
+    let evt = json.parse(evtJson)
+    count = count + 1
+    let line = sprintf("[%03d %s] %s", count, evt.type, evt.text)
+    logLbl.Text = logLbl.Text + "\n" + line
+    if (count > 200) {
+        logLbl.Text = line
+        count = 1
+    }
+    print("ui: " + line)
+    scroll.ScrollToBottom()
+})
+
+let sendBtn = widget.NewButton("echo → go → here", () => {
+    agent.echo(entry.Text)
+})
+
+let pingBtn = widget.NewButton("ping", () => {
+    agent.ping()
+})
+
+let bottom = container.NewBorder(nil, nil, nil, container.NewHBox([sendBtn, pingBtn]), entry)
+window.SetContent(container.NewBorder(nil, bottom, nil, nil, scroll))
+window.Resize(720, 480)
+window.SetStatus("fyagent M0: bridge up")
+agent.ping() // startup round-trip: proves core→script event delivery

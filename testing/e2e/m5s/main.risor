@@ -1,0 +1,37 @@
+// fyagent M5 staged-write e2e: memory.add must stage (not apply), the driver
+// then approves via respondMemory, and the file must change only after.
+require(["v0.9", "@json", "@strings"])
+
+let log = (s) => { print("M5S: " + s + "\n") }
+let one = (s) => { return strings.replace_all(s, "\n", " ") }
+
+agent.on((j) => {
+    let e = json.parse(j)
+    let t = e.type
+    if (t == "perm.request") { agent.respondPerm(e.id, "session"); return }
+    if (t == "memory.stage") {
+        let op = e.op
+        log("STAGED id=" + op.id + " target=" + op.target + " reason=" + op.reason)
+        let view1 = json.parse(agent.memoryView())
+        log("mid-check USER.md contains staged text? " + sprintf("%v", strings.contains(view1.user, "GOFLAGS")))
+        log("approving")
+        agent.respondMemory(op.id, "approve")
+        return
+    }
+    if (t == "memory.resolved") {
+        log(sprintf("RESOLVED approved=%v err=%s", e.approved, e.error))
+        let view2 = json.parse(agent.memoryView())
+        if (strings.contains(view2.user, "GOFLAGS")) { log("=== M5 staging OK: file updated after approve") } else { log("=== M5 FAIL: file not updated after approve") }
+        return
+    }
+    if (t == "tool.result") { log("tool.result " + e.name + " " + one(e.preview)); return }
+    if (t == "run.finished") {
+        log(sprintf("run.finished ok=%v err=%s", e.ok, e.error))
+        agent.quit()
+        return
+    }
+})
+
+log("=== M5 staged phase")
+agent.newSession()
+agent.send("Use the memory tool exactly once: action add, target user, content 'The demo test suite needs GOFLAGS=-mod=mod', reason 'learned from CI log'. Then reply STAGED.")

@@ -1,0 +1,77 @@
+// fyagent M3 e2e driver: permissions (session grant), todo tool, plan-mode
+// auto-deny, sessions list. Headless: no widgets, events + agent.quit only.
+require(["v0.9", "@json", "@strings"])
+
+let log = (s) => { print("E2E: " + s + "\n") }
+let short = (s) => {
+    if (len(s) > 80) { s = s[0:80] }
+    return strings.replace_all(s, "\n", " ")
+}
+
+let t1 = "Run `go test ./...` in /tmp/opencode/demo with the Bash tool and report the one-line result."
+let t2 = "Use the todo tool: create a two-item list (item 1 in_progress), then set both items to done. Then reply OK."
+let t3 = "Use the Write tool to create /tmp/opencode/demo/planfile.txt containing the word hi, then reply DONE."
+
+let phase = 0
+let permSeen = 0
+
+agent.on((j) => {
+    let e = json.parse(j)
+    let t = e.type
+    if (t == "session.opened") {
+        log(sprintf("session.opened id=%s blocks=%d", e.id, len(e.blocks)))
+        if (phase == 4) { log("=== reopen replay ok"); agent.quit() }
+        return
+    }
+    if (t == "mode.changed") { log("mode.changed " + e.mode); return }
+    if (t == "perm.request") {
+        permSeen = permSeen + 1
+        log("PERM-REQUEST tool=" + e.tool + " grant=[" + e.grant + "]")
+        agent.respondPerm(e.id, "session")
+        return
+    }
+    if (t == "perm.resolved") { log("perm.resolved " + e.id + " " + e.reason); return }
+    if (t == "tool.start") { log("tool.start " + e.name); return }
+    if (t == "tool.result") {
+        let tag = "ok"
+        if (e.error) { tag = "ERR" }
+        log("tool.result " + e.name + " " + tag + " " + short(e.preview))
+        return
+    }
+    if (t == "todo.updated") {
+        if (len(e.items) > 0) {
+            log(sprintf("todo.updated items=%d first=%s", len(e.items), e.items[0].status))
+        } else {
+            log("todo.updated items=0")
+        }
+        return
+    }
+    if (t == "run.started") { log("run.started"); return }
+    log("evt:" + t)
+    if (t == "run.finished") {
+        log(sprintf("run.finished ok=%v err=%s", e.ok, e.error))
+        if (phase == 0) {
+            phase = 1
+            log("=== phase 2: todo tool")
+            agent.send(t2)
+        } else if (phase == 1) {
+            phase = 2
+            log("=== phase 3: plan mode (expect deny, NO perm.request)")
+            agent.setMode("plan")
+            agent.send(t3)
+        } else if (phase == 2) {
+            phase = 3
+            log(sprintf("permSeen total=%d (expect 1)", permSeen))
+            agent.setMode("default")
+            phase = 4
+            let arr = json.parse(agent.sessions())
+            log(sprintf("sessions n=%d first=%s events=%d", len(arr), arr[0].id, arr[0].events))
+            log("=== phase 4: reopen session (replay)")
+            agent.openSession(arr[0].id)
+        }
+        return
+    }
+})
+
+log("=== phase 1: default mode, Bash ask -> respond 'session'")
+agent.send(t1)

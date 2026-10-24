@@ -1,0 +1,36 @@
+// fyagent M8 e2e: MCP server connects at boot; the model calls the
+// qualified demo_echo tool and must report its raw output.
+require(["v0.9", "@json", "@strings"])
+
+let log = (s) => { print("M8: " + s + "\n") }
+let one = (s) => strings.replace_all(s, "\n", " ")
+let started = false
+
+agent.on((j) => {
+    let e = json.parse(j)
+    let t = e.type
+    if (t == "mcp.state") {
+        log("MCP-STATE " + one(json.marshal(e.servers)))
+        if (!started) {
+            started = true
+            log("=== phase: call MCP tool")
+            agent.send("Call the demo MCP echo tool (its name contains 'echo') with text 'hello mcp', then reply with the raw tool output verbatim.")
+        }
+        return
+    }
+    if (t == "perm.request") {
+        log("PERM-REQUEST tool=" + e.tool)
+        agent.respondPerm(e.id, "session")
+        return
+    }
+    if (t == "tool.start") { log("tool.start " + e.name); return }
+    if (t == "tool.result") { log("tool.result " + e.name + " " + one(e.preview)); return }
+    if (t == "run.finished") {
+        log(sprintf("FINISHED ok=%v err=%s text=%s", e.ok, e.error, one(e.text)))
+        if (strings.contains(e.text, "ECHO(hello mcp)")) { log("=== M8 MCP OK") } else { log("=== M8 FAIL: no ECHO output") }
+        agent.quit()
+        return
+    }
+})
+
+log("=== waiting for mcp.state")

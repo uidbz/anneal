@@ -47,6 +47,19 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
 
+### 2026-10-25 — code review pass + documentation
+- Review fixes (2676eab): MCP tools registered before the subagent tool so
+  `ParentTools` includes `mcp__*`; todo list always persisted (empty
+  overwrites stale) + boot replay + panel cleared on session switch;
+  explore/plan subagents can't touch memory/skills; skills `Stage` under
+  mutex; tieindex tags written via `Set` (post-compaction re-index replaces
+  stale tokens); headless second SIGINT hard-exits.
+- Docs: new `Makefile` (build/test/live-tie-test/check-ui/ci), README full
+  rewrite, `docs/CONFIG.md` (every key + env + state layout),
+  `docs/ARCHITECTURE.md` (packages, threading rule, event table, learning
+  loop, upstream workarounds), `docs/USING.md` (GUI/headless/learning ops),
+  `testing/e2e/` — all driver scripts moved into the repo with a README.
+
 ### 2026-10-25 — M9 done (fyagent-headless) — ALL MILESTONES DONE
 - `cmd/fyagent-headless`: same core (config/sessions/tie/memory/skills/review/MCP), no GUI. `-p "task"` one-shot (exit 0/1), `-i` REPL (/new /interrupt /quit), `-json` raw JSONL event stream (exact events the GUI gets), `-v`, `--session ID` resume, `--new`, permission policy: `-yolo` (bypassPermissions mode) / `-allow a,b,*` (answers prompts; anything unlisted denied when no policy given), `--learn` runs the review pass after the task.
 - Event sink = Bridge tap (sees every emitted event; handlers dispatched on goroutines to stay off the lock path). SIGINT interrupts a running task, double-ctrl-C exits.

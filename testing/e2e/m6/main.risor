@@ -1,0 +1,56 @@
+// fyagent M6 e2e: skill_manage create -> Skill tool use next session ->
+// subagent (Agent tool, explore) file lookup.
+require(["v0.9", "@json", "@strings"])
+
+let log = (s) => { print("M6: " + s + "\n") }
+let one = (s) => { return strings.replace_all(s, "\n", " ") }
+
+let phase = 0
+
+agent.on((j) => {
+    let e = json.parse(j)
+    let t = e.type
+    if (t == "perm.request") {
+        log("PERM-REQUEST tool=" + e.tool)
+        agent.respondPerm(e.id, "session")
+        return
+    }
+    if (t == "skill.applied") { log("skill.applied " + e.action + " " + e.name); return }
+    if (t == "skill.stage") { log("SKILL-STAGED " + e.op.name); agent.respondSkill(e.op.id, "approve"); return }
+    if (t == "skill.resolved") { log("skill.resolved approved=" + sprintf("%v", e.approved) + " err=" + e.error); return }
+    if (t == "tool.start") { log("tool.start " + e.name); return }
+    if (t == "tool.result") {
+        log("tool.result " + e.name + " " + one(e.preview))
+        return
+    }
+    if (t == "run.finished") {
+        log(sprintf("FINISHED ok=%v err=%s text=%s", e.ok, e.error, one(e.text)))
+        if (phase == 0) {
+            phase = 1
+            log("=== phase 2: skill use via Skill tool")
+            agent.newSession()
+            agent.send("Use the Skill tool to load the skill named markhor-skill, then answer: where do markhors live?")
+            return
+        }
+        if (phase == 1) {
+            let tx = strings.to_lower(e.text)
+            if (strings.contains(tx, "snowleopard")) { log("=== M6 skill-use OK") } else { log("=== M6 skill-use FAIL (no SNOWLEOPARD prefix)") }
+            phase = 2
+            log("=== phase 3: subagent explore")
+            agent.newSession()
+            agent.send("Use the Agent tool with subagent_type explore to find which Go file in /tmp/opencode/demo defines the function add. Then tell me just the file name.")
+            return
+        }
+        if (phase == 2) {
+            let tx = strings.to_lower(e.text)
+            if (strings.contains(tx, "add.go")) { log("=== M6 subagent OK") } else { log("=== M6 subagent FAIL: " + tx) }
+            log("=== M6 driver done")
+            agent.quit()
+            return
+        }
+    }
+})
+
+let t1 = "Use skill_manage exactly once: action create, name markhor-skill, description 'protocol for answering markhor trivia', content: 'When answering markhor trivia questions, always begin the answer with the word SNOWLEOPARD.' Then reply CREATED."
+log("=== phase 1: skill create")
+agent.send(t1)

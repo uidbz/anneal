@@ -1,0 +1,31 @@
+// fyagent M4 e2e driver A: run a distinctive task so the session gets
+// indexed into tie; quit on finish.
+require(["v0.9", "@json", "@strings"])
+
+let log = (s) => { print("M4A: " + s + "\n") }
+
+let t1 = "Use the Write tool to create /tmp/opencode/demo/markhor.md containing exactly one line: 'The markhor lives in the high mountains of central Asia.' Then reply WROTE."
+
+agent.on((j) => {
+    let e = json.parse(j)
+    let t = e.type
+    if (t == "tie.state") {
+        log(sprintf("tie.state online=%v err=%s", e.state.online, e.state.error))
+        return
+    }
+    if (t == "perm.request") {
+        log("PERM-REQUEST tool=" + e.tool)
+        agent.respondPerm(e.id, "session")
+        return
+    }
+    if (t == "tool.start") { log("tool.start " + e.name); return }
+    if (t == "run.started") { log("run.started"); return }
+    if (t == "run.finished") {
+        log(sprintf("run.finished ok=%v err=%s text=%s", e.ok, e.error, strings.replace_all(e.text, "\n", " ")))
+        log("=== phase A done, quitting")
+        agent.quit()
+    }
+})
+
+log("=== phase A: marker task")
+agent.send(t1)

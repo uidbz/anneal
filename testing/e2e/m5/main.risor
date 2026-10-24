@@ -1,0 +1,50 @@
+// fyagent M5 e2e driver: memory tool (direct + staged approve) and
+// cross-session snapshot recall. Mode is chosen by the config file
+// (memory.write_approval) set by the test harness between phases.
+require(["v0.9", "@json", "@strings"])
+
+let log = (s) => { print("M5: " + s + "\n") }
+let one = (s) => { return strings.replace_all(s, "\n", " ") }
+
+let phase = 0
+
+agent.on((j) => {
+    let e = json.parse(j)
+    let t = e.type
+    if (t == "perm.request") {
+        agent.respondPerm(e.id, "session")
+        return
+    }
+    if (t == "memory.stage") {
+        let op = e.op
+        log("STAGED id=" + op.id + " target=" + op.target + " action=" + op.action + " content=" + one(op.content))
+        log("  approving immediately")
+        agent.respondMemory(op.id, "approve")
+        return
+    }
+    if (t == "memory.resolved") {
+        log(sprintf("RESOLVED id=%s approved=%v err=%s", e.id, e.approved, e.error))
+        return
+    }
+    if (t == "tool.result") {
+        log("tool.result " + e.name + " " + one(e.preview))
+        return
+    }
+    if (t == "run.finished") {
+        log(sprintf("run.finished ok=%v err=%s text=%s", e.ok, e.error, one(e.text)))
+        if (phase == 0) {
+            phase = 1
+            log("=== next: recall task (no tools)")
+            agent.newSession()
+            agent.send("Look at the context you were given (do NOT use any tools): what indentation style does the demo project prefer, and how do you know? Answer in one line.")
+        } else {
+            log("=== M5 driver done")
+            agent.quit()
+        }
+        return
+    }
+})
+
+let first = "Use the memory tool exactly once: action add, target user, content 'The demo project prefers tabs for indentation'. Then reply SAVED."
+log("=== M5 phase 1: memory add")
+agent.send(first)

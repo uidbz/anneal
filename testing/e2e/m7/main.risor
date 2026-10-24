@@ -1,0 +1,31 @@
+// fyagent M7 e2e: after a run with a memorable instruction, the background
+// reviewer fires while idle; verify review.start/done events + journey log.
+require(["v0.9", "@json", "@strings"])
+
+let log = (s) => { print("M7: " + s + "\n") }
+let one = (s) => strings.replace_all(s, "\n", " ")
+
+agent.on((j) => {
+    let e = json.parse(j)
+    let t = e.type
+    if (t == "perm.request") { agent.respondPerm(e.id, "session"); return }
+    if (t == "run.finished") {
+        log(sprintf("run.finished ok=%v (now idling for background review)", e.ok))
+        return
+    }
+    if (t == "memory.updated") { log("memory.updated target=" + e.target); return }
+    if (t == "review.start") { log("REVIEW-START"); return }
+    if (t == "review.skipped") { log("REVIEW-SKIPPED reason=" + e.reason); return }
+    if (t == "review.done") {
+        log("REVIEW-DONE err=" + e.error + " ledger=" + sprintf("%d", len(e.ledger)))
+        log("  ledger: " + one(json.marshal(e.ledger)))
+        let js = json.parse(agent.journey(25))
+        log("journey entries: " + sprintf("%d", len(js)))
+        log("=== M7 driver done")
+        agent.quit()
+        return
+    }
+})
+
+log("=== task with a memorable fact")
+agent.send("Say OK. Also note for the future: on this machine the demo project's coverage command is 'make coverage' — that is a durable environment fact you should keep if you have a way to keep such facts.")

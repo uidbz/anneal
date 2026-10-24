@@ -1,0 +1,47 @@
+// fyagent M4 e2e driver B: fresh session, cross-launch recall via the
+// session_search tool; expects the markhor snippet from an earlier process.
+require(["v0.9", "@json", "@strings"])
+
+let log = (s) => { print("M4B: " + s + "\n") }
+
+let t1 = "Call the session_search tool with query 'markhor mountains' and limit 5, then reply with the raw tool output verbatim."
+
+let started = false
+
+agent.on((j) => {
+    let e = json.parse(j)
+    let t = e.type
+    if (t == "tie.state") {
+        log(sprintf("tie.state online=%v err=%s", e.state.online, e.state.error))
+        if (!e.state.online) { log("=== FATAL: tie offline"); agent.quit(); return }
+        if (!started) {
+            started = true
+            log("=== phase B: new session + recall")
+            agent.newSession()
+            agent.send(t1)
+        }
+        return
+    }
+    if (t == "perm.request") {
+        log("PERM-REQUEST tool=" + e.tool)
+        agent.respondPerm(e.id, "session")
+        return
+    }
+    if (t == "tool.start") { log("tool.start " + e.name); return }
+    if (t == "tool.result") {
+        log("tool.result " + e.name + " " + strings.replace_all(e.preview, "\n", " "))
+        return
+    }
+    if (t == "run.started") { log("run.started"); return }
+    if (t == "run.finished") {
+        log(sprintf("run.finished ok=%v err=%s", e.ok, e.error))
+        let text = strings.to_lower(e.text)
+        if (strings.contains(text, "markhor")) {
+            log("=== M4 cross-launch recall OK")
+        } else {
+            log("=== M4 FAIL: no markhor in reply: " + strings.replace_all(text, "\n", " "))
+        }
+        agent.quit()
+    }
+})
+

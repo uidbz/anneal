@@ -60,6 +60,19 @@ make ci               # vet + test + pane/script-UI compile gates
 make live-tie-test    # tie round-trip against the real triplestore (opt-in)
 ```
 
+## Install
+
+```sh
+make install                        # ~/.local/bin + XDG desktop entry/icon
+make install PREFIX=/usr/local      # system-wide (run with appropriate privileges)
+make uninstall
+```
+
+`make install` installs `anneal`, `anneal-headless`, an
+`anneal.desktop` launcher under `$PREFIX/share/applications`, and the
+hicolor icon under `$PREFIX/share/icons/hicolor/scalable/apps`.
+`DESTDIR` is supported for packaging.
+
 During development `go.mod` replaces fynerisor with a local checkout containing
 unreleased fixes (issues #2–#6 and the `CanvasObject` embedding API, commit
 `b2b1478`). Drop the replace once a release ships them.

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Anneal
+GenericName=Coding Agent
+Comment=A self-improving local coding agent
+Exec=anneal
+TryExec=anneal
+Icon=anneal
+Terminal=false
+Categories=Development;
+Keywords=AI;agent;coding;local;harness;
+StartupNotify=true
+StartupWMClass=anneal

@@ -7,8 +7,9 @@
 2. (Optional) start the tie triplestore and make sure `~/.config/tie/config.toml`
    points at it — session search + cross-session recall need it; everything
    else runs without it.
-3. `./bin/anneal` — the header shows model health, the tie index state, and
-   MCP server status.
+3. `./bin/anneal` (or `anneal` after `make install`) — the header shows model
+   health, the tie index state, and MCP server status. `make install` also adds
+   an `Anneal` desktop launcher through the XDG applications directory.
 
 Config resolution: `~/.anneal/config.json` (created with defaults on first
 run) → env overrides (see `docs/CONFIG.md`). Provider settings are edited in

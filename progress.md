@@ -96,6 +96,8 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
   outcomes/decisions/successor/library entry; Ctrl+1/2/3 switch tabs.
 - Local checkout renamed `fynerisor-agent` → `~/src/anneal`; GitHub remote is
   `uidbz/anneal`.
+- `make install` installs binaries plus the XDG `anneal.desktop` launcher and
+  hicolor icon; `make uninstall` and `DESTDIR`/`PREFIX` overrides included.
 - Gates: build, vet, hermetic tests, race, legacy `-check-ui`, pane
   `-check-ui`; manual launch/screenshot of the hybrid shell and legacy replay.
 

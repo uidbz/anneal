@@ -32,10 +32,11 @@ func Harness() string      { return filepath.Join(Root(), "harness") }
 func HarnessLib() string   { return filepath.Join(Root(), "harness-lib") }
 func Probes() string       { return filepath.Join(Root(), "probes") }
 func Improvements() string { return filepath.Join(Root(), "improvements") }
+func Overlays() string     { return filepath.Join(Root(), "overlays") }
 
 // Ensure creates the standard state directories.
 func Ensure() error {
-	for _, d := range []string{Root(), Sessions(), Memories(), Skills(), SkillsArchive(), Pending(), Logs(), Harness(), HarnessLib()} {
+	for _, d := range []string{Root(), Sessions(), Memories(), Skills(), SkillsArchive(), Pending(), Logs(), Harness(), HarnessLib(), Overlays()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
 		}

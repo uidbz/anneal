@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"fyagent/core/agent"
 	"fyagent/core/config"
 	"fyagent/core/harness"
+	"fyagent/core/improve"
 	"fyagent/core/journey"
 	"fyagent/core/memory"
 	"fyagent/core/model"
@@ -40,6 +42,8 @@ type App struct {
 	Journey *journey.Log
 	MCP     *mcp.Manager
 
+	improveMu       sync.Mutex
+	improveRunning  bool
 	lastHealth string // dedupe provider.state events
 }
 
@@ -80,7 +84,7 @@ func New() (*App, error) {
 	a.Review.Digest = func(ctx context.Context, sid string) string {
 		return a.Runner.Digest(ctx, sid, cfg.Review.MaxInputTokens*4)
 	}
-	a.Review.SetActivityHooks(a.Runner.Busy, a.Runner.LastActivity)
+	a.Review.SetActivityHooks(func() bool { return a.Runner.Busy() || a.ImproveBusy() }, a.Runner.LastActivity)
 	a.Runner.SetReview(a.Review)
 	return a, nil
 }
@@ -111,6 +115,10 @@ func (a *App) journeyTap(v any) {
 	case "review.done":
 		if ledger, ok := e["ledger"].([]any); ok && len(ledger) > 0 {
 			a.Journey.Append("review", map[string]any{"session": toStr(e["session"]), "lessons": len(ledger)})
+		}
+	case "improve.done":
+		if e["ok"] == true {
+			a.Journey.Append("improve", map[string]any{"run": toStr(e["run"]), "successor": e["successor"] == true})
 		}
 	}
 }
@@ -209,6 +217,16 @@ func (a *App) AgentAPI() map[string]any {
 		return toJSON(list)
 	}
 	api["learnNow"] = func() any { a.Review.LearnNow(); return nil }
+	api["improveStart"] = func() any {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+			defer cancel()
+			if _, err := a.Improve(ctx); err != nil {
+				a.Bridge.Emit(map[string]any{"type": "improve.error", "error": err.Error()})
+			}
+		}()
+		return nil
+	}
 	api["harnessInfo"] = func() any { return toJSON(a.Runner.HarnessInfo()) }
 	api["journey"] = func(limit int) any {
 		list := a.Journey.Tail(limit)
@@ -279,8 +297,58 @@ func (a *App) AgentAPI() map[string]any {
 	return api
 }
 
-func (a *App) onHealth(h model.Health) {
-	doc := toJSON(h)
+// ImproveBusy reports whether an improvement step is running (GPU guard).
+func (a *App) ImproveBusy() bool {
+	a.improveMu.Lock()
+	defer a.improveMu.Unlock()
+	return a.improveRunning
+}
+
+// Improve runs one contrastive harness-improvement step for the LAST
+// finished run (reference = that session) and installs the successor as a
+// session overlay. Serialized; returns the step record.
+func (a *App) Improve(ctx context.Context) (*improve.Result, error) {
+	a.improveMu.Lock()
+	if a.improveRunning {
+		a.improveMu.Unlock()
+		return nil, fmt.Errorf("improve: already running")
+	}
+	a.improveRunning = true
+	a.improveMu.Unlock()
+	defer func() {
+		a.improveMu.Lock()
+		a.improveRunning = false
+		a.improveMu.Unlock()
+	}()
+
+	sid := a.Runner.SessionID()
+	task := a.Runner.LastTask()
+	if task == "" {
+		return nil, fmt.Errorf("improve: no completed task to improve")
+	}
+	a.Review.Interrupt() // improvement owns the GPU next; foreground semantics
+	digest := a.Runner.Digest(ctx, sid, a.Cfg.Review.MaxInputTokens*4)
+	h := a.Monitor.Current()
+	res, err := improve.Step(ctx, improve.Options{
+		Cfg:       a.Cfg,
+		Model:     func() llm.LLM { return model.NewProvider(a.Cfg.Provider, a.Monitor.Current().Model) },
+		ModelID:   h.Model,
+		Harness:   a.Harness,
+		Workdir:   a.Runner.Cwd(),
+		SessionID: sid,
+		Task:      task,
+		RefDigest: digest,
+		Emit:      a.Bridge.Emit,
+	})
+	if err == nil && res.Successor != "" {
+		if oerr := a.Runner.SetSessionOverlay(res.Successor); oerr != nil {
+			fmt.Fprintf(os.Stderr, "fyagent: overlay install: %v\n", oerr)
+		}
+	}
+	return res, err
+}
+
+func (a *App) onHealth(h model.Health) {	doc := toJSON(h)
 	if doc == a.lastHealth {
 		return
 	}

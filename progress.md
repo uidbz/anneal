@@ -47,6 +47,29 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
 
+### 2026-10-25 — M12 contrastive step (propose→probe→compose, k=1)
+- `core/improve`: one Φ step per Harness² §2.2.1 — reference = last
+  finished session's digest; invariant+domain editors draft candidate
+  harnesses in sandboxed dirs (dive WorkspaceDir tools); each candidate is
+  replayed (task text path-rewritten to sandbox) and a contrast note is
+  generated; composer merges supported edits into `compose/` + mandatory
+  `decisions.md` (every line cites an observation); successor probe gives
+  e′; full step record at `improvements/<run>/step.json`.
+- Successor installs as **session overlay** (`overlays/<sessID>/`, mounted
+  on every following run of that session) — global harness untouched.
+  `/improve` in GUI + headless REPL, `-improve` flag; `improve.*` events;
+  journey entries.
+- Gotchas fixed: dive tool path validator resolves RELATIVE paths against
+  process cwd → prompts now mandate absolute sandbox paths; the idle
+  review competes for GPU → review's busy hook now includes
+  `ImproveBusy()` + improve preempts review (first live attempt failed
+  exactly this way: "stream produced no event before the idle timeout").
+- **Live gate green** (testing/e2e/m12/README.md): both candidates probed
+  (9/6 steps), 27-line evidence-tied decisions, successor composed +
+  overlay applied; composer REJECTED a candidate's false "transient
+  failure, retry it" claim citing 5 deterministic failures — the
+  contrastive discipline works on a local 27B.
+
 ### 2026-10-25 — M11 probe infrastructure (sandboxed task replay)
 - `core/probe`: `Prepare(src,root)` copies the workspace (`SkipDirs` for
   heavy junk, `.git` kept for fidelity); the probe agent runs dive-native

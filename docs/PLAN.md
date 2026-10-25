@@ -224,7 +224,7 @@ Milestones:
   PreToolUse hook, matched model config recorded), execution records
   `e=(τ,y)`, step records `ξ` under
   `~/.fyagent/improvements/<runid>/`.
-- **M12 one contrastive step (k=1)** — `core/improve`: invariant+domain
+- **M12 one contrastive step (k=1)** ✔ — `core/improve`: invariant+domain
   editors (edit right jailed to a scratch harness copy), probe+contrast
   notes, evidence-tied composition, session overlay apply;
   `fyagent-headless -improve`, GUI `/improve`. Ledger truth, never prose.

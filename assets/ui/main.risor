@@ -280,7 +280,7 @@ skillListText = (arr, i, acc) => {
 let slash = (text) => {
     let cmd = strings.split(text, " ")[0]
     if (cmd == "/help") {
-        addBlock(label("commands: /new /sessions /plan /build /skills /memory /index /journey /learn /harness /quit  (shortcuts: Ctrl+N new, Ctrl+B sessions, Ctrl+D stop)"))
+        addBlock(label("commands: /new /sessions /plan /build /skills /memory /index /journey /learn /improve /harness /quit  (shortcuts: Ctrl+N new, Ctrl+B sessions, Ctrl+D stop)"))
         return
     }
     if (cmd == "/new") { addBlock(label("⁘ new session")); agent.newSession(); return }
@@ -300,6 +300,7 @@ let slash = (text) => {
     }
     if (cmd == "/index") { agent.rebuildIndex(); addBlock(label("⁘ session index rebuild requested")); return }
     if (cmd == "/learn") { agent.learnNow(); addBlock(label("🧠 learning pass queued (runs when idle)")); return }
+    if (cmd == "/improve") { agent.improveStart(); addBlock(label("🔧 harness improvement started for the last task (propose → probe → compose)")); return }
     if (cmd == "/journey") {
         let js = json.parse(agent.journey(25))
         if (js == []) { addBlock(label("journey: empty")) } else { addBlock(label("journey (newest last):" + journeyText(js, 0, ""))) }
@@ -479,6 +480,41 @@ agent.on((evtJson) => {
         } else {
             addBlock(label("🧠 review saved " + sprintf("%d", len(evt.ledger)) + " lessons:" + ledgerText(evt.ledger, 0, "")))
         }
+        return
+    }
+    if (t == "improve.start") {
+        window.SetStatus("improving harness…")
+        addBlock(label("🔧 harness improvement started (run " + evt.run + ")"))
+        return
+    }
+    if (t == "improve.propose") {
+        addBlock(label("🔧 propose: " + evt.kind + " editor drafting…"))
+        return
+    }
+    if (t == "improve.probe") {
+        let extra = ""
+        if (evt.error != "") { extra = " — " + evt.error }
+        addBlock(label("🔧 probe " + evt.kind + ": " + sprintf("%d", evt.steps) + " steps in " + sprintf("%d", evt.duration_s) + "s" + extra))
+        return
+    }
+    if (t == "improve.compose") {
+        addBlock(label("🔧 composed successor, files changed: " + strings.join(evt.changed, ", ")))
+        return
+    }
+    if (t == "improve.done") {
+        window.SetStatus("ready")
+        if (evt.ok == false) {
+            addBlock(label("⚠ improve: " + evt.error))
+        } else if (evt.successor == false) {
+            addBlock(label("🔧 improve: composer kept the current harness"))
+        } else {
+            addBlock(label("🔧 improve: successor applied to this session's overlay (global harness untouched)\n" + evt.decisions))
+        }
+        return
+    }
+    if (t == "improve.error") {
+        window.SetStatus("ready")
+        addBlock(label("⚠ improve: " + evt.error))
         return
     }
     if (t == "run.started") {

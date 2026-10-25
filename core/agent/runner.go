@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +51,8 @@ type Runner struct {
 	mu           sync.Mutex
 	sess         *session.Session
 	sessID       string
+	lastTask     string
+	lastDeliv    string
 	todos        []todoItem
 	cancel       context.CancelFunc
 	runSeq       int
@@ -98,6 +102,7 @@ func nzs(s []string) []string {
 }
 
 // FormatHarnessInfo renders HarnessInfo for terminals.
+
 func FormatHarnessInfo(info map[string]any) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "harness %q (enabled=%v)\n", info["root"], info["enabled"])
@@ -111,6 +116,72 @@ func FormatHarnessInfo(info map[string]any) string {
 	fmt.Fprintf(&sb, "  rules: allow=%d ask=%d deny=%d",
 		len(rules["allow"].([]string)), len(rules["ask"].([]string)), len(rules["deny"].([]string)))
 	return sb.String()
+}
+
+// SessionID / LastTask / LastDeliverable feed the improvement step the
+// reference execution identity (task text + final answer of last run).
+func (r *Runner) SessionID() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.sessID
+}
+
+func (r *Runner) LastTask() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastTask
+}
+
+func (r *Runner) LastDeliverable() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastDeliv
+}
+
+// Cwd is the working directory runs operate in (improve sandbox source).
+func (r *Runner) Cwd() string { return r.cwd }
+
+// SetSessionOverlay installs an improvement successor harness (a directory
+// of component .md files) as the current session's harness overlay: mounted
+// on every following run of this session, nothing global is touched.
+func (r *Runner) SetSessionOverlay(srcDir string) error {
+	dst := filepath.Join(paths.Overlays(), r.SessionID())
+	if err := copyTree(srcDir, dst); err != nil {
+		return err
+	}
+	r.emit(map[string]any{"type": "harness.overlay", "session": r.SessionID(), "dir": dst})
+	return nil
+}
+
+func (r *Runner) sessionOverlayLayers() []harness.Layer {
+	ovl := harness.LayersFromDir(filepath.Join(paths.Overlays(), r.SessionID()), r.cfg.Harness.CharLimit)
+	for i := range ovl {
+		ovl[i].Name = "overlay:" + ovl[i].Name
+	}
+	return ovl
+}
+
+func copyTree(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dst, e.Name()), data, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SetReview attaches the background review manager (nil = no loop).
@@ -149,6 +220,7 @@ func (r *Runner) Send(input string) {
 	}
 	r.running = true
 	r.runSeq++
+	r.lastTask = input
 	r.lastAct = time.Now()
 	id := r.runSeq
 	r.mu.Unlock()
@@ -246,6 +318,7 @@ func (r *Runner) run(id int, input string) {
 	var layers []harness.Layer
 	if r.harn != nil && r.cfg.Harness.Enabled {
 		layers = r.harn.Layers(r.cfg.Harness.CharLimit)
+		layers = append(layers, r.sessionOverlayLayers()...)
 	}
 	prompt := SystemPrompt(r.cwd, r.Mode(), layers)
 	hooks := dive.Hooks{
@@ -414,6 +487,9 @@ func (r *Runner) preGenCompactionHook(provider llm.LLM, prompt string, threshold
 }
 
 func (r *Runner) finishRun(id int, ok bool, text, errMsg string, in, outTok, ctxPct int) {
+	r.mu.Lock()
+	r.lastDeliv = text
+	r.mu.Unlock()
 	r.clearRunning()
 	r.emit(map[string]any{"type": "run.finished", "run": id, "ok": ok,
 		"text": text, "error": errMsg,

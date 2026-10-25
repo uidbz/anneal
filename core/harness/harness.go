@@ -218,6 +218,39 @@ var known = map[string]bool{
 	"README.md": true, "subagents": true, "scripts": true,
 }
 
+// FormatDoc returns the component-format documentation (seeded README);
+// improvement editors get it verbatim.
+func FormatDoc() string { return readme }
+
+// LayersFromDir renders any directory of .md component files as prompt
+// layers (candidate/successor harnesses carry the same layout).
+func LayersFromDir(dir string, limit int) []Layer {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") && e.Name() != "README.md" && e.Name() != "decisions.md" {
+			names = append(names, strings.TrimSuffix(e.Name(), ".md"))
+		}
+	}
+	sort.Strings(names)
+	var out []Layer
+	for _, n := range names {
+		b, err := os.ReadFile(filepath.Join(dir, n+".md"))
+		if err != nil {
+			continue
+		}
+		c := strings.TrimSpace(string(b))
+		if c == "" {
+			continue
+		}
+		out = append(out, Layer{Name: n, Content: clip(c, limit)})
+	}
+	return out
+}
+
 // Validate returns human-readable warnings (bad files, oversize, unknowns).
 func (s *Store) Validate(limit int) []string {
 	var warns []string

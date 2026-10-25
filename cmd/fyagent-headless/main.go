@@ -23,6 +23,7 @@ import (
 
 	"fyagent/core/agent"
 	"fyagent/core/app"
+	"fyagent/core/improve"
 )
 
 type runResult struct {
@@ -123,6 +124,19 @@ func (s *sink) handle(v any) {
 		case s.learn <- struct{}{}:
 		default:
 		}
+	case "improve.done":
+		if s.jsonMode {
+			return
+		}
+		if e["ok"] == true {
+			if e["successor"] == true {
+				fmt.Println("🔧 improve: successor harness composed (session overlay applied)")
+			} else {
+				fmt.Println("🔧 improve: composer kept the current harness")
+			}
+		} else {
+			fmt.Printf("🔧 improve failed: %v\n", e["error"])
+		}
 	default:
 		if s.verbose && !s.jsonMode {
 			fmt.Fprintf(os.Stderr, "[%s] %s\n", t, strings.TrimSpace(string(data)))
@@ -165,6 +179,7 @@ func main() {
 	newSess := flag.Bool("new", false, "start a fresh session")
 	session := flag.String("session", "", "resume a session by id")
 	learn := flag.Bool("learn", false, "run the self-improvement review pass after the task")
+	improveFlag := flag.Bool("improve", false, "after the task, run one contrastive harness-improvement step (propose→probe→compose)")
 	flag.Parse()
 
 	if *prompt == "" && !*interactive {
@@ -231,10 +246,22 @@ func main() {
 					fmt.Fprintln(os.Stderr, "fyagent-headless: review pass timed out")
 				}
 			}
-			if res.ok {
-				return 0
+			code := 0
+			if !res.ok {
+				code = 1
 			}
-			return 1
+			if *improveFlag && res.ok {
+				fmt.Fprintln(os.Stderr, "🔧 harness improvement: propose → probe → compose …")
+				ictx, icancel := context.WithTimeout(context.Background(), 25*time.Minute)
+				defer icancel()
+				ires, ierr := a.Improve(ictx)
+				if ierr != nil {
+					fmt.Fprintf(os.Stderr, "fyagent-headless: improve: %v\n", ierr)
+				} else {
+					printImprove(ires)
+				}
+			}
+			return code
 		case <-ctx.Done():
 			return 130
 		case <-time.After(60 * time.Minute):
@@ -270,9 +297,46 @@ func main() {
 			case "/harness":
 				fmt.Fprintln(os.Stderr, agent.FormatHarnessInfo(a.Runner.HarnessInfo()))
 				continue
+			case "/improve":
+				fmt.Fprintln(os.Stderr, "🔧 harness improvement: propose → probe → compose …")
+				ictx, icancel := context.WithTimeout(context.Background(), 25*time.Minute)
+				ires, ierr := a.Improve(ictx)
+				icancel()
+				if ierr != nil {
+					fmt.Fprintf(os.Stderr, "fyagent-headless: improve: %v\n", ierr)
+				} else {
+					printImprove(ires)
+				}
+				continue
 			}
 			code = runTask(line)
 		}
 	}
 	os.Exit(code)
+}
+
+func printImprove(res *improve.Result) {
+	fmt.Fprintf(os.Stderr, "improve %s → %s\n", res.RunID, res.Dir)
+	for _, c := range res.Candidates {
+		if c.Skipped != "" {
+			fmt.Fprintf(os.Stderr, "  candidate %s: skipped (%s)\n", c.Kind, c.Skipped)
+			continue
+		}
+		steps := 0
+		if c.Probe != nil {
+			steps = len(c.Probe.Steps)
+		}
+		fmt.Fprintf(os.Stderr, "  candidate %s: probed (%d steps), contrast noted\n", c.Kind, steps)
+	}
+	if res.Decisions != "" {
+		fmt.Fprintln(os.Stderr, "  decisions:")
+		for _, l := range strings.Split(strings.TrimSpace(res.Decisions), "\n") {
+			fmt.Fprintf(os.Stderr, "    %s\n", l)
+		}
+	}
+	if res.Successor != "" {
+		fmt.Fprintln(os.Stderr, "  successor applied as session overlay — the global harness is unchanged")
+	} else {
+		fmt.Fprintln(os.Stderr, "  no successor (composer kept the current harness)")
+	}
 }

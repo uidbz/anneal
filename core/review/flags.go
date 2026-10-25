@@ -106,6 +106,27 @@ func (s *FlagStore) Pending(n int) []Flag {
 	return out
 }
 
+// Release un-marks flags consumed by runid (an improve step failed before the
+// hints were actually used), making them pending again.
+func (s *FlagStore) Release(runid string) {
+	if runid == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.load()
+	changed := false
+	for i := range s.flags {
+		if s.flags[i].ConsumedBy == runid {
+			s.flags[i].ConsumedBy = ""
+			changed = true
+		}
+	}
+	if changed {
+		_ = s.save()
+	}
+}
+
 // Consume marks up to n oldest pending flags as used by improve run runid
 // and returns them (the improve loop's editors see them as hints; the
 // probe evidence still decides what actually changes).

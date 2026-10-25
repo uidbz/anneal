@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,7 +30,8 @@ import (
 	"github.com/deepnoodle-ai/dive/toolkit"
 )
 
-const kinds = 2 // invariant + domain
+// editorKinds are the two scoped Propose roles.
+var editorKinds = [...]string{"invariant", "domain"}
 
 // Options configures one contrastive step Φ(q, ℋ, ℰ; ℛ).
 type Options struct {
@@ -87,7 +89,10 @@ type Result struct {
 	Hints          []string      `json:"hints,omitempty"`
 	Note           string        `json:"note,omitempty"`
 	Iterations     []iterRef     `json:"iterations,omitempty"`
-	FinishedAt     time.Time     `json:"finished_at"`
+	// StageTokens counts editor/composer/contrast/reflection model usage.
+	// Probe usage lives in the probe records; both feed the token governor.
+	StageTokens int       `json:"stage_tokens,omitempty"`
+	FinishedAt  time.Time `json:"finished_at"`
 }
 
 // iterRef summarizes one iteration of a k>1 recursion.
@@ -114,7 +119,7 @@ func loadStep(dir string) (*Result, bool) {
 
 // tokens sums reported usage across an iteration's executions.
 func tokens(r *Result) int {
-	n := 0
+	n := r.StageTokens
 	for _, c := range r.Candidates {
 		if c.Probe != nil {
 			n += c.Probe.Tin + c.Probe.Tout
@@ -154,6 +159,14 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 	if opts.WallTimeoutS <= 0 {
 		opts.WallTimeoutS = 300
 	}
+	if opts.Emit == nil {
+		opts.Emit = func(any) {}
+	}
+	if opts.TotalWallS > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(opts.TotalWallS)*time.Second)
+		defer cancel()
+	}
 	k := opts.K
 	if k < 1 {
 		k = 1
@@ -163,9 +176,6 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 		mode = "sequential"
 	}
 	emit := opts.Emit
-	if emit == nil {
-		emit = func(any) {}
-	}
 	limit := opts.Cfg.Harness.CharLimit
 
 	runid := opts.RunID
@@ -200,14 +210,16 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 		if err != nil {
 			return res, err
 		}
+		res.K, res.Mode = 1, mode
 		ok := res.Successor != "" || res.Decisions != ""
 		errMsg := ""
 		if !ok {
 			errMsg = "no candidate produced probed edits"
 		}
 		emit(ev("improve.done", runid, map[string]any{"ok": ok, "error": errMsg,
-			"decisions": clip(res.Decisions, 800), "successor": res.Successor != ""}))
-		return res, nil
+			"decisions": clip(res.Decisions, 800), "successor": res.Successor != "",
+			"k": 1, "mode": mode}))
+		return res, writeStep(dir, res)
 	}
 	return stepK(ctx, &opts, dir, runid, k, mode, baseLayers, h0hash, libCtx)
 }
@@ -217,15 +229,7 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 func stepK(ctx context.Context, opts *Options, dir, runid string, k int, mode string,
 	baseLayers []harness.Layer, h0hash, libCtx string) (*Result, error) {
 	emit := opts.Emit
-	if emit == nil {
-		emit = func(any) {}
-	}
 	limit := opts.Cfg.Harness.CharLimit
-	if opts.TotalWallS > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(opts.TotalWallS)*time.Second)
-		defer cancel()
-	}
 	res := &Result{RunID: runid, Dir: dir, SessionID: opts.SessionID, Task: opts.Task,
 		K: k, Mode: mode, HarnessHash: h0hash, Hints: opts.Hints}
 	emit(ev("improve.start", runid, map[string]any{"session": opts.SessionID,
@@ -307,9 +311,6 @@ func stepK(ctx context.Context, opts *Options, dir, runid string, k int, mode st
 // hidden from the selector on purpose.
 func selectSuccessor(ctx context.Context, opts *Options, runid string, sub []*Result) *Result {
 	emit := opts.Emit
-	if emit == nil {
-		emit = func(any) {}
-	}
 	var elig []*Result
 	for _, r := range sub {
 		if r != nil && r.Successor != "" && r.SuccessorProbe != nil {
@@ -331,7 +332,7 @@ func selectSuccessor(ctx context.Context, opts *Options, runid string, sub []*Re
 		blocks = append(blocks, fmt.Sprintf("OPTION %s\nfinal run:\n%s\ndecisions:\n%s\n",
 			li, r.SuccessorProbe.Digest(2500), clip(r.Decisions, 1200)))
 	}
-	out, err := generate(ctx, *opts,
+	out, _, _, err := generate(ctx, *opts,
 		"You compare anonymized candidate outcomes for one task. Choose by task fit and observed behavior, never by length, confidence, or ordering. Output one letter or NONE.",
 		selectorTask(opts.Task, opts.RefDigest, strings.Join(blocks, "\n")))
 	pick := ""
@@ -343,7 +344,9 @@ func selectSuccessor(ctx context.Context, opts *Options, runid string, sub []*Re
 			}
 		}
 	}
-	idx := 0
+	// Default when the selector declines: keep the LAST iteration (matching
+	// the recorded reason; earlier iterations are superseded in spirit).
+	idx := len(elig) - 1
 	reason := "none clearly better (kept last)"
 	for i := range elig {
 		if pick != "" && labels[i%len(labels)] == pick {
@@ -363,9 +366,6 @@ func selectSuccessor(ctx context.Context, opts *Options, runid string, sub []*Re
 func stepOnce(ctx context.Context, opts *Options, dir, runid string, iter int,
 	layers0 []harness.Layer, refd, libCtx string) (*Result, error) {
 	emit := opts.Emit
-	if emit == nil {
-		emit = func(any) {}
-	}
 	limit := opts.Cfg.Harness.CharLimit
 	res := &Result{RunID: runid, Dir: dir, SessionID: opts.SessionID, Task: opts.Task, Iter: iter, Hints: opts.Hints}
 
@@ -377,8 +377,7 @@ func stepOnce(ctx context.Context, opts *Options, dir, runid string, iter int,
 	}
 
 	// Propose: two scoped editors, one sandboxed candidate dir each.
-	names := [kinds]string{"invariant", "domain"}
-	for _, kind := range names {
+	for _, kind := range editorKinds {
 		c := Candidate{Kind: kind, Dir: filepath.Join(dir, "candidates", kind)}
 		emit(ev("improve.propose", runid, map[string]any{"kind": kind, "iter": iter}))
 		if err := copyFiles(h0, c.Dir); err != nil {
@@ -386,7 +385,9 @@ func stepOnce(ctx context.Context, opts *Options, dir, runid string, iter int,
 			res.Candidates = append(res.Candidates, c)
 			continue
 		}
-		if err := runEditor(ctx, *opts, kind, c.Dir, editorTask(opts.Task, refd, c.Dir, libCtx)); err != nil {
+		tin, tout, err := runEditor(ctx, *opts, kind, c.Dir, editorTask(opts.Task, refd, c.Dir, libCtx))
+		res.StageTokens += tin + tout
+		if err != nil {
 			c.Skipped = "editor: " + err.Error()
 			res.Candidates = append(res.Candidates, c)
 			continue
@@ -413,12 +414,13 @@ func stepOnce(ctx context.Context, opts *Options, dir, runid string, iter int,
 		if opts.Workdir != "" {
 			task = strings.ReplaceAll(task, opts.Workdir, sb.WS)
 		}
-		sys := agent.SystemPrompt(sb.WS, "default", append(
-			harness.LayersFromDir(c.Dir, limit),
+		candLayers := harness.LayersFromDir(c.Dir, limit)
+		sys := agent.SystemPrompt(sb.WS, "default", append(candLayers,
 			harness.Layer{Name: "probe-note", Content: probeNote(sb.WS)}))
 		rec, runErr := probe.Run(ctx, probe.Options{
 			Name: "probe-" + c.Kind, Cfg: opts.Cfg, ModelID: opts.ModelID, Model: opts.Model,
 			System: sys, Task: task, Scratch: sb,
+			HarnessHash:   probe.HarnessHash(layerContents(candLayers)),
 			OutDir:        filepath.Join(dir, "probes"),
 			MaxIterations: opts.ProbeIterations, WallTimeoutS: opts.WallTimeoutS, Emit: emit,
 		})
@@ -426,8 +428,9 @@ func stepOnce(ctx context.Context, opts *Options, dir, runid string, iter int,
 		emit(ev("improve.probe", runid, map[string]any{"kind": c.Kind, "iter": iter,
 			"ok": runErr == nil, "steps": len(rec.Steps), "duration_s": int(rec.DurationS),
 			"error": errStr(runErr)}))
-		note, err := generate(ctx, *opts, "You write terse, evidence-quoted behavioral contrast notes. No scores.",
+		note, tin, tout, err := generate(ctx, *opts, "You write terse, evidence-quoted behavioral contrast notes. No scores.",
 			contrastPrompt(c.Kind, opts.Task, refd, c.Diff, rec.Digest(opts.MaxDigestChars)))
+		res.StageTokens += tin + tout
 		if err != nil {
 			c.Skipped = "contrast: " + err.Error()
 			continue
@@ -453,8 +456,9 @@ func stepOnce(ctx context.Context, opts *Options, dir, runid string, iter int,
 	if err := copyFiles(h0, composeDir); err != nil {
 		return res, writeStep(dir, res)
 	}
-	composerErr := runComposer(ctx, *opts, composeDir,
+	tin, tout, composerErr := runComposer(ctx, *opts, composeDir,
 		composerTask(opts.Task, refd, strings.Join(blocks, "\n"), composeDir, libCtx))
+	res.StageTokens += tin + tout
 	if composerErr != nil {
 		emit(ev("improve.iterdone", runid, map[string]any{"iter": iter, "ok": false,
 			"error": "composer: " + composerErr.Error(), "successor": false}))
@@ -477,12 +481,13 @@ func stepOnce(ctx context.Context, opts *Options, dir, runid string, iter int,
 		if opts.Workdir != "" {
 			task = strings.ReplaceAll(task, opts.Workdir, sb.WS)
 		}
-		sys := agent.SystemPrompt(sb.WS, "default", append(
-			harness.LayersFromDir(composeDir, limit),
+		succLayers := harness.LayersFromDir(composeDir, limit)
+		sys := agent.SystemPrompt(sb.WS, "default", append(succLayers,
 			harness.Layer{Name: "probe-note", Content: probeNote(sb.WS)}))
 		rec, _ := probe.Run(ctx, probe.Options{
 			Name: "probe-successor", Cfg: opts.Cfg, ModelID: opts.ModelID, Model: opts.Model,
 			System: sys, Task: task, Scratch: sb,
+			HarnessHash:   probe.HarnessHash(layerContents(succLayers)),
 			OutDir:        filepath.Join(dir, "successor"),
 			MaxIterations: opts.ProbeIterations, WallTimeoutS: opts.WallTimeoutS, Emit: emit,
 		})
@@ -502,9 +507,10 @@ func stepOnce(ctx context.Context, opts *Options, dir, runid string, iter int,
 		if res.SuccessorProbe != nil {
 			succ = res.SuccessorProbe.Digest(3000)
 		}
-		note, err := generate(ctx, *opts,
+		note, tin, tout, err := generate(ctx, *opts,
 			"You distill one harness improvement step into library experience notes. Terse; unsupported means NONE.",
 			reflectorTask(opts.Task, res.Decisions, contrasts.String(), clip(refd, 2500), succ))
+		res.StageTokens += tin + tout
 		if err == nil && !strings.EqualFold(strings.TrimSpace(note), "NONE") && len(strings.TrimSpace(note)) >= 60 {
 			id, cerr := opts.Library.CreateEntry(composeDir, opts.Task, opts.SessionID, runid, res.HarnessHash, strings.TrimSpace(note))
 			if cerr == nil {
@@ -536,47 +542,57 @@ func editorTools(ws string) []dive.Tool {
 	}
 }
 
-func runEditor(ctx context.Context, opts Options, kind, candDir, task string) error {
+func runEditor(ctx context.Context, opts Options, kind, candDir, task string) (int, int, error) {
 	a, err := dive.NewAgent(dive.AgentOptions{
 		Name: "improve-editor-" + kind, SystemPrompt: editorSystem(kind),
 		Model: opts.Model(), Tools: editorTools(candDir), ToolIterationLimit: opts.EditorIterations,
 	})
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
-	_, err = a.CreateResponse(ctx, dive.WithInput(task))
-	return err
+	resp, err := a.CreateResponse(ctx, dive.WithInput(task))
+	in, out := respUsage(resp)
+	return in, out, err
 }
 
-func runComposer(ctx context.Context, opts Options, composeDir, task string) error {
+func runComposer(ctx context.Context, opts Options, composeDir, task string) (int, int, error) {
 	a, err := dive.NewAgent(dive.AgentOptions{
 		Name: "improve-composer", SystemPrompt: composerSystem,
 		Model: opts.Model(), Tools: editorTools(composeDir), ToolIterationLimit: opts.EditorIterations + 6,
 	})
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
-	_, err = a.CreateResponse(ctx, dive.WithInput(task))
-	return err
+	resp, err := a.CreateResponse(ctx, dive.WithInput(task))
+	in, out := respUsage(resp)
+	return in, out, err
 }
 
-func generate(ctx context.Context, opts Options, system, task string) (string, error) {
+func generate(ctx context.Context, opts Options, system, task string) (string, int, int, error) {
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ { // one retry: small-model stream flukes
 		a, err := dive.NewAgent(dive.AgentOptions{
 			Name: "improve-note", SystemPrompt: system, Model: opts.Model(), ToolIterationLimit: 1,
 		})
 		if err != nil {
-			return "", err
+			return "", 0, 0, err
 		}
 		resp, err := a.CreateResponse(ctx, dive.WithInput(task))
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		return strings.TrimSpace(resp.OutputText()), nil
+		in, out := respUsage(resp)
+		return strings.TrimSpace(resp.OutputText()), in, out, nil
 	}
-	return "", lastErr
+	return "", 0, 0, lastErr
+}
+
+func respUsage(resp *dive.Response) (int, int) {
+	if resp == nil || resp.Usage == nil {
+		return 0, 0
+	}
+	return resp.Usage.InputTokens, resp.Usage.OutputTokens
 }
 
 // ---- files & records ----
@@ -665,7 +681,7 @@ func dirDiff(a, b string, max int) string {
 	for n := range files {
 		names = append(names, n)
 	}
-	sortStrings(names)
+	sort.Strings(names)
 	var sb strings.Builder
 	total := 0
 	for _, n := range names {
@@ -688,12 +704,19 @@ func dirDiff(a, b string, max int) string {
 }
 
 func changedFiles(a, b string) []string {
+	seen := map[string]bool{}
+	for _, d := range []string{a, b} {
+		for _, n := range mdFiles(d) {
+			seen[n] = true
+		}
+	}
 	var out []string
-	for _, n := range mdFiles(b) {
+	for n := range seen {
 		if readFile(filepath.Join(a, n)) != readFile(filepath.Join(b, n)) {
 			out = append(out, n)
 		}
 	}
+	sort.Strings(out)
 	return out
 }
 
@@ -705,16 +728,8 @@ func mdFiles(dir string) []string {
 			out = append(out, e.Name())
 		}
 	}
-	sortStrings(out)
+	sort.Strings(out)
 	return out
-}
-
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
 }
 
 func writeStep(dir string, res *Result) error {

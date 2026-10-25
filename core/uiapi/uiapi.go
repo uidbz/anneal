@@ -19,6 +19,7 @@ import (
 
 	"github.com/deepnoodle-ai/risor/v2/pkg/object"
 	"github.com/uidbz/fynerisor/gui"
+	"github.com/uidbz/fynerisor/gui/guithread"
 	"github.com/uidbz/fynerisor/gui/vmguard"
 )
 
@@ -49,7 +50,28 @@ func New() *Bridge {
 
 // Attach connects the bridge to its fynerisor window (for GUI-thread dispatch).
 func (b *Bridge) Attach(fw *gui.Window) {
+	b.mu.Lock()
 	b.fw = fw
+	b.mu.Unlock()
+}
+
+// Quit asks the attached Fyne window/app to exit on the GUI thread. No-op
+// (returning false) when the bridge is not attached.
+func (b *Bridge) Quit() {
+	b.mu.Lock()
+	fw := b.fw
+	b.mu.Unlock()
+	if fw == nil {
+		return
+	}
+	guithread.Do(func() {
+		switch {
+		case fw.FyneApp != nil:
+			fw.FyneApp.Quit()
+		case fw.FyneWindow != nil:
+			fw.FyneWindow.Close()
+		}
+	})
 }
 
 // On registers the script-side event handler: agent.on((evtJson) => { ... }).
@@ -71,12 +93,16 @@ func (b *Bridge) setOn(cb *object.Closure, callFunc object.CallFunc) {
 }
 
 // Ready opens event delivery; call right after fw.Execute, which creates the
-// fynerisor callback channel that window.Do sends on.
+// fynerisor callback channel that window.Do sends on. The queue is only
+// flushed when a handler is already registered — otherwise it is kept for
+// setOn, which is the common case (Execute starts the script asynchronously).
 func (b *Bridge) Ready() {
 	b.mu.Lock()
 	b.ready = true
 	queued, haveHandler := b.queue, b.handler != nil
-	b.queue = nil
+	if haveHandler {
+		b.queue = nil
+	}
 	b.mu.Unlock()
 	if haveHandler {
 		for _, ev := range queued {
@@ -95,9 +121,12 @@ func (b *Bridge) Emit(v any) {
 		return
 	}
 	b.mu.Lock()
-	if b.tap != nil {
-		b.tap(v)
+	tap := b.tap
+	b.mu.Unlock()
+	if tap != nil {
+		tap(v) // never call user code while holding the bridge lock
 	}
+	b.mu.Lock()
 	if !b.ready || b.handler == nil {
 		if len(b.queue) < 4096 {
 			b.queue = append(b.queue, string(data))
@@ -151,19 +180,6 @@ func (b *Bridge) deliver(jsonStr string, attempt int) {
 // that are already risor objects (Builtin) pass through the global conversion
 // untouched. Keep this list in sync with docs/PLAN.md §7 (bridge contract).
 func (b *Bridge) API() map[string]any {
-	str := func(name string, fn func(ctx context.Context, s string) (object.Object, error)) *object.Builtin {
-		return object.NewBuiltin(name, func(ctx context.Context, args ...object.Object) (object.Object, error) {
-			s := ""
-			if len(args) > 0 {
-				var err error
-				s, err = object.AsString(args[0])
-				if err != nil {
-					return nil, err
-				}
-			}
-			return fn(ctx, s)
-		})
-	}
 	return map[string]any{
 		"on": object.NewBuiltin("agent.on", func(ctx context.Context, args ...object.Object) (object.Object, error) {
 			if len(args) != 1 {
@@ -178,15 +194,6 @@ func (b *Bridge) API() map[string]any {
 				return object.Errorf("agent.on: unable to get call function"), nil
 			}
 			b.setOn(cb, callFunc)
-			return object.Nil, nil
-		}),
-		// M0: proves the Go→script event path end to end.
-		"echo": str("agent.echo", func(ctx context.Context, s string) (object.Object, error) {
-			b.Emit(map[string]any{"type": "echo", "text": s, "ts": nowSec()})
-			return object.Nil, nil
-		}),
-		"ping": str("agent.ping", func(ctx context.Context, _ string) (object.Object, error) {
-			b.Emit(map[string]any{"type": "pong", "text": "", "ts": nowSec()})
 			return object.Nil, nil
 		}),
 	}

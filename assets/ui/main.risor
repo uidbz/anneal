@@ -357,7 +357,9 @@ libRows = (arr, i, acc) => {
                     if (r.error != "") {
                         harnessMsg = "promote failed: " + r.error
                     } else {
-                        harnessMsg = "promoted " + eid + " — backup: " + r.backup + " (restart to re-read rules)"
+                        harnessMsg = "promoted " + eid
+                        if (r.backup != "") { harnessMsg = harnessMsg + " — backup: " + r.backup }
+                        harnessMsg = harnessMsg + " (restart to re-read rules)"
                     }
                 } else {
                     pendingPromote = eid
@@ -527,6 +529,7 @@ agent.on((evtJson) => {
     }
     if (t == "mcp.state") {
         mcpLbl.Text = mcpText(evt.servers, 0, 0, 0)
+        return
     }
     if (t == "tie.rebuilt") {
         if (evt.error != "") {
@@ -581,6 +584,10 @@ agent.on((evtJson) => {
         addBlock(label("✔ skill " + evt.action + ": " + evt.name))
         return
     }
+    if (t == "skill.error") {
+        addBlock(label("⚠ skill loader: " + evt.error))
+        return
+    }
     if (t == "skill.resolved") {
         skillCards = keepCards(skillCards, 0, evt.id, [])
         if (evt.error != "") {
@@ -608,6 +615,10 @@ agent.on((evtJson) => {
     if (t == "review.flag") {
         addBlock(label("🪧 review flagged a harness gap for the improve loop: " + evt.gap))
         refreshHarness()
+        return
+    }
+    if (t == "harness.warning") {
+        addBlock(label("⚠ harness: " + evt.message))
         return
     }
     if (t == "review.done") {

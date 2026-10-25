@@ -78,6 +78,28 @@ func TestCreateListContext(t *testing.T) {
 	}
 }
 
+func TestPromoteWithoutReplacementHasNoBackup(t *testing.T) {
+	t.Setenv("FYAGENT_HOME", t.TempDir())
+	s := newStore(t)
+	d := filepath.Join(t.TempDir(), "compose")
+	os.MkdirAll(d, 0o755)
+	os.WriteFile(filepath.Join(d, "tool-guidance.md"), []byte("guide"), 0o644)
+	id, err := s.CreateEntry(d, "task", "", "", "", "## situation\ns\n## lessons\n- l\n## evidence\n- e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup, err := s.Promote(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backup != "" {
+		t.Fatalf("backup path returned although nothing was replaced: %q", backup)
+	}
+	if _, err := os.Stat(filepath.Join(paths.Harness(), "tool-guidance.md")); err != nil {
+		t.Fatalf("component not promoted: %v", err)
+	}
+}
+
 func TestPromoteBacksUp(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("FYAGENT_HOME", home)

@@ -27,6 +27,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -83,13 +84,20 @@ func (x *Indexer) Connect() error {
 	return nil
 }
 
+// probeHTTP is the liveness-probe client (short timeout: a hung tie must
+// degrade the index quickly, not block boot).
+var probeHTTP = &http.Client{Timeout: 3 * time.Second}
+
 // probeLive reports whether the triplestore answers HTTP at all. Any status
 // code (even 404) proves the server is up.
 func probeLive(base string) error {
 	u := strings.TrimRight(base, "/") + "/-/live"
-	if _, err := http.Get(u); err != nil {
+	resp, err := probeHTTP.Get(u)
+	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
 	return nil
 }
 
@@ -122,10 +130,10 @@ func (x *Indexer) State() map[string]any {
 
 func (x *Indexer) client() (*client.TieClient, error) {
 	x.mu.Lock()
-	tc := x.tc
+	tc, lastErr := x.tc, x.lastErr
 	x.mu.Unlock()
 	if tc == nil {
-		return nil, fmt.Errorf("tie index unavailable (%s)", x.lastErr)
+		return nil, fmt.Errorf("tie index unavailable (%s)", lastErr)
 	}
 	return tc, nil
 }

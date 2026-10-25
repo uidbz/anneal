@@ -40,17 +40,24 @@ type Op struct {
 	Source  string `json:"source"`            // agent | review
 }
 
-// Store owns the two memory files (mutex-serialized, atomic writes).
+// Store owns the two memory files (mutex-serialized, atomic writes). The
+// config pointer is live: runtime settings changes apply without a restart.
 type Store struct {
-	cfg    config.Memory
+	cfg    *config.Memory
 	dir    string
 	mu     sync.Mutex
 	pendMu sync.Mutex
 }
 
-func NewStore(cfg config.Memory) *Store {
+func NewStore(cfg *config.Memory) *Store {
+	if cfg == nil {
+		cfg = &config.Memory{}
+	}
 	return &Store{cfg: cfg, dir: paths.Memories()}
 }
+
+// WriteApproval reports whether writes must be staged for user approval.
+func (s *Store) WriteApproval() bool { return s.cfg.WriteApproval }
 
 func (s *Store) file(target string) (string, error) {
 	switch target {
@@ -116,11 +123,9 @@ func scanInjection(text string) error {
 // Validate checks one op against content rules (action fields, injection
 // scanner, dup-guard, size cap) without touching disk.
 func (s *Store) Validate(op *Op) error {
-	f, err := s.file(op.Target)
-	if err != nil {
+	if _, err := s.file(op.Target); err != nil {
 		return err
 	}
-	_ = f
 	if err := scanInjection(op.Content + "\n" + op.New); err != nil {
 		return err
 	}
@@ -145,7 +150,7 @@ func (s *Store) Validate(op *Op) error {
 		if op.Old == "" || op.New == "" {
 			return fmt.Errorf("patch needs old and new")
 		}
-		n := countSub(cur, op.Old)
+		n := strings.Count(cur, op.Old)
 		if n == 0 {
 			return fmt.Errorf("patch: substring not found in %s memory", op.Target)
 		}
@@ -160,7 +165,7 @@ func (s *Store) Validate(op *Op) error {
 		if op.Old == "" {
 			return fmt.Errorf("remove needs old")
 		}
-		n := countSub(cur, op.Old)
+		n := strings.Count(cur, op.Old)
 		if n == 0 {
 			return fmt.Errorf("remove: substring not found in %s memory", op.Target)
 		}
@@ -182,10 +187,6 @@ func entryExists(cur, entry string) bool {
 		}
 	}
 	return false
-}
-
-func countSub(s, sub string) int {
-	return strings.Count(s, sub)
 }
 
 // Apply validates then writes; returns the new file content.
@@ -233,6 +234,10 @@ func writeFileAtomic(f, content string) error {
 // --- staging (write_approval) ---
 
 func (s *Store) pendDir() string { return filepath.Join(paths.Pending(), "memory") }
+
+// opIDRe is the only id shape Stage generates. Resolve is reachable from the
+// UI/script API, so never build a path from an unvalidated id.
+var opIDRe = regexp.MustCompile(`^mem-[0-9a-f]{16}$`)
 
 // Stage persists an op awaiting user approval; returns the stored op.
 func (s *Store) Stage(op *Op) (*Op, error) {
@@ -299,6 +304,9 @@ func (s *Store) ListPending() ([]*Op, error) {
 
 // resolve applies (approve) or drops (reject) one staged op, removing its file.
 func (s *Store) Resolve(id string, approve bool) (*Op, string, error) {
+	if !opIDRe.MatchString(id) {
+		return nil, "", fmt.Errorf("bad pending op id %q", id)
+	}
 	pf := filepath.Join(s.pendDir(), id+".json")
 	data, err := os.ReadFile(pf)
 	if err != nil {
@@ -313,7 +321,10 @@ func (s *Store) Resolve(id string, approve bool) (*Op, string, error) {
 	if approve {
 		content, err = s.Apply(&op)
 		if err != nil {
-			return &op, "", err // keep the file: user can retry/reject
+			// The UI drops the card on memory.resolved, so keeping the file
+			// would orphan it. Drop it; the agent can request a new write.
+			os.Remove(pf)
+			return &op, "", err
 		}
 	}
 	os.Remove(pf)

@@ -41,6 +41,25 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-10-25 — full code review + fix pass ([codereview.md](codereview.md))
+- Reviewed every first-party Go file + the Risor UI. Fixed the provider-probe
+  nil-response panic (down server crashed the monitor), the probe jail denying
+  its own sandbox under `~/.fyagent`, `Bridge.Ready` dropping pre-handler
+  events, headless double tie/MCP init + out-of-order event goroutines, the
+  review scheduler wake race, selector "kept last" mismatch, improve token
+  accounting/wall budget, staged-op id traversal, MCP attach race, live config
+  copies, and tracked build artifacts. Typed `HarnessStatus`, async
+  `agent.probe`, `StartBlocking`, graceful `Bridge.Quit`, defaults-preserving
+  `Config.Apply`, forwarded `reasoning_effort`.
+- New regression tests: provider monitor (4), bridge queue/tap (3), probe jail
+  sandbox/traversal/clean-workspace (3), config defaults/apply (3), improve
+  selector/hash/token (2), staged-id rejection (2), flag release (1), harness
+  status (1), promote-without-backup (1).
+- Gate: `go vet`, `go test`, `go test -race ./core/...`, `make build`,
+  `fyagent -check-ui` all green.
+- Deferred in the review: shared reviewer toolset, headless stale-run
+  correlation, library-entry evidence predicate, helper consolidation.
+
 ### 2026-10-24 — fynerisor gaps fixed upstream (issues #2–#5 closed)
 - User green-lit fixing fynerisor directly (issue-first). Local checkout `/go/src/github.com/uidbz/fynerisor`; fyagent `go.mod` now `replace`s fynerisor to it until a release ships these.
 - Shipped to fynerisor main: **a0280fb** app.Quit/window.Close (#2), **45e3eca** Markdown SetText/.Text (#3), **dc84d6b** container Append/Remove/Refresh + Border setters + Scroll.SetContent (#4), **1c0e93f** tie.connect options vs config.toml (#5). Tests added upstream; all green (pre-existing tie test was #5 itself).

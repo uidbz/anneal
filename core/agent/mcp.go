@@ -9,8 +9,19 @@ import (
 )
 
 // SetMCP attaches the MCP manager (nil = no MCP tools). Tools are re-read
-// per run so RefreshTools effects show up without a restart.
-func (r *Runner) SetMCP(mgr *mcp.Manager) { r.mcp = mgr }
+// per run so RefreshTools effects show up without a restart. The manager is
+// attached asynchronously at boot, hence the lock.
+func (r *Runner) SetMCP(mgr *mcp.Manager) {
+	r.mcpMu.Lock()
+	r.mcp = mgr
+	r.mcpMu.Unlock()
+}
+
+func (r *Runner) mcpManager() *mcp.Manager {
+	r.mcpMu.Lock()
+	defer r.mcpMu.Unlock()
+	return r.mcp
+}
 
 // mcpTools returns MCP-provided tools in stable (sorted) order under
 // server-qualified names (mcp__<server>__<tool>). dive's Manager registers

@@ -35,6 +35,35 @@ func TestSystemPromptLayers(t *testing.T) {
 	}
 }
 
+func TestHarnessInfoTyped(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "harness")
+	h := harness.New(root)
+	if err := h.Seed(); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(root, "system.md"), []byte("be concise"), 0o644)
+	os.WriteFile(filepath.Join(root, "guardrails.md"), []byte("deny: Bash(rm -rf *)\n"), 0o644)
+
+	r := &Runner{cfg: &config.Config{Harness: config.Harness{Enabled: true, CharLimit: 2000}}, harn: h}
+	info := r.HarnessInfo()
+	if info.Root != root || !info.Enabled || len(info.Components) != 1 {
+		t.Fatalf("info: %+v", info)
+	}
+	if len(info.Rules.Deny) != 1 || len(info.Warnings) != 0 {
+		t.Fatalf("rules/warnings: %+v", info)
+	}
+	out := FormatHarnessInfo(info)
+	if !strings.Contains(out, "rules: allow=0 ask=0 deny=1") || !strings.Contains(out, "component system: 10 chars") {
+		t.Fatalf("formatted: %q", out)
+	}
+
+	// No harness store: empty (non-nil) slices, no assertion panic.
+	empty := (&Runner{cfg: &config.Config{}}).HarnessInfo()
+	if empty.Components == nil || empty.Rules.Allow == nil || empty.Warnings == nil {
+		t.Fatalf("nil slices leak into JSON: %+v", empty)
+	}
+}
+
 func TestPermConfigHarnessRules(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "harness")
 	h := harness.New(root)

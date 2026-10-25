@@ -52,13 +52,14 @@ type Runner struct {
 	sess         *session.Session
 	sessID       string
 	lastTask     string
-	lastDeliv    string
 	todos        []todoItem
 	cancel       context.CancelFunc
 	runSeq       int
 	running      bool
 	permSeq      int
 	pendingPerms map[string]chan *dive.DialogOutput
+
+	mcpMu sync.Mutex // guards mcp: it is attached asynchronously at boot
 }
 
 // SetIndex attaches the tie index (nil or disabled = no session_search).
@@ -70,27 +71,46 @@ func (r *Runner) SetMemory(m *memory.Store) { r.mem = m }
 // SetSkills attaches the skill store (nil or disabled = no skill_manage).
 func (r *Runner) SetSkills(s *skills.Store) { r.skills = s }
 
-// SetHarness attaches the harness component store (nil = base harness only).
-func (r *Runner) SetHarness(h *harness.Store) { r.harn = h }
+// HarnessStatus is the UI/CLI view of the editable harness (typed so the
+// formatter cannot panic on a changed map shape).
+type HarnessStatus struct {
+	Root       string             `json:"root"`
+	Enabled    bool               `json:"enabled"`
+	Components []HarnessComponent `json:"components"`
+	Rules      HarnessRules       `json:"rules"`
+	Warnings   []string           `json:"warnings"`
+}
+
+type HarnessComponent struct {
+	Name  string `json:"name"`
+	Chars int    `json:"chars"`
+}
+
+type HarnessRules struct {
+	Allow []string `json:"allow"`
+	Ask   []string `json:"ask"`
+	Deny  []string `json:"deny"`
+}
 
 // HarnessInfo reports the active harness components and warnings (UI/CLI).
-func (r *Runner) HarnessInfo() map[string]any {
-	out := map[string]any{"root": "", "enabled": r.cfg.Harness.Enabled,
-		"components": []map[string]any{}, "rules": map[string]any{"allow": []string{}, "ask": []string{}, "deny": []string{}},
-		"warnings": []string{}}
+func (r *Runner) HarnessInfo() HarnessStatus {
+	out := HarnessStatus{
+		Enabled:    r.cfg.Harness.Enabled,
+		Components: []HarnessComponent{},
+		Rules:      HarnessRules{Allow: []string{}, Ask: []string{}, Deny: []string{}},
+		Warnings:   []string{},
+	}
 	if r.harn == nil {
 		return out
 	}
-	out["root"] = r.harn.Root()
+	out.Root = r.harn.Root()
 	lim := r.cfg.Harness.CharLimit
-	comps := []map[string]any{}
 	for _, l := range r.harn.Layers(lim) {
-		comps = append(comps, map[string]any{"name": l.Name, "chars": len(l.Content)})
+		out.Components = append(out.Components, HarnessComponent{Name: l.Name, Chars: len(l.Content)})
 	}
-	out["components"] = comps
-	a, ask, d := r.harn.GuardRules()
-	out["rules"] = map[string]any{"allow": nzs(a), "ask": nzs(ask), "deny": nzs(d)}
-	out["warnings"] = nzs(r.harn.Validate(lim))
+	allow, ask, deny := r.harn.GuardRules()
+	out.Rules = HarnessRules{Allow: nzs(allow), Ask: nzs(ask), Deny: nzs(deny)}
+	out.Warnings = nzs(r.harn.Validate(lim))
 	return out
 }
 
@@ -102,24 +122,22 @@ func nzs(s []string) []string {
 }
 
 // FormatHarnessInfo renders HarnessInfo for terminals.
-
-func FormatHarnessInfo(info map[string]any) string {
+func FormatHarnessInfo(info HarnessStatus) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "harness %q (enabled=%v)\n", info["root"], info["enabled"])
-	for _, w := range info["warnings"].([]string) {
+	fmt.Fprintf(&sb, "harness %q (enabled=%v)\n", info.Root, info.Enabled)
+	for _, w := range info.Warnings {
 		fmt.Fprintf(&sb, "  warn: %s\n", w)
 	}
-	for _, c := range info["components"].([]map[string]any) {
-		fmt.Fprintf(&sb, "  component %s: %d chars\n", c["name"], c["chars"])
+	for _, c := range info.Components {
+		fmt.Fprintf(&sb, "  component %s: %d chars\n", c.Name, c.Chars)
 	}
-	rules := info["rules"].(map[string]any)
 	fmt.Fprintf(&sb, "  rules: allow=%d ask=%d deny=%d",
-		len(rules["allow"].([]string)), len(rules["ask"].([]string)), len(rules["deny"].([]string)))
+		len(info.Rules.Allow), len(info.Rules.Ask), len(info.Rules.Deny))
 	return sb.String()
 }
 
-// SessionID / LastTask / LastDeliverable feed the improvement step the
-// reference execution identity (task text + final answer of last run).
+// SessionID / LastTask feed the improvement step the reference execution
+// identity (task text + final answer of last run).
 func (r *Runner) SessionID() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -132,12 +150,6 @@ func (r *Runner) LastTask() string {
 	return r.lastTask
 }
 
-func (r *Runner) LastDeliverable() string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.lastDeliv
-}
-
 // Cwd is the working directory runs operate in (improve sandbox source).
 func (r *Runner) Cwd() string { return r.cwd }
 
@@ -145,11 +157,12 @@ func (r *Runner) Cwd() string { return r.cwd }
 // of component .md files) as the current session's harness overlay: mounted
 // on every following run of this session, nothing global is touched.
 func (r *Runner) SetSessionOverlay(srcDir string) error {
-	dst := filepath.Join(paths.Overlays(), r.SessionID())
+	sid := r.SessionID()
+	dst := filepath.Join(paths.Overlays(), sid)
 	if err := copyTree(srcDir, dst); err != nil {
 		return err
 	}
-	r.emit(map[string]any{"type": "harness.overlay", "session": r.SessionID(), "dir": dst})
+	r.emit(map[string]any{"type": "harness.overlay", "session": sid, "dir": dst})
 	return nil
 }
 
@@ -187,13 +200,16 @@ func copyTree(src, dst string) error {
 // SetReview attaches the background review manager (nil = no loop).
 func (r *Runner) SetReview(m *review.Manager) { r.review = m }
 
-func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge, cwd string) (*Runner, error) {
+func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge, cwd string, harn *harness.Store) (*Runner, error) {
+	if harn == nil {
+		harn = harness.New(paths.Harness())
+	}
 	r := &Runner{
 		cfg:          cfg,
 		monitor:      monitor,
 		bridge:       bridge,
 		cwd:          cwd,
-		harn:         harness.New(paths.Harness()),
+		harn:         harn,
 		pendingPerms: make(map[string]chan *dive.DialogOutput),
 	}
 	r.mgr = permission.NewManager(permConfig(cfg, r.harn), &uiDialog{r: r})
@@ -305,12 +321,12 @@ func (r *Runner) run(id int, input string) {
 	if r.skills != nil && r.cfg.Skills.Enabled {
 		tools = append(tools, r.skillManageTool())
 	}
-	skillExt := r.skillLoader(ctx)
+	skillExt := r.skillLoader()
 	var exts []dive.Extension
 	if skillExt != nil {
 		exts = append(exts, skillExt)
 	}
-	tools = append(tools, mcpTools(r.mcp)...)
+	tools = append(tools, mcpTools(r.mcpManager())...)
 	if r.cfg.Agent.Subagents {
 		tools = append(tools, r.agentTool(provider, tools))
 	}
@@ -335,7 +351,7 @@ func (r *Runner) run(id int, input string) {
 		}
 	}
 
-	agent, err := dive.NewAgent(dive.AgentOptions{
+	ag, err := dive.NewAgent(dive.AgentOptions{
 		Name:               "fyagent",
 		SystemPrompt:       prompt,
 		Model:              provider,
@@ -344,10 +360,7 @@ func (r *Runner) run(id int, input string) {
 		Extensions:         exts,
 		ToolIterationLimit: r.cfg.Agent.ToolIterationLimit,
 		Session:            sess,
-		ModelSettings: &dive.ModelSettings{
-			MaxTokens:   dive.Ptr(r.cfg.Provider.MaxTokens),
-			Temperature: dive.Ptr(r.cfg.Provider.Temperature),
-		},
+		ModelSettings:      model.Settings(r.cfg),
 	})
 	if err != nil {
 		r.finishRun(id, false, "", err.Error(), 0, 0, 0)
@@ -356,7 +369,7 @@ func (r *Runner) run(id int, input string) {
 
 	r.emit(map[string]any{"type": "run.started", "run": id, "model": h.Model})
 
-	resp, runErr := agent.CreateResponse(ctx,
+	resp, runErr := ag.CreateResponse(ctx,
 		dive.WithInput(input),
 		dive.WithEventCallback(func(_ context.Context, item *dive.ResponseItem) error {
 			switch item.Type {
@@ -487,9 +500,6 @@ func (r *Runner) preGenCompactionHook(provider llm.LLM, prompt string, threshold
 }
 
 func (r *Runner) finishRun(id int, ok bool, text, errMsg string, in, outTok, ctxPct int) {
-	r.mu.Lock()
-	r.lastDeliv = text
-	r.mu.Unlock()
 	r.clearRunning()
 	r.emit(map[string]any{"type": "run.finished", "run": id, "ok": ok,
 		"text": text, "error": errMsg,

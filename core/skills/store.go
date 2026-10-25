@@ -55,13 +55,22 @@ type Info struct {
 	Chars       int    `json:"chars"`
 }
 
-// Store roots at paths.Skills(); mutex-serialized.
+// Store roots at paths.Skills(); mutex-serialized. The config pointer is
+// live, so runtime settings changes apply without a restart.
 type Store struct {
-	cfg config.Skills
+	cfg *config.Skills
 	mu  sync.Mutex
 }
 
-func NewStore(cfg config.Skills) *Store { return &Store{cfg: cfg} }
+func NewStore(cfg *config.Skills) *Store {
+	if cfg == nil {
+		cfg = &config.Skills{}
+	}
+	return &Store{cfg: cfg}
+}
+
+// WriteApproval reports whether writes must be staged for user approval.
+func (s *Store) WriteApproval() bool { return s.cfg.WriteApproval }
 
 func (s *Store) Root() string { return paths.Skills() }
 
@@ -271,6 +280,10 @@ func clip(s string, n int) string {
 
 func (s *Store) pendDir() string { return filepath.Join(paths.Pending(), "skills") }
 
+// opIDRe is the only id shape Stage generates; Resolve is reachable from the
+// UI/script API, so never build a path from an unvalidated id.
+var opIDRe = regexp.MustCompile(`^skill-[0-9a-f]{16}$`)
+
 func (s *Store) Stage(op *Op) (*Op, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -330,6 +343,9 @@ func (s *Store) ListPending() ([]*Op, error) {
 }
 
 func (s *Store) Resolve(id string, approve bool) (*Op, string, error) {
+	if !opIDRe.MatchString(id) {
+		return nil, "", fmt.Errorf("bad pending op id %q", id)
+	}
 	pf := filepath.Join(s.pendDir(), id+".json")
 	data, err := os.ReadFile(pf)
 	if err != nil {

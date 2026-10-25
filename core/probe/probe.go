@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"fyagent/core/config"
+	"fyagent/core/model"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -85,36 +86,7 @@ func Run(ctx context.Context, opts Options) (*Record, error) {
 		rec.Src, rec.SandboxWS = opts.Scratch.Src, opts.Scratch.WS
 	}
 
-	tools := []dive.Tool{
-		toolkit.NewReadFileTool(),
-		toolkit.NewWriteFileTool(),
-		toolkit.NewEditTool(),
-		toolkit.NewTextEditorTool(),
-		toolkit.NewGlobTool(),
-		toolkit.NewGrepTool(),
-		toolkit.NewListDirectoryTool(),
-		toolkit.NewBashTool(),
-		toolkit.NewFetchTool(),
-	}
-	var hooks dive.Hooks
-	if opts.Scratch != nil {
-		// dive-native workspace jail first…
-		ws := opts.Scratch.WS
-		tools = []dive.Tool{
-			toolkit.NewReadFileTool(toolkit.ReadFileToolOptions{WorkspaceDir: ws}),
-			toolkit.NewWriteFileTool(toolkit.WriteFileToolOptions{WorkspaceDir: ws}),
-			toolkit.NewEditTool(toolkit.EditToolOptions{WorkspaceDir: ws}),
-			toolkit.NewTextEditorTool(toolkit.TextEditorToolOptions{WorkspaceDir: ws}),
-			toolkit.NewGlobTool(toolkit.GlobToolOptions{WorkspaceDir: ws}),
-			toolkit.NewGrepTool(toolkit.GrepToolOptions{WorkspaceDir: ws}),
-			toolkit.NewListDirectoryTool(toolkit.ListDirectoryToolOptions{WorkspaceDir: ws}),
-			toolkit.NewBashTool(toolkit.BashToolOptions{WorkspaceDir: ws}),
-			toolkit.NewFetchTool(),
-		}
-		// …plus our hook as defense-in-depth (protects src + fyagent state
-		// even if a tool is ever swapped in without WorkspaceDir).
-		hooks.PreToolUse = append(hooks.PreToolUse, opts.Scratch.Jail())
-	}
+	tools, hooks := probeTools(opts.Scratch)
 
 	ag, err := dive.NewAgent(dive.AgentOptions{
 		Name:               "probe-" + opts.Name,
@@ -123,10 +95,7 @@ func Run(ctx context.Context, opts Options) (*Record, error) {
 		Tools:              tools,
 		Hooks:              hooks,
 		ToolIterationLimit: opts.MaxIterations,
-		ModelSettings: &dive.ModelSettings{
-			MaxTokens:   dive.Ptr(opts.Cfg.Provider.MaxTokens),
-			Temperature: dive.Ptr(opts.Cfg.Provider.Temperature),
-		},
+		ModelSettings:      model.Settings(opts.Cfg),
 	})
 	if err != nil {
 		rec.Error = err.Error()
@@ -182,6 +151,38 @@ func Run(ctx context.Context, opts Options) (*Record, error) {
 		}
 	}
 	return rec, runErr
+}
+
+// probeTools builds the toolkit once. With a sandbox, every file tool is
+// workspace-jailed and the custom jail hook is added as defense-in-depth
+// (protects src + fyagent state even if a tool is ever swapped in without
+// WorkspaceDir). Without one, the tools are unrestricted (used by tests).
+func probeTools(sb *Sandbox) ([]dive.Tool, dive.Hooks) {
+	if sb == nil {
+		return []dive.Tool{
+			toolkit.NewReadFileTool(),
+			toolkit.NewWriteFileTool(),
+			toolkit.NewEditTool(),
+			toolkit.NewTextEditorTool(),
+			toolkit.NewGlobTool(),
+			toolkit.NewGrepTool(),
+			toolkit.NewListDirectoryTool(),
+			toolkit.NewBashTool(),
+			toolkit.NewFetchTool(),
+		}, dive.Hooks{}
+	}
+	ws := sb.WS
+	return []dive.Tool{
+		toolkit.NewReadFileTool(toolkit.ReadFileToolOptions{WorkspaceDir: ws}),
+		toolkit.NewWriteFileTool(toolkit.WriteFileToolOptions{WorkspaceDir: ws}),
+		toolkit.NewEditTool(toolkit.EditToolOptions{WorkspaceDir: ws}),
+		toolkit.NewTextEditorTool(toolkit.TextEditorToolOptions{WorkspaceDir: ws}),
+		toolkit.NewGlobTool(toolkit.GlobToolOptions{WorkspaceDir: ws}),
+		toolkit.NewGrepTool(toolkit.GrepToolOptions{WorkspaceDir: ws}),
+		toolkit.NewListDirectoryTool(toolkit.ListDirectoryToolOptions{WorkspaceDir: ws}),
+		toolkit.NewBashTool(toolkit.BashToolOptions{WorkspaceDir: ws}),
+		toolkit.NewFetchTool(),
+	}, dive.Hooks{PreToolUse: []dive.PreToolUseHook{sb.Jail()}}
 }
 
 func resultText(tr *dive.ToolCallResult) (string, bool) {

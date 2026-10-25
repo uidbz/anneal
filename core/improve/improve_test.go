@@ -12,6 +12,7 @@ import (
 	"fyagent/core/config"
 	"fyagent/core/harness"
 	"fyagent/core/harnesslib"
+	"fyagent/core/probe"
 
 	"github.com/deepnoodle-ai/dive/llm"
 )
@@ -188,6 +189,13 @@ small Go feature addition; unverified-done deficiency
 	if inv.Probe == nil || !strings.Contains(inv.Contrast, "improved") {
 		t.Fatalf("missing probe/contrast: %+v", inv)
 	}
+	// Audit hashes must be present on probe records, not just the step.
+	if inv.Probe.HarnessHash == "" {
+		t.Fatal("candidate probe record lacks harness hash")
+	}
+	if res.SuccessorProbe == nil || res.SuccessorProbe.HarnessHash == "" {
+		t.Fatal("successor probe record lacks harness hash")
+	}
 	if res.Candidates[1].Skipped != "no edits" {
 		t.Fatalf("domain candidate: %+v", res.Candidates[1])
 	}
@@ -252,5 +260,12 @@ small Go feature addition; unverified-done deficiency
 	snap := filepath.Join(os.Getenv("FYAGENT_HOME"), "harness-lib", res.LibraryEntry, "harness", "system.md")
 	if b, err := os.ReadFile(snap); err != nil || !strings.Contains(string(b), "re-read") {
 		t.Fatalf("entry snapshot: %v", err)
+	}
+	// The fast path must report its recursion parameters.
+	if res.K != 1 || res.Mode != "sequential" {
+		t.Fatalf("k/mode: k=%d mode=%q", res.K, res.Mode)
+	}
+	if got := tokens(&Result{StageTokens: 100, Candidates: []Candidate{{Probe: &probe.Record{Tin: 7, Tout: 3}}}}); got != 110 {
+		t.Fatalf("token accounting: %d", got)
 	}
 }

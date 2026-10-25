@@ -111,6 +111,9 @@ func (r *Runner) SetMode(mode string) {
 	default:
 		return
 	}
+	if r.Mode() == mode {
+		return
+	}
 	r.mgr.SetMode(permission.Mode(mode))
 	r.cfg.Agent.PermissionMode = mode
 	_ = r.cfg.Save()

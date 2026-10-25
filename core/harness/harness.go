@@ -283,10 +283,6 @@ func (s *Store) SaveFile(rel, content string) error {
 	return os.WriteFile(p, []byte(content), 0o644)
 }
 
-// FormatDoc returns the component-format documentation (seeded README);
-// improvement editors get it verbatim.
-func FormatDoc() string { return readme }
-
 // LayersFromDir renders any directory of .md component files as prompt
 // layers (candidate/successor harnesses carry the same layout).
 func LayersFromDir(dir string, limit int) []Layer {
@@ -319,8 +315,8 @@ func LayersFromDir(dir string, limit int) []Layer {
 // Validate returns human-readable warnings (bad files, oversize, unknowns).
 func (s *Store) Validate(limit int) []string {
 	var warns []string
-	if _, err := s.Subagents(); err != nil {
-		warns = append(warns, err...)
+	if _, notes := s.Subagents(); len(notes) > 0 {
+		warns = append(warns, notes...)
 	}
 	entries, err := os.ReadDir(s.root)
 	if err != nil {

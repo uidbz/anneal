@@ -32,13 +32,18 @@ type Sandbox struct {
 // SkipDirs are never copied into the sandbox (size; not needed to replay).
 var SkipDirs = []string{"node_modules", ".venv", "venv", "__pycache__", ".next", "dist", "target", "out"}
 
-// Prepare copies src into <root>/ws and returns the sandbox.
+// Prepare copies src into <root>/ws and returns the sandbox. An existing ws
+// is removed first so a retried run can never observe files left behind by an
+// earlier attempt.
 func Prepare(src, root string) (*Sandbox, error) {
 	src, err := filepath.Abs(src)
 	if err != nil {
 		return nil, err
 	}
 	ws := filepath.Join(root, "ws")
+	if err := os.RemoveAll(ws); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(ws, 0o755); err != nil {
 		return nil, err
 	}
@@ -107,11 +112,21 @@ func isSystemPath(p string) bool {
 	return p == "/dev/null" || p == "/proc/self/stat"
 }
 
-// jailDeniedPath reports whether a path arg is forbidden; msg explains.
+// jailDeniedPath reports whether a path arg is forbidden; msg explains. The
+// sandbox is checked first: improvement probes live under the fyagent state
+// directory (~/.fyagent/improvements/...), so the state-dir denial must not
+// swallow the workspace itself.
 func (s *Sandbox) jailDeniedPath(raw string, writeTool bool) (string, bool) {
 	p, ok := absPath(raw)
 	if !ok {
 		return fmt.Sprintf("must be an absolute path under %s", s.WS), true
+	}
+	inWS := inside(p, s.WS)
+	if writeTool && !inWS {
+		return fmt.Sprintf("writes must stay inside %s", s.WS), true
+	}
+	if inWS {
+		return "", false
 	}
 	if inside(p, paths.Root()) {
 		return "fyagent state is off-limits to probes", true
@@ -119,13 +134,7 @@ func (s *Sandbox) jailDeniedPath(raw string, writeTool bool) (string, bool) {
 	if inside(p, s.Src) && p != s.Src {
 		return "the original project is off-limits; use the sandbox copy", true
 	}
-	if writeTool {
-		if !inside(p, s.WS) {
-			return fmt.Sprintf("writes must stay inside %s", s.WS), true
-		}
-		return "", false
-	}
-	// reads: sandbox, system dirs, or elsewhere-outside-src are tolerated
+	// reads: system dirs or elsewhere-outside-src are tolerated
 	return "", false
 }
 
@@ -143,6 +152,13 @@ func (s *Sandbox) jailBash(input map[string]any) (string, bool) {
 	cmd, _ := input["command"].(string)
 	for _, tok := range strings.Fields(cmd) {
 		tok = strings.Trim(tok, "\"'`()$;{}<>&|")
+		// Relative traversal escapes the absolute-path checks below
+		// ("cd .. && cp … ../src"). The jail is defense-in-depth, not OS
+		// isolation, but this specific hole defeats its stated promise.
+		if tok == ".." || strings.HasPrefix(tok, "../") ||
+			strings.HasSuffix(tok, "/..") || strings.Contains(tok, "/../") {
+			return "command uses parent-directory traversal", true
+		}
 		if tok == "" || !strings.HasPrefix(tok, "/") {
 			continue
 		}

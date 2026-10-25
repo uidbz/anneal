@@ -46,7 +46,10 @@ Learning loop:
 	for _, l := range layers {
 		base += fmt.Sprintf("\n<harness-component name=%q>\n%s\n</harness-component>\n", l.Name, strings.TrimSpace(l.Content))
 	}
-	wd, _ := filepath.EvalSymlinks(cwd)
+	wd, err := filepath.EvalSymlinks(cwd)
+	if err != nil || wd == "" {
+		wd = cwd
+	}
 	env := fmt.Sprintf("Working directory: %s\nPlatform: %s/%s\nModel server: local (Strata, OpenAI-compatible).", wd, runtime.GOOS, runtime.GOARCH)
 	if host := os.Getenv("HOSTNAME"); host != "" {
 		env += "\nHost: " + host

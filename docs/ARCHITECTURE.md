@@ -66,12 +66,12 @@ Every payload carries **all keys** (empty slices marshal as `[]`, never
 | `todo.updated` | checklist (always the full list) |
 | `tie.state` / `tie.rebuilt` | index status (header label + notices) |
 | `memory.stage` / `memory.resolved` / `memory.updated` | staged/applied memory writes |
-| `skill.stage` / `skill.resolved` / `skill.applied` | staged/applied skill writes |
+| `skill.stage` / `skill.resolved` / `skill.applied` / `skill.error` | staged/applied skill writes; loader problems |
 | `mcp.state` | per-server connection/tool counts |
 | `review.start` / `review.done` / `review.skipped` | background review (done carries the ledger) |
 | `review.flag` | reviewer queued a harness deficiency (M16 → improve hints) |
 | `improve.start/propose/probe/compose/iterdone/library/selector/budget/done/error` | improvement step (selector/budget only k>1) |
-| `harness.warn` / `harness.promoted` | component save re-validation / library promote result |
+| `harness.warn` / `harness.warning` / `harness.promoted` / `harness.overlay` | component save re-validation, bad subagent file, library promote result, session overlay installed |
 | `compaction.done` | context compaction (before/after tokens, msgs) |
 
 ## Permissions
@@ -109,8 +109,9 @@ hook — dive's default factory would spawn unguarded agents.
 
 `core/model`: thin config→dive `openaicompletions.Provider` factory for
 Strata, plus a `HealthMonitor` that probes `/v1/models` every 10 s (states:
-connecting/online/degraded/offline) so the UI never blocks on a cold server;
-first send probes synchronously once.
+`connecting`/`online`/`unreachable`/`wrong_service`) so the UI never blocks on
+a cold server; first send probes synchronously once. Probes are serialized and
+a transport error reports `unreachable` without touching a nil response.
 
 ## Known upstream issues & workarounds
 

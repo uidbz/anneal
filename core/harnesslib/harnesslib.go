@@ -57,11 +57,14 @@ func (s *Store) Seed() error {
 
 func slug(s string, n int) string {
 	var sb strings.Builder
+	lastDash := false
 	for _, r := range strings.ToLower(s) {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			sb.WriteRune(r)
-		} else if sb.Len() > 0 && sb.String()[sb.Len()-1] != '-' {
+			lastDash = false
+		} else if sb.Len() > 0 && !lastDash {
 			sb.WriteByte('-')
+			lastDash = true
 		}
 		if sb.Len() >= n {
 			break
@@ -81,11 +84,12 @@ func (s *Store) CreateEntry(successorDir, task, sessionID, runID, harnessHash, e
 		return "", fmt.Errorf("harnesslib: successor dir has no components")
 	}
 	id := time.Now().UTC().Format("20060102-150405") + "-" + slug(task, 28)
+	base := id
 	for n := 2; ; n++ {
 		if _, err := os.Stat(filepath.Join(s.root, id)); err != nil {
 			break
 		}
-		id = fmt.Sprintf("%s-%s-%d", time.Now().UTC().Format("20060102-150405"), slug(task, 28), n)
+		id = fmt.Sprintf("%s-%d", base, n)
 	}
 	dir := filepath.Join(s.root, id)
 	if err := os.MkdirAll(filepath.Join(dir, "harness"), 0o755); err != nil {
@@ -191,18 +195,18 @@ func (s *Store) Context(task string, max int, maxChars int) string {
 	type scored struct {
 		Info
 		score int
+		exp   string
 	}
 	var ranked []scored
 	for _, inf := range infos {
-		sc := 0
 		exp, _ := os.ReadFile(filepath.Join(s.root, inf.ID, "EXPERIENCE.md"))
+		sc := len(inf.Components) // mild recency/completeness nudge
 		for _, t := range tokens(string(exp)) {
 			if toks[t] {
 				sc++
 			}
 		}
-		sc += len(inf.Components) // mild recency/completeness nudge
-		ranked = append(ranked, scored{inf, sc})
+		ranked = append(ranked, scored{Info: inf, score: sc, exp: string(exp)})
 	}
 	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].score > ranked[j].score })
 	var sb strings.Builder
@@ -212,8 +216,7 @@ func (s *Store) Context(task string, max int, maxChars int) string {
 		if n >= max {
 			break
 		}
-		exp, _ := os.ReadFile(filepath.Join(s.root, r.ID, "EXPERIENCE.md"))
-		block := fmt.Sprintf("### entry %s\n%s\n", r.ID, strings.TrimSpace(string(exp)))
+		block := fmt.Sprintf("### entry %s\n%s\n", r.ID, strings.TrimSpace(r.exp))
 		if total+len(block) > maxChars {
 			block = clip(block, maxChars-total) + "\n"
 		}
@@ -265,6 +268,7 @@ func (s *Store) Promote(id string) (backupDir string, err error) {
 	}
 	ts := time.Now().UTC().Format("20060102-150405")
 	backupDir = filepath.Join(s.root, "promote-backup", ts)
+	backedUp := false
 	for _, f := range mdFiles(src) {
 		target := filepath.Join(dst, f)
 		if old, err := os.ReadFile(target); err == nil {
@@ -274,6 +278,7 @@ func (s *Store) Promote(id string) (backupDir string, err error) {
 			if err := os.WriteFile(filepath.Join(backupDir, f), old, 0o644); err != nil {
 				return "", err
 			}
+			backedUp = true
 		}
 		data, err := os.ReadFile(filepath.Join(src, f))
 		if err != nil {
@@ -282,6 +287,9 @@ func (s *Store) Promote(id string) (backupDir string, err error) {
 		if err := os.WriteFile(target, data, 0o644); err != nil {
 			return "", err
 		}
+	}
+	if !backedUp {
+		return "", nil // nothing was replaced; no backup dir was created
 	}
 	return backupDir, nil
 }

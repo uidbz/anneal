@@ -86,13 +86,13 @@ func (r *Runner) skillManageTool() dive.Tool {
 
 // skillLoader builds the dive skill loader for one run: fyagent-managed
 // skills, project skills (./.fyagent/skills + .claude/.agents read-compat).
-func (r *Runner) skillLoader(ctx context.Context) *skill.Loader {
+func (r *Runner) skillLoader() *skill.Loader {
 	if !r.cfg.Skills.Enabled {
 		return nil
 	}
 	extra := []string{paths.Skills(), filepath.Join(r.cwd, ".fyagent", "skills")}
 	extra = append(extra, r.cfg.Skills.ExtraDirs...)
-	loader, err := skill.Load(ctx, skill.LoaderOptions{
+	loader, err := skill.Load(context.Background(), skill.LoaderOptions{
 		ProjectDir:      r.cwd,
 		AdditionalPaths: extra,
 	})

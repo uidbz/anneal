@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -40,6 +41,10 @@ func (h Health) IsUsable() bool { return h.State == StateOnline }
 type Monitor struct {
 	providerMu sync.Mutex
 	provider   config.Provider
+
+	// probeMu serializes probes: two overlapping probes (ticker + manual)
+	// could otherwise publish an older result after a newer one.
+	probeMu sync.Mutex
 
 	mu     sync.Mutex
 	health Health
@@ -95,28 +100,37 @@ func (m *Monitor) Start(ctx context.Context, interval time.Duration) {
 	}()
 }
 
-// ProbeNow performs one health probe and publishes the result.
+// ProbeNow performs one health probe and publishes the result. Probes are
+// serialized; a failed GET never touches the response object (net/http
+// returns a nil response for transport errors).
 func (m *Monitor) ProbeNow() {
+	m.probeMu.Lock()
+	defer m.probeMu.Unlock()
+
 	p := m.Provider()
 	h := Health{State: StateUnreachable, Endpoint: p.Endpoint, CheckedAt: time.Now().UTC().Format(time.RFC3339)}
 
-	modelsURL, err := modelsURL(p.Endpoint)
+	endpoint, err := modelsURL(p.Endpoint)
 	if err != nil {
 		h.State = StateWrongService
 		h.Error = err.Error()
+	} else if resp, err := m.client.Get(endpoint); err != nil {
+		// Redirect failures can return both a response and an error.
+		if resp != nil {
+			resp.Body.Close()
+		}
+		var uerr *url.Error
+		if errors.As(err, &uerr) {
+			h.Error = uerr.Err.Error()
+		} else {
+			h.Error = err.Error()
+		}
 	} else {
-		resp, err := m.client.Get(modelsURL)
+		defer resp.Body.Close()
 		switch {
-		case err != nil:
-			var uerr *url.Error
-			if errors.As(err, &uerr) {
-				h.Error = uerr.Err.Error()
-			} else {
-				h.Error = err.Error()
-			}
 		case resp.StatusCode != http.StatusOK:
 			h.State = StateWrongService
-			h.Error = fmt.Sprintf("GET %s → HTTP %d (is this a model server?)", modelsURL, resp.StatusCode)
+			h.Error = fmt.Sprintf("GET %s → HTTP %d (is this a model server?)", endpoint, resp.StatusCode)
 		default:
 			var doc struct {
 				Data []struct {
@@ -145,7 +159,7 @@ func (m *Monitor) ProbeNow() {
 				}
 			}
 		}
-		resp.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
 	}
 
 	m.mu.Lock()

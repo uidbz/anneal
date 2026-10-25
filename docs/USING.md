@@ -11,8 +11,9 @@
    index line (`index: fyagent`, `index: offline`).
 
 Config resolution: `~/.fyagent/config.json` (created with defaults on first
-run) → env overrides (see `docs/CONFIG.md`). The GUI **Settings** tab edits
-provider settings live.
+run) → env overrides (see `docs/CONFIG.md`). Provider settings are edited in
+that file; the bridge also exposes `agent.config()` / `agent.saveConfig(doc)`
+for scripted settings UIs (there is no built-in settings tab yet).
 
 ## GUI tour
 

@@ -12,7 +12,7 @@ import (
 
 func testStore(t *testing.T) *Store {
 	t.Setenv("FYAGENT_HOME", t.TempDir())
-	return NewStore(config.Skills{Enabled: true})
+	return NewStore(&config.Skills{Enabled: true})
 }
 
 func createOp() *Op {
@@ -88,6 +88,22 @@ func TestWriteFileRoundtrip(t *testing.T) {
 	data, err := os.ReadFile(f)
 	if err != nil || !strings.Contains(string(data), "deep notes") {
 		t.Fatalf("support file: %q %v", data, err)
+	}
+}
+
+func TestResolveRejectsUnsafeIDs(t *testing.T) {
+	s := testStore(t)
+	op, err := s.Stage(createOp())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Resolve(op.ID, false); err != nil {
+		t.Fatalf("valid id rejected: %v", err)
+	}
+	for _, id := range []string{"", "../x", "skill-../../x", "skill-ABCDEF0123456789", "skill-1"} {
+		if _, _, err := s.Resolve(id, true); err == nil {
+			t.Errorf("unsafe id %q accepted", id)
+		}
 	}
 }
 

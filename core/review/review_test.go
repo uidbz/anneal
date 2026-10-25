@@ -48,8 +48,8 @@ func textResp(text string) *llm.Response {
 
 func TestReviewerLedgerAndApply(t *testing.T) {
 	t.Setenv("FYAGENT_HOME", t.TempDir())
-	mem := memory.NewStore(config.Memory{Enabled: true, MemoryCharLimit: 500, UserCharLimit: 500})
-	sk := skills.NewStore(config.Skills{Enabled: true})
+	mem := memory.NewStore(&config.Memory{Enabled: true, MemoryCharLimit: 500, UserCharLimit: 500})
+	sk := skills.NewStore(&config.Skills{Enabled: true})
 
 	var mu sync.Mutex
 	var events []Event
@@ -67,9 +67,7 @@ func TestReviewerLedgerAndApply(t *testing.T) {
 	}}
 
 	m := NewManager(
-		config.Review{Enabled: true, IdleSettleS: 0, MaxAgeS: 60, MaxInputTokens: 4000},
-		config.Memory{Enabled: true, MemoryCharLimit: 500, UserCharLimit: 500},
-		config.Skills{Enabled: true},
+		&config.Review{Enabled: true, IdleSettleS: 0, MaxAgeS: 60, MaxInputTokens: 4000},
 		mem, sk, nil, emit,
 		func() llm.LLM { return fake },
 	)
@@ -98,8 +96,8 @@ func TestReviewerLedgerAndApply(t *testing.T) {
 
 func TestReviewerStagingLedger(t *testing.T) {
 	t.Setenv("FYAGENT_HOME", t.TempDir())
-	mem := memory.NewStore(config.Memory{Enabled: true, MemoryCharLimit: 500, UserCharLimit: 500, WriteApproval: true})
-	sk := skills.NewStore(config.Skills{Enabled: true})
+	mem := memory.NewStore(&config.Memory{Enabled: true, MemoryCharLimit: 500, UserCharLimit: 500, WriteApproval: true})
+	sk := skills.NewStore(&config.Skills{Enabled: true})
 	var staged []any
 	emit := func(v any) {
 		if m, ok := v.(map[string]any); ok && m["type"] == "memory.stage" {
@@ -110,8 +108,8 @@ func TestReviewerStagingLedger(t *testing.T) {
 		toolCallResp("memory", map[string]any{"target": "memory", "action": "add", "content": "fact from review"}),
 		textResp("staged one"),
 	}}
-	m := NewManager(config.Review{Enabled: true}, config.Memory{Enabled: true, MemoryCharLimit: 500, UserCharLimit: 500, WriteApproval: true},
-		config.Skills{Enabled: true}, mem, sk, nil, emit, func() llm.LLM { return fake })
+	m := NewManager(&config.Review{Enabled: true, MaxInputTokens: 4000}, mem, sk, nil, emit,
+		func() llm.LLM { return fake })
 	m.Digest = func(context.Context, string) string { return "digest" }
 	m.Enqueue("s")
 	m.runOnce(context.Background())
@@ -129,8 +127,8 @@ func TestReviewerStagingLedger(t *testing.T) {
 }
 
 func TestShouldRunIdleGating(t *testing.T) {
-	m := NewManager(config.Review{Enabled: true, DeferUntilIdle: true, IdleSettleS: 3600, MaxAgeS: 1},
-		config.Memory{}, config.Skills{}, nil, nil, nil, func(any) {}, func() llm.LLM { return nil })
+	m := NewManager(&config.Review{Enabled: true, DeferUntilIdle: true, IdleSettleS: 3600, MaxAgeS: 1},
+		nil, nil, nil, func(any) {}, func() llm.LLM { return nil })
 	m.Enqueue("x")
 	if m.shouldRun() {
 		t.Fatal("ran despite huge idle settle")

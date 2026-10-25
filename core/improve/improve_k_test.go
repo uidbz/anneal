@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"fyagent/core/config"
+	"fyagent/core/probe"
+
 	"github.com/deepnoodle-ai/dive/llm"
 )
 
@@ -194,6 +197,21 @@ func TestParallelSelect(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(imp, "iter2", "harness0", "system.md"))
 	if string(a) != string(b) || string(a) != "base rule" {
 		t.Fatalf("parallel bases differ: %q vs %q", a, b)
+	}
+}
+
+func TestSelectorNoneKeepsLast(t *testing.T) {
+	q := &queueLLM{scripts: []*scriptedLLM{{resps: []*llm.Response{respText("NONE")}}}}
+	opts := &Options{
+		Cfg: config.Default(), Model: q.next, Task: "t", RefDigest: "ref",
+		Emit: func(any) {},
+	}
+	sub := []*Result{
+		{Iter: 1, Successor: "a", SuccessorProbe: &probe.Record{Name: "a", Task: "t"}, Decisions: "one"},
+		{Iter: 2, Successor: "b", SuccessorProbe: &probe.Record{Name: "b", Task: "t"}, Decisions: "two"},
+	}
+	if got := selectSuccessor(context.Background(), opts, "run", sub); got.Iter != 2 {
+		t.Fatalf("NONE kept iter %d, want last (2)", got.Iter)
 	}
 }
 

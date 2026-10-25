@@ -101,6 +101,81 @@ func TestJailTable(t *testing.T) {
 	}
 }
 
+func TestJailAllowsSandboxInsideStateDir(t *testing.T) {
+	// Production layout: /improve creates its sandboxes under
+	// ~/.fyagent/improvements/<run>/..., which is inside the fyagent state
+	// directory. The workspace exemption must win over the state-dir denial.
+	home := t.TempDir()
+	t.Setenv("FYAGENT_HOME", home)
+	src := t.TempDir()
+	os.WriteFile(filepath.Join(src, "main.go"), []byte("package main"), 0o644)
+	s, err := Prepare(src, filepath.Join(home, "improvements", "run1", "probes", "invariant"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name     string
+		tool     string
+		input    map[string]any
+		wantDeny bool
+	}{
+		{"write sandbox abs", "Write", map[string]any{"file_path": s.WS + "/a.txt", "content": "x"}, false},
+		{"edit sandbox abs", "Edit", map[string]any{"file_path": s.WS + "/main.go"}, false},
+		{"read sandbox abs", "Read", map[string]any{"file_path": s.WS + "/main.go"}, false},
+		{"write state outside", "Write", map[string]any{"file_path": filepath.Join(home, "config.json"), "content": "x"}, true},
+		{"bash sandbox abs", "Bash", map[string]any{"command": "echo hi > " + s.WS + "/out.txt", "working_directory": s.WS}, false},
+	}
+	for _, tc := range cases {
+		err := jailCheck(t, s, tc.tool, tc.input)
+		if tc.wantDeny && err == nil {
+			t.Errorf("%s: expected deny, got allow", tc.name)
+		}
+		if !tc.wantDeny && err != nil {
+			t.Errorf("%s: expected allow, got deny: %v", tc.name, err)
+		}
+	}
+}
+
+func TestJailDeniesParentTraversal(t *testing.T) {
+	t.Setenv("FYAGENT_HOME", t.TempDir())
+	src := t.TempDir()
+	s, err := Prepare(src, filepath.Join(t.TempDir(), "sb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range []string{
+		"cd .. && rm -rf " + filepath.Base(src),
+		"cp ../main.go /tmp/x",
+		"ls sub/../..",
+	} {
+		if err := jailCheck(t, s, "Bash", map[string]any{"command": cmd, "working_directory": s.WS}); err == nil {
+			t.Errorf("traversal allowed: %q", cmd)
+		}
+	}
+	// A normal relative command still works.
+	if err := jailCheck(t, s, "Bash", map[string]any{"command": "go test ./...", "working_directory": s.WS}); err != nil {
+		t.Fatalf("normal command denied: %v", err)
+	}
+}
+
+func TestPrepareClearsStaleWorkspace(t *testing.T) {
+	src := t.TempDir()
+	os.WriteFile(filepath.Join(src, "main.go"), []byte("package main"), 0o644)
+	root := filepath.Join(t.TempDir(), "sb")
+	s, err := Prepare(src, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(s.WS, "stale.txt")
+	os.WriteFile(stale, []byte("left over"), 0o644)
+	if _, err := Prepare(src, root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatal("stale sandbox file survived Prepare")
+	}
+}
+
 type scriptedLLM struct {
 	mu    sync.Mutex
 	resps []*llm.Response

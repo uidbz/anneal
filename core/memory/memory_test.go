@@ -10,7 +10,7 @@ import (
 
 func testStore(t *testing.T) *Store {
 	t.Setenv("FYAGENT_HOME", t.TempDir())
-	return NewStore(config.Memory{Enabled: true, MemoryCharLimit: 100, UserCharLimit: 50})
+	return NewStore(&config.Memory{Enabled: true, MemoryCharLimit: 100, UserCharLimit: 50})
 }
 
 func TestAddPatchRemove(t *testing.T) {
@@ -122,6 +122,23 @@ func TestStageResolve(t *testing.T) {
 	}
 	if _, err := s.Stage(&Op{Target: "memory", Action: Add, Content: "overflow"}); err == nil {
 		t.Fatal("queue cap not enforced")
+	}
+}
+
+func TestResolveRejectsUnsafeIDs(t *testing.T) {
+	s := testStore(t)
+	op, err := s.Stage(&Op{Target: "user", Action: Add, Content: "prefers tabs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A real op still resolves.
+	if _, _, err := s.Resolve(op.ID, false); err != nil {
+		t.Fatalf("valid id rejected: %v", err)
+	}
+	for _, id := range []string{"", "../config", "mem-../../etc/passwd", "mem-ZZZZZZZZZZZZZZZZ", "mem-1234"} {
+		if _, _, err := s.Resolve(id, true); err == nil {
+			t.Errorf("unsafe id %q accepted", id)
+		}
 	}
 }
 

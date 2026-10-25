@@ -1,4 +1,6 @@
 bin/
+/fyagent
+/fyagent-headless
 *.test
 *.log
 .DS_Store

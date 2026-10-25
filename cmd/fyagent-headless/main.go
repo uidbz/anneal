@@ -229,13 +229,19 @@ func main() {
 		s.allow["*"] = true
 		a.Runner.SetMode("bypassPermissions")
 	}
-	a.Bridge.SetTap(func(v any) { go s.handle(v) })
+	// One ordered consumer: a goroutine per event would reorder text deltas
+	// and could deliver run.finished before message.final/tool.result.
+	events := make(chan any, 1024)
+	a.Bridge.SetTap(func(v any) { events <- v })
+	go func() {
+		for v := range events {
+			s.handle(v)
+		}
+	}()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	a.Start(ctx)
-	a.ConnectTie()    // blocking is fine headless
-	a.ConnectMCP(ctx) // blocking is fine headless
+	a.StartBlocking(ctx) // monitor + review async; tie/MCP connected inline
 
 	if *newSess {
 		a.Runner.NewSession()

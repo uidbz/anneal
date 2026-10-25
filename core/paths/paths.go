@@ -24,14 +24,12 @@ func Memories() string      { return filepath.Join(Root(), "memories") }
 func Skills() string        { return filepath.Join(Root(), "skills") }
 func SkillsArchive() string { return filepath.Join(Root(), "skills-archive") }
 func Pending() string       { return filepath.Join(Root(), "pending") }
-func Bundled() string       { return filepath.Join(Root(), "bundled") }
 func Logs() string          { return filepath.Join(Root(), "logs") }
 
 // Harness components (M10): editable files mounted into every run.
 func Harness() string      { return filepath.Join(Root(), "harness") }
 func HarnessLib() string   { return filepath.Join(Root(), "harness-lib") }
 func HarnessQueue() string { return filepath.Join(Root(), "harness-queue.json") }
-func Probes() string       { return filepath.Join(Root(), "probes") }
 func Improvements() string { return filepath.Join(Root(), "improvements") }
 func Overlays() string     { return filepath.Join(Root(), "overlays") }
 

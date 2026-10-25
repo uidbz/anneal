@@ -44,12 +44,10 @@ type Event struct {
 
 // Manager owns the review queue and the idle scheduler.
 type Manager struct {
-	cfg      config.Review
-	memCfg   config.Memory
-	skillCfg config.Skills
-	mem      *memory.Store
-	sk       *skills.Store
-	idx      *tieindex.Indexer
+	cfg *config.Review
+	mem *memory.Store
+	sk  *skills.Store
+	idx *tieindex.Indexer
 	// Digest renders one session's transcript for the reviewer (injected by
 	// the app layer, which owns the session store). Bounded by MaxInputTokens.
 	Digest func(ctx context.Context, sessionID string) string
@@ -60,6 +58,8 @@ type Manager struct {
 
 	flags *FlagStore // harness-deficiency queue (M16; nil = disabled)
 
+	wake chan struct{} // scheduler wake-up (created once; never reassigned)
+
 	mu       sync.Mutex
 	queue    []string
 	firstQue time.Time
@@ -67,22 +67,34 @@ type Manager struct {
 	busy     func() bool
 	lastAct  func() time.Time
 	cancel   context.CancelFunc
-	notify   func()
 }
 
-func NewManager(cfg config.Review, memCfg config.Memory, skCfg config.Skills,
-	mem *memory.Store, sk *skills.Store, idx *tieindex.Indexer,
-	emit func(any), model func() llm.LLM) *Manager {
-	return &Manager{cfg: cfg, memCfg: memCfg, skillCfg: skCfg, mem: mem, sk: sk, idx: idx, emit: emit, Model: model,
+func NewManager(cfg *config.Review, mem *memory.Store, sk *skills.Store,
+	idx *tieindex.Indexer, emit func(any), model func() llm.LLM) *Manager {
+	if cfg == nil {
+		d := config.Default().Review
+		cfg = &d
+	}
+	return &Manager{cfg: cfg, mem: mem, sk: sk, idx: idx, emit: emit, Model: model,
+		wake:    make(chan struct{}, 1),
 		Digest:  func(context.Context, string) string { return "" },
 		busy:    func() bool { return false },
-		lastAct: func() time.Time { return time.Now() },
-		notify:  func() {}}
+		lastAct: func() time.Time { return time.Now() }}
+}
+
+// signal wakes the scheduler without blocking (coalesced).
+func (m *Manager) signal() {
+	select {
+	case m.wake <- struct{}{}:
+	default:
+	}
 }
 
 // SetActivityHooks wires the "is the user active" probes from the runner.
 func (m *Manager) SetActivityHooks(busy func() bool, lastActivity func() time.Time) {
+	m.mu.Lock()
 	m.busy, m.lastAct = busy, lastActivity
+	m.mu.Unlock()
 }
 
 // SetFlagStore enables the harness_flag tool (reviewer -> improve queue).
@@ -94,6 +106,14 @@ func (m *Manager) ConsumeFlags(runid string, n int) []Flag {
 		return nil
 	}
 	return m.flags.Consume(runid, n)
+}
+
+// ReleaseFlags un-consumes flags when an improve step fails before using them.
+func (m *Manager) ReleaseFlags(runid string) {
+	if m.flags == nil {
+		return
+	}
+	m.flags.Release(runid)
 }
 
 // PendingFlags peeks at the queue (oldest first).
@@ -129,7 +149,7 @@ func (m *Manager) Enqueue(sessionIDs ...string) {
 		m.firstQue = time.Now()
 	}
 	m.mu.Unlock()
-	m.notify()
+	m.signal()
 }
 
 // LearnNow triggers a manual review pass as soon as the agent is idle
@@ -137,11 +157,8 @@ func (m *Manager) Enqueue(sessionIDs ...string) {
 func (m *Manager) LearnNow() {
 	m.mu.Lock()
 	m.firstQue = time.Now().Add(-time.Duration(m.cfg.IdleSettleS+1) * time.Second)
-	if m.firstQue.IsZero() {
-		m.firstQue = time.Now()
-	}
 	m.mu.Unlock()
-	m.notify()
+	m.signal()
 }
 
 // Interrupt preempts a running review; its batch is requeued.
@@ -156,20 +173,13 @@ func (m *Manager) Interrupt() {
 
 // Start runs the scheduler loop until ctx is done.
 func (m *Manager) Start(ctx context.Context) {
-	wake := make(chan struct{}, 1)
-	m.notify = func() {
-		select {
-		case wake <- struct{}{}:
-		default:
-		}
-	}
 	tick := time.NewTicker(5 * time.Second)
 	defer tick.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-wake:
+		case <-m.wake:
 		case <-tick.C:
 		}
 		for m.shouldRun() {
@@ -182,17 +192,18 @@ func (m *Manager) shouldRun() bool {
 	m.mu.Lock()
 	n, running := len(m.queue), m.running
 	first := m.firstQue
+	busy, lastAct := m.busy, m.lastAct
 	m.mu.Unlock()
 	if n == 0 || running {
 		return false
 	}
-	if m.busy() {
+	if busy() {
 		return false
 	}
 	if m.cfg.DeferUntilIdle {
 		settle := time.Duration(m.cfg.IdleSettleS) * time.Second
 		forced := time.Since(first) >= time.Duration(m.cfg.MaxAgeS)*time.Second
-		if !forced && time.Since(m.lastAct()) < settle {
+		if !forced && time.Since(lastAct()) < settle {
 			return false
 		}
 	}
@@ -208,6 +219,7 @@ func (m *Manager) runOnce(ctx context.Context) {
 	m.mu.Unlock()
 
 	rctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	m.mu.Lock()
 	m.cancel = cancel
 	m.mu.Unlock()
@@ -216,39 +228,38 @@ func (m *Manager) runOnce(ctx context.Context) {
 	m.emit(Event{Type: "review.start", Session: sessions, Ledger: []LedgerEntry{}})
 
 	ledger := []LedgerEntry{}
+	digest := ""
+	for _, sid := range batch {
+		if sid == "" {
+			continue
+		}
+		digest += m.Digest(rctx, sid) + "\n---\n"
+		if len(digest) > m.cfg.MaxInputTokens*4 { // ~4 bytes/token
+			break
+		}
+	}
+
+	var runErr, agentErr error
+	if strings.TrimSpace(digest) == "" {
+		m.emit(Event{Type: "review.skipped", Session: sessions, Reason: "empty digest", Ledger: ledger})
+		m.finishRun()
+		return
+	}
 	tools := m.reviewerTools(&ledger, sessions)
-	agent, err := dive.NewAgent(dive.AgentOptions{
+	var rev *dive.Agent
+	rev, agentErr = dive.NewAgent(dive.AgentOptions{
 		Name:               "fyagent-review",
 		SystemPrompt:       reviewerPrompt,
 		Model:              m.Model(),
 		Tools:              tools,
 		ToolIterationLimit: 6,
 	})
-
-	var runErr error
-	if err == nil {
-		digest := ""
-		for _, sid := range batch {
-			if sid == "" {
-				continue
-			}
-			digest += m.Digest(ctx, sid) + "\n---\n"
-			if len(digest) > m.cfg.MaxInputTokens*4 { // ~4 bytes/token
-				break
-			}
-		}
-		if strings.TrimSpace(digest) == "" {
-			m.emit(Event{Type: "review.skipped", Session: sessions, Reason: "empty digest", Ledger: ledger})
-		} else {
-			_, runErr = agent.CreateResponse(rctx, dive.WithInput("Transcript digest(s) follow.\n\n"+digest))
-		}
+	if agentErr == nil {
+		_, runErr = rev.CreateResponse(rctx, dive.WithInput("Transcript digest(s) follow.\n\n"+digest))
 	}
 
 	preempted := rctx.Err() != nil
-	m.mu.Lock()
-	m.running = false
-	m.cancel = nil
-	m.mu.Unlock()
+	m.finishRun()
 
 	if preempted {
 		m.Enqueue(batch...)
@@ -259,10 +270,18 @@ func (m *Manager) runOnce(ctx context.Context) {
 	if runErr != nil {
 		evt.Error = runErr.Error()
 	}
-	if err != nil {
-		evt.Error = err.Error()
+	if agentErr != nil {
+		evt.Error = agentErr.Error()
 	}
 	m.emit(evt)
+}
+
+// finishRun marks the manager idle (also clears the interrupt hook).
+func (m *Manager) finishRun() {
+	m.mu.Lock()
+	m.running = false
+	m.cancel = nil
+	m.mu.Unlock()
 }
 
 const reviewerPrompt = `You are fyagent's background self-improvement reviewer. You are given digest(s) of recent conversation transcripts (user messages, assistant replies, tool calls).
@@ -298,7 +317,7 @@ func (m *Manager) reviewerTools(ledger *[]LedgerEntry, sessions string) []dive.T
 			if err := m.mem.Validate(op); err != nil {
 				return dive.NewToolResultText("memory: " + err.Error()), nil
 			}
-			if m.cfgWriteApprovalMemory() {
+			if m.mem.WriteApproval() {
 				staged, err := m.mem.Stage(op)
 				if err != nil {
 					return dive.NewToolResultText("memory: " + err.Error()), nil
@@ -349,7 +368,7 @@ func (m *Manager) reviewerTools(ledger *[]LedgerEntry, sessions string) []dive.T
 			if err := m.sk.Validate(op); err != nil {
 				return dive.NewToolResultText("skill_manage: " + err.Error()), nil
 			}
-			if m.cfgWriteApprovalSkills() {
+			if m.sk.WriteApproval() {
 				staged, err := m.sk.Stage(op)
 				if err != nil {
 					return dive.NewToolResultText("skill_manage: " + err.Error()), nil
@@ -412,8 +431,3 @@ func (m *Manager) reviewerTools(ledger *[]LedgerEntry, sessions string) []dive.T
 	}
 	return tools
 }
-
-// cfgWriteApproval* reflect the same config the main tools use; the Manager
-// keeps the config struct so writes obey write_approval consistently.
-func (m *Manager) cfgWriteApprovalMemory() bool { return m.memCfg.WriteApproval }
-func (m *Manager) cfgWriteApprovalSkills() bool { return m.skillCfg.WriteApproval }

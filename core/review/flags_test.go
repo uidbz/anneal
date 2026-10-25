@@ -43,10 +43,29 @@ func TestFlagStoreLifecycle(t *testing.T) {
 	}
 }
 
+func TestFlagStoreRelease(t *testing.T) {
+	s := NewFlagStore(filepath.Join(t.TempDir(), "q.json"))
+	s.Add("s", "repeats the same failing tool call unchanged")
+	if got := s.Consume("run1", 1); len(got) != 1 {
+		t.Fatalf("consume: %+v", got)
+	}
+	s.Release("run1")
+	p := s.Pending(5)
+	if len(p) != 1 || p[0].ConsumedBy != "" {
+		t.Fatalf("release did not restore flag: %+v", p)
+	}
+	// Releasing another run must not touch it.
+	s.Consume("run2", 1)
+	s.Release("run1")
+	if p := s.Pending(5); len(p) != 0 {
+		t.Fatalf("unrelated release changed state: %+v", p)
+	}
+}
+
 func TestReviewerHarnessFlag(t *testing.T) {
 	t.Setenv("FYAGENT_HOME", t.TempDir())
-	mem := memory.NewStore(config.Memory{Enabled: true, MemoryCharLimit: 500, UserCharLimit: 500})
-	sk := skills.NewStore(config.Skills{Enabled: true})
+	mem := memory.NewStore(&config.Memory{Enabled: true, MemoryCharLimit: 500, UserCharLimit: 500})
+	sk := skills.NewStore(&config.Skills{Enabled: true})
 
 	var mu sync.Mutex
 	var types []string
@@ -66,9 +85,7 @@ func TestReviewerHarnessFlag(t *testing.T) {
 		textResp("flagged one gap"),
 	}}
 	m := NewManager(
-		config.Review{Enabled: true, IdleSettleS: 0, MaxAgeS: 60, MaxInputTokens: 4000},
-		config.Memory{Enabled: true, MemoryCharLimit: 500, UserCharLimit: 500},
-		config.Skills{Enabled: true},
+		&config.Review{Enabled: true, IdleSettleS: 0, MaxAgeS: 60, MaxInputTokens: 4000},
 		mem, sk, nil, emit,
 		func() llm.LLM { return fake },
 	)

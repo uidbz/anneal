@@ -191,9 +191,11 @@ func Load() (*Config, error) {
 }
 
 // Apply parses a full-config JSON document (from the settings UI) and
-// replaces the current values, then persists.
+// replaces the current values, then persists. Keys omitted from the document
+// keep their DEFAULT values (not the previous ones), so a partial document
+// can never silently disable agent rules or compaction.
 func (c *Config) Apply(doc []byte) error {
-	var next Config
+	next := *Default()
 	if err := json.Unmarshal(doc, &next); err != nil {
 		return err
 	}

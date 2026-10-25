@@ -14,7 +14,7 @@ A self-improving, opencode-style desktop coding agent in Go.
 - Also: MCP client, subagents, plan/build permission modes, session replay,
   context compaction, headless CLI.
 
-All milestones (M0–M9) are complete — see [progress.md](progress.md) for the
+All milestones (M0–M16) are complete — see [progress.md](progress.md) for the
 running log and [docs/PLAN.md](docs/PLAN.md) for the original design.
 
 ## Features

@@ -46,7 +46,8 @@ type App struct {
 
 	improveMu      sync.Mutex
 	improveRunning bool
-	lastHealth     string // dedupe provider.state events
+	healthMu       sync.Mutex // guards lastHealth (concurrent probes)
+	lastHealth     string     // dedupe provider.state events
 }
 
 func New() (*App, error) {
@@ -54,34 +55,36 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	wd, err := os.Getwd()
+	if err != nil {
+		wd = "."
+	}
 	a := &App{Cfg: cfg, Bridge: uiapi.New()}
 	a.Monitor = model.NewMonitor(cfg.Provider, a.onHealth)
-	wd, _ := os.Getwd()
-	a.Runner, err = agent.NewRunner(cfg, a.Monitor, a.Bridge, wd)
+	a.Harness = harness.New(paths.Harness())
+	if err := a.Harness.Seed(); err != nil {
+		fmt.Fprintf(os.Stderr, "fyagent: harness seed: %v\n", err)
+	}
+	for _, w := range a.Harness.Validate(cfg.Harness.CharLimit) {
+		fmt.Fprintf(os.Stderr, "fyagent: harness: %s\n", w)
+	}
+	a.Runner, err = agent.NewRunner(cfg, a.Monitor, a.Bridge, wd, a.Harness)
 	if err != nil {
 		return nil, err
 	}
 	a.Tie = tieindex.New(cfg.Tie)
 	a.Runner.SetIndex(a.Tie)
-	a.Mem = memory.NewStore(cfg.Memory)
+	a.Mem = memory.NewStore(&cfg.Memory)
 	a.Runner.SetMemory(a.Mem)
-	a.Skills = skills.NewStore(cfg.Skills)
+	a.Skills = skills.NewStore(&cfg.Skills)
 	a.Runner.SetSkills(a.Skills)
-	a.Harness = harness.New(paths.Harness())
-	if err := a.Harness.Seed(); err != nil {
-		fmt.Fprintf(os.Stderr, "fyagent: harness seed: %v\n", err)
-	}
-	a.Runner.SetHarness(a.Harness)
 	a.Libs = harnesslib.New(paths.HarnessLib())
 	if err := a.Libs.Seed(); err != nil {
 		fmt.Fprintf(os.Stderr, "fyagent: harness-lib seed: %v\n", err)
 	}
-	for _, w := range a.Harness.Validate(cfg.Harness.CharLimit) {
-		fmt.Fprintf(os.Stderr, "fyagent: harness: %s\n", w)
-	}
 	a.Journey = journey.New()
 	a.Bridge.SetTap(a.journeyTap)
-	a.Review = review.NewManager(cfg.Review, cfg.Memory, cfg.Skills, a.Mem, a.Skills, a.Tie,
+	a.Review = review.NewManager(&cfg.Review, a.Mem, a.Skills, a.Tie,
 		a.Bridge.Emit,
 		func() llm.LLM {
 			h := a.Monitor.Current()
@@ -139,229 +142,37 @@ func toStr(v any) string {
 	return ""
 }
 
-func errString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
 // ConnectTie connects the tie index (blocking; call off the GUI path) and
 // reports the result as a tie.state event. Safe to retry.
 func (a *App) ConnectTie() {
 	if !a.Tie.Enabled() {
 		return
 	}
-	if err := a.Tie.Connect(); err != nil {
-		a.Tie.LogState()
-	} else {
-		a.Tie.LogState()
-	}
+	_ = a.Tie.Connect() // failures are recorded as degraded state
+	a.Tie.LogState()
 	a.Bridge.Emit(map[string]any{"type": "tie.state", "state": a.Tie.State()})
 }
 
+// Start starts the health monitor and review scheduler and connects tie/MCP
+// in the background. Use StartBlocking when the caller can wait (headless).
 func (a *App) Start(ctx context.Context) {
-	a.Monitor.Start(ctx, healthInterval)
+	a.startCore(ctx)
 	go a.ConnectTie() // never blocks the GUI; degrades gracefully
-	if a.Cfg.Review.Enabled {
-		go a.Review.Start(ctx)
-	}
 	go a.ConnectMCP(ctx)
 }
 
-// AgentAPI is the `agent` global exposed to Risor scripts.
-func (a *App) AgentAPI() map[string]any {
-	api := a.Bridge.API()
-	api["provider"] = func() any { return toJSON(a.Monitor.Current()) }
-	api["config"] = func() any { return toJSON(a.Cfg) }
-	api["probe"] = func() any {
-		a.Monitor.ProbeNow()
-		return toJSON(a.Monitor.Current())
+// StartBlocking is Start with synchronous tie/MCP connection (headless CLI).
+func (a *App) StartBlocking(ctx context.Context) {
+	a.startCore(ctx)
+	a.ConnectTie()
+	a.ConnectMCP(ctx)
+}
+
+func (a *App) startCore(ctx context.Context) {
+	a.Monitor.Start(ctx, healthInterval)
+	if a.Cfg.Review.Enabled {
+		go a.Review.Start(ctx)
 	}
-	api["saveConfig"] = func(doc string) any {
-		if err := a.Cfg.Apply([]byte(doc)); err != nil {
-			return toJSON(map[string]any{"ok": false, "error": err.Error()})
-		}
-		a.Monitor.SetProvider(a.Cfg.Provider)
-		a.Bridge.Emit(map[string]any{"type": "config.changed"})
-		return toJSON(map[string]any{"ok": true})
-	}
-	api["send"] = func(input string) any {
-		a.Runner.Send(input)
-		return nil
-	}
-	api["interrupt"] = func() any {
-		a.Runner.Interrupt()
-		return nil
-	}
-	api["sessions"] = func() any { return a.Runner.SessionsJSON() }
-	api["newSession"] = func() any {
-		a.Runner.NewSession()
-		return nil
-	}
-	api["openSession"] = func(id string) any {
-		a.Runner.OpenSession(id)
-		return nil
-	}
-	api["respondPerm"] = func(id, action string) any {
-		a.Runner.RespondPerm(id, action)
-		return nil
-	}
-	api["setMode"] = func(mode string) any {
-		a.Runner.SetMode(mode)
-		return nil
-	}
-	api["mode"] = func() any { return a.Runner.Mode() }
-	api["tieState"] = func() any { return toJSON(a.Tie.State()) }
-	api["memoryView"] = func() any {
-		m, _ := a.Mem.Read("memory")
-		u, _ := a.Mem.Read("user")
-		return toJSON(map[string]any{
-			"memory": m, "user": u,
-			"memory_cap": a.Cfg.Memory.MemoryCharLimit,
-			"user_cap":   a.Cfg.Memory.UserCharLimit,
-		})
-	}
-	api["memoryPending"] = func() any {
-		list, err := a.Mem.ListPending()
-		if err != nil {
-			return toJSON([]any{})
-		}
-		if list == nil {
-			return toJSON([]any{})
-		}
-		return toJSON(list)
-	}
-	api["learnNow"] = func() any { a.Review.LearnNow(); return nil }
-	api["improveStart"] = func() any {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
-			defer cancel()
-			if _, err := a.Improve(ctx); err != nil {
-				a.Bridge.Emit(map[string]any{"type": "improve.error", "error": err.Error()})
-			}
-		}()
-		return nil
-	}
-	api["harnessInfo"] = func() any { return toJSON(a.Runner.HarnessInfo()) }
-	api["harnessLibList"] = func() any {
-		ls := a.Libs.List()
-		if ls == nil {
-			return toJSON([]any{})
-		}
-		return toJSON(ls)
-	}
-	api["harnessFiles"] = func() any {
-		fs := a.Harness.Files()
-		if fs == nil {
-			return toJSON([]string{})
-		}
-		return toJSON(fs)
-	}
-	api["harnessGet"] = func(name string) any {
-		b, err := a.Harness.GetFile(name)
-		return toJSON(map[string]any{"name": name, "content": b, "error": errString(err)})
-	}
-	api["harnessSave"] = func(name, content string) any {
-		err := a.Harness.SaveFile(name, content)
-		warns := a.Harness.Validate(a.Cfg.Harness.CharLimit)
-		if warns == nil {
-			warns = []string{}
-		}
-		a.Bridge.Emit(map[string]any{"type": "harness.warn", "warns": warns, "saved": name})
-		return toJSON(map[string]any{"error": errString(err), "warns": warns,
-			"restart_for_rules": true})
-	}
-	api["libExperience"] = func(id string) any {
-		b, err := a.Libs.Experience(id)
-		return toJSON(map[string]any{"id": id, "content": b, "error": errString(err)})
-	}
-	api["libPromote"] = func(id string) any {
-		backup, err := a.Libs.Promote(id)
-		warns := a.Harness.Validate(a.Cfg.Harness.CharLimit)
-		if warns == nil {
-			warns = []string{}
-		}
-		a.Bridge.Emit(map[string]any{"type": "harness.promoted", "entry": id,
-			"backup": backup, "error": errString(err), "warns": warns})
-		a.Journey.Append("harness-promote", map[string]any{"entry": id, "backup": backup})
-		return toJSON(map[string]any{"entry": id, "backup": backup,
-			"error": errString(err), "warns": warns})
-	}
-	api["flagPeek"] = func(n int) any {
-		fs := a.Review.PendingFlags(n)
-		if fs == nil {
-			return toJSON([]any{})
-		}
-		return toJSON(fs)
-	}
-	api["journey"] = func(limit int) any {
-		list := a.Journey.Tail(limit)
-		if list == nil {
-			return toJSON([]any{})
-		}
-		return toJSON(list)
-	}
-	api["skillsList"] = func() any { return toJSON(a.Skills.List()) }
-	api["skillPending"] = func() any {
-		list, err := a.Skills.ListPending()
-		if err != nil || list == nil {
-			return toJSON([]any{})
-		}
-		return toJSON(list)
-	}
-	api["respondSkill"] = func(id, decision string) any {
-		approve := decision == "approve"
-		op, result, err := a.Skills.Resolve(id, approve)
-		out := map[string]any{"type": "skill.resolved", "id": id,
-			"approved": approve, "error": "", "result": result}
-		if op != nil {
-			out["name"] = op.Name
-			out["action"] = op.Action
-		}
-		if err != nil {
-			out["error"] = err.Error()
-		}
-		a.Bridge.Emit(out)
-		return nil
-	}
-	api["respondMemory"] = func(id, decision string) any {
-		approve := decision == "approve"
-		op, content, err := a.Mem.Resolve(id, approve)
-		out := map[string]any{"type": "memory.resolved", "id": id,
-			"approved": approve, "error": ""}
-		if op != nil {
-			out["target"] = op.Target
-			out["action"] = op.Action
-		}
-		if err != nil {
-			out["error"] = err.Error()
-		} else if approve {
-			a.Bridge.Emit(map[string]any{"type": "memory.updated",
-				"target": out["target"], "action": out["action"], "content": content})
-		}
-		a.Bridge.Emit(out)
-		return nil
-	}
-	api["rebuildIndex"] = func() any {
-		go func() {
-			n, err := a.Runner.RebuildIndex(context.Background())
-			msg := map[string]any{"type": "tie.rebuilt", "sessions": n, "error": ""}
-			if err != nil {
-				msg["error"] = err.Error()
-			}
-			a.Bridge.Emit(msg)
-		}()
-		return nil
-	}
-	api["quit"] = func() any {
-		go func() {
-			time.Sleep(150 * time.Millisecond) // let pending events flush
-			os.Exit(0)
-		}()
-		return nil
-	}
-	return api
 }
 
 // ImproveBusy reports whether an improvement step is running (GPU guard).
@@ -381,6 +192,9 @@ func (a *App) Improve(ctx context.Context) (*improve.Result, error) {
 // ImproveWith runs the recursion with k/mode overrides (0/"" = config) and
 // optional resume of a prior run id (completed iterations are skipped).
 func (a *App) ImproveWith(ctx context.Context, kOverride int, modeOverride, resumeID string) (*improve.Result, error) {
+	if a.Runner.Busy() {
+		return nil, fmt.Errorf("improve: a foreground run is active")
+	}
 	a.improveMu.Lock()
 	if a.improveRunning {
 		a.improveMu.Unlock()
@@ -427,7 +241,8 @@ func (a *App) ImproveWith(ctx context.Context, kOverride int, modeOverride, resu
 		runid = time.Now().UTC().Format("20060102-150405")
 	}
 	var hints []string
-	for _, f := range a.Review.ConsumeFlags(runid, 6) {
+	flags := a.Review.ConsumeFlags(runid, 6)
+	for _, f := range flags {
 		hints = append(hints, f.Gap)
 	}
 	res, err := improve.Step(ctx, improve.Options{
@@ -450,20 +265,28 @@ func (a *App) ImproveWith(ctx context.Context, kOverride int, modeOverride, resu
 		Resume:         resumeID != "",
 		Hints:          hints,
 	})
-	if err == nil && res.Successor != "" {
+	if err != nil {
+		// Hints were not applied; make them available to the next step.
+		a.Review.ReleaseFlags(runid)
+		return res, err
+	}
+	if res.Successor != "" {
 		if oerr := a.Runner.SetSessionOverlay(res.Successor); oerr != nil {
 			fmt.Fprintf(os.Stderr, "fyagent: overlay install: %v\n", oerr)
 		}
 	}
-	return res, err
+	return res, nil
 }
 
 func (a *App) onHealth(h model.Health) {
 	doc := toJSON(h)
+	a.healthMu.Lock()
 	if doc == a.lastHealth {
+		a.healthMu.Unlock()
 		return
 	}
 	a.lastHealth = doc
+	a.healthMu.Unlock()
 	a.Bridge.Emit(map[string]any{"type": "provider.state", "health": h})
 }
 

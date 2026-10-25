@@ -21,8 +21,9 @@ The default `anneal` binary is a plain Fyne shell with one scripted pane. The
 older all-Risor UI is still available as `anneal-legacy`.
 
 - **Transcript** (center): user/assistant blocks, streaming tail, tool calls
-  with previews, notices (✔/⚠/🧠). It appends incrementally; it does not
-  rebuild the whole window per event.
+  with previews, notices (✔/⚠/🧠). It appends incrementally and lays out at
+  most 300 blocks; older blocks are kept in memory behind a **“show N earlier
+  messages”** button (Phase 2 hardening).
 - **Approval inbox** (above the transcript): `perm.request` cards with
   **allow** (this call), **session** (same tool/spec for the session), and
   **deny**. When `write_approval` is on, staged memory/skill writes appear as

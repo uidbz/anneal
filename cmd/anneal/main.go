@@ -26,6 +26,10 @@ import (
 	"github.com/uidbz/fynerisor/gui"
 )
 
+// defaultVisibleBlocks bounds how many transcript widgets are laid out at
+// once. Older blocks stay in memory and can be restored on demand.
+const defaultVisibleBlocks = 300
+
 func main() {
 	rebuild := flag.Bool("rebuild-index", false, "re-index all sessions into tie and exit")
 	checkUI := flag.Bool("check-ui", false, "compile the scripted pane and exit")
@@ -98,7 +102,10 @@ type shell struct {
 	modeBtn  *widget.Button
 	entry    *widget.Entry
 	scroll   *container.Scroll
-	chatBox  *fyne.Container // transcript blocks (append-only)
+	chatBox  *fyne.Container // visible transcript blocks (append-only)
+	earlier  *widget.Button  // "show earlier messages" when the window is capped
+	visible  []fyne.CanvasObject
+	hidden   []fyne.CanvasObject
 	perms    *fyne.Container
 	todos    *fyne.Container
 	tabs     *container.AppTabs
@@ -110,19 +117,21 @@ type shell struct {
 	composer fyne.CanvasObject
 	root     fyne.CanvasObject
 
-	tail    *widget.Label
-	tailBuf string
-	mode    string
+	tail       *widget.Label
+	tailBuf    string
+	mode       string
+	maxVisible int
 }
 
 func newShell(a *coreapp.App, app fyne.App, win fyne.Window, paneSrc string) (*shell, error) {
 	s := &shell{
-		a:        a,
-		app:      app,
-		win:      win,
-		permRows: map[string]fyne.CanvasObject{},
-		mode:     a.Runner.Mode(),
-		paneSrc:  paneSrc,
+		a:          a,
+		app:        app,
+		win:        win,
+		permRows:   map[string]fyne.CanvasObject{},
+		mode:       a.Runner.Mode(),
+		paneSrc:    paneSrc,
+		maxVisible: defaultVisibleBlocks,
 	}
 	s.build()
 	if err := s.buildHarness(paneSrc); err != nil {
@@ -155,7 +164,8 @@ func (s *shell) build() {
 	s.entry.OnSubmitted = func(string) { s.submit() }
 
 	s.chatBox = container.NewVBox()
-	s.scroll = container.NewVScroll(s.chatBox)
+	s.earlier = widget.NewButton("", s.showEarlier)
+	s.earlier.Hide()
 	s.perms = container.NewVBox()
 	s.todos = container.NewVBox()
 
@@ -188,6 +198,7 @@ func (s *shell) buildHarness(src string) error {
 }
 
 func (s *shell) wireLayout() {
+	s.scroll = container.NewVScroll(container.NewVBox(s.earlier, s.chatBox))
 	chat := container.NewBorder(
 		container.NewVBox(s.perms),
 		nil, nil,
@@ -438,18 +449,85 @@ func (s *shell) addTool(text string) {
 }
 
 func (s *shell) appendBlock(obj fyne.CanvasObject) {
+	// The streaming tail is always visually last.
+	if s.tail != nil {
+		s.chatBox.Remove(s.tail)
+	}
+	s.visible = append(s.visible, obj)
 	s.chatBox.Add(obj)
+	if s.tail != nil {
+		s.chatBox.Add(s.tail)
+	}
+	s.trimVisible()
 	s.chatBox.Refresh()
 	if s.scroll != nil {
 		s.scroll.ScrollToBottom()
 	}
 }
 
+// trimVisible bounds the rendered transcript. Older blocks are detached from
+// the layout (not discarded) and can be restored with "show earlier messages",
+// so long sessions do not re-layout thousands of widgets on every event.
+func (s *shell) trimVisible() {
+	if s.maxVisible <= 0 {
+		return
+	}
+	for len(s.visible) > s.maxVisible {
+		obj := s.visible[0]
+		s.visible = s.visible[1:]
+		s.hidden = append(s.hidden, obj)
+		s.chatBox.Remove(obj)
+	}
+	s.updateEarlier()
+}
+
+func (s *shell) updateEarlier() {
+	if s.earlier == nil {
+		return
+	}
+	if len(s.hidden) == 0 {
+		s.earlier.Hide()
+		return
+	}
+	s.earlier.SetText(fmt.Sprintf("show %d earlier messages", len(s.hidden)))
+	s.earlier.Show()
+}
+
+func (s *shell) showEarlier() {
+	if len(s.hidden) == 0 {
+		return
+	}
+	n := s.maxVisible
+	if n <= 0 || n > len(s.hidden) {
+		n = len(s.hidden)
+	}
+	restore := s.hidden[len(s.hidden)-n:]
+	s.hidden = s.hidden[:len(s.hidden)-n]
+	s.visible = append(append([]fyne.CanvasObject{}, restore...), s.visible...)
+	s.chatBox.RemoveAll()
+	for _, obj := range s.visible {
+		s.chatBox.Add(obj)
+	}
+	if s.tail != nil {
+		s.chatBox.Add(s.tail)
+	}
+	s.chatBox.Refresh()
+	s.updateEarlier()
+	if s.scroll != nil {
+		s.scroll.ScrollToTop()
+	}
+}
+
 func (s *shell) resetChat() {
 	s.tail = nil
 	s.tailBuf = ""
+	s.visible = nil
+	s.hidden = nil
 	s.chatBox.RemoveAll()
 	s.chatBox.Refresh()
+	if s.earlier != nil {
+		s.earlier.Hide()
+	}
 	s.perms.RemoveAll()
 	s.perms.Refresh()
 	s.permRows = map[string]fyne.CanvasObject{}

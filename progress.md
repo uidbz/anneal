@@ -67,6 +67,9 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
   only the script adapter. `go list -deps ./cmd/anneal-headless` has no
   Fyne/fynerisor/risor dependency. The harness pane no longer receives
   `WithHostWindow` (no script access to close/dialogs/shortcuts).
+- Phase 2 first step: transcript renders at most 300 blocks and restores older
+  blocks on demand, so long sessions don't re-layout every historical widget
+  per event.
 - Gates: build, vet, hermetic tests, race, legacy `-check-ui`, pane
   `-check-ui`; manual launch/screenshot of the hybrid shell and legacy replay.
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	"fyne.io/fyne/v2/test"
@@ -8,14 +9,15 @@ import (
 	coreapp "github.com/uidbz/anneal/core/app"
 )
 
-func TestShellEventRendering(t *testing.T) {
+func newTestShell(t *testing.T) *shell {
+	t.Helper()
 	t.Setenv("ANNEAL_HOME", t.TempDir())
 	a, err := coreapp.New()
 	if err != nil {
 		t.Fatal(err)
 	}
 	fyneApp := test.NewApp()
-	defer fyneApp.Quit()
+	t.Cleanup(fyneApp.Quit)
 	win := fyneApp.NewWindow("test")
 	src, err := paneSource("")
 	if err != nil {
@@ -26,6 +28,41 @@ func TestShellEventRendering(t *testing.T) {
 		t.Fatal(err)
 	}
 	win.SetContent(sh.root)
+	return sh
+}
+
+func TestTranscriptWindowAndEarlier(t *testing.T) {
+	sh := newTestShell(t)
+	sh.maxVisible = 2
+
+	for i := 0; i < 5; i++ {
+		sh.addMarkdown(fmt.Sprintf("block %d", i))
+	}
+	if len(sh.visible) != 2 || len(sh.hidden) != 3 {
+		t.Fatalf("window: visible=%d hidden=%d", len(sh.visible), len(sh.hidden))
+	}
+	if !sh.earlier.Visible() {
+		t.Fatal("earlier button hidden while blocks are hidden")
+	}
+
+	sh.showEarlier() // restore the 2 newest hidden blocks
+	if len(sh.visible) != 4 || len(sh.hidden) != 1 {
+		t.Fatalf("restore 1: visible=%d hidden=%d", len(sh.visible), len(sh.hidden))
+	}
+	sh.showEarlier() // restore the last one
+	if len(sh.visible) != 5 || len(sh.hidden) != 0 {
+		t.Fatalf("restore 2: visible=%d hidden=%d", len(sh.visible), len(sh.hidden))
+	}
+	if sh.earlier.Visible() {
+		t.Fatal("earlier button still visible with no hidden blocks")
+	}
+	if got := len(sh.chatBox.Objects); got != 5 {
+		t.Fatalf("chat box objects: %d", got)
+	}
+}
+
+func TestShellEventRendering(t *testing.T) {
+	sh := newTestShell(t)
 
 	sh.handleEvent(normalizeEvent(map[string]any{
 		"type":   "provider.state",

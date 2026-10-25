@@ -47,6 +47,29 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
 
+### 2026-10-25 — M16 review→improve bridge (+ closing docs pass)
+- `review.FlagStore` (`~/.fyagent/harness-queue.json`, atomic writes, oldest
+  first, cap w/ consumed-history): reviewer gets a `harness_flag` tool —
+  its ONLY harness output (it has no write tools at all, so "reviewer never
+  edits the harness" is structural, not prompt-based).
+- `improve` Options.Hints → `hintsBlock()` appended to the editors'/
+  composer's context, framed as claims to CHECK (probe evidence still
+  decides); consumed flags recorded in step.json (`hints`), marked
+  `consumed_by=<runid>`. app.ImproveWith pre-computes runid and drains up
+  to 6 flags per step.
+- Surfaces: `review.flag` events (UI line + journey `review-flag`),
+  GUI panel "reviewer flags" section + "improve last task" button,
+  headless `/harness` shows pending flags, printImprove lists consumed
+  hints.
+- Gotcha: headless `-p` only runs the learning pass with `-learn` — the
+  first m16 gate silently reviewed nothing until the flag was added.
+- Live gate (`make live-m16-test`, ~5 min): reviewer flagged a REAL
+  deficiency ("re-sends the identical failing tool call unchanged across
+  many turns…"), queue file valid, flag visible in `/harness`; 4 memory
+  lessons still flowed. Hermetic: store lifecycle/persistence, tool
+  rejects <8-char gaps, hints reach editor+composer prompts, Result.Hints
+  recorded.
+
 ### 2026-10-25 — M15 GUI harness panel
 - New bridge APIs: `harnessFiles/harnessGet/harnessSave` (path jail: only
   `*.md` at root or under `subagents/`, no `..`/absolute/backslash),

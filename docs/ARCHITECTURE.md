@@ -69,6 +69,9 @@ Every payload carries **all keys** (empty slices marshal as `[]`, never
 | `skill.stage` / `skill.resolved` / `skill.applied` | staged/applied skill writes |
 | `mcp.state` | per-server connection/tool counts |
 | `review.start` / `review.done` / `review.skipped` | background review (done carries the ledger) |
+| `review.flag` | reviewer queued a harness deficiency (M16 → improve hints) |
+| `improve.start/propose/probe/compose/iterdone/library/selector/budget/done/error` | improvement step (selector/budget only k>1) |
+| `harness.warn` / `harness.promoted` | component save re-validation / library promote result |
 | `compaction.done` | context compaction (before/after tokens, msgs) |
 
 ## Permissions

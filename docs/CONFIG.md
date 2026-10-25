@@ -103,9 +103,18 @@ injected once per session as a `<system-reminder name="fyagent-memory">` block
 | `notify` | true | emit review events to the UI (ledger-based notifications) |
 
 Reviewer: bounded dive agent (6 iterations) with read-only tools + `memory` +
-`skill_manage` + `session_search`, `source: "review"`. Foreground runs
-preempt it (its batch is requeued). `/learn` (GUI) or `-learn` (headless)
-forces a pass. Notifications derive from the **tool ledger**, never model prose.
+`skill_manage` + `session_search` + `harness_flag`, `source: "review"`.
+Foreground runs preempt it (its batch is requeued). `/learn` (GUI) or
+`-learn` (headless) forces a pass. Notifications derive from the **tool
+ledger**, never model prose.
+
+**Review→improve bridge (M16):** when the reviewer spots a recurring
+*work-style* deficiency (unverified "done", repeated failing calls, etc.)
+it calls `harness_flag`, which queues the gap in `~/.fyagent/harness-queue.json`.
+The reviewer cannot edit harness files — flagging is its only output here.
+The next `/improve` consumes up to 6 pending flags as hints for its
+editors/composer (framed as claims to CHECK; probe evidence still decides).
+The GUI harness panel and headless `/harness` list pending flags.
 
 ## `tie` — cross-session search index
 

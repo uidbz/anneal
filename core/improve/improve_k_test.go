@@ -197,6 +197,19 @@ func TestParallelSelect(t *testing.T) {
 	}
 }
 
+func TestReviewerHintsSeedPrompts(t *testing.T) {
+	hb := hintsBlock([]string{"done without rerunning tests"})
+	if !strings.Contains(hb, "REVIEWER FLAGS") || !strings.Contains(hb, "done without rerunning tests") {
+		t.Fatalf("block: %q", hb)
+	}
+	if !strings.Contains(editorTask("t", "r", "/d", "LIB"+hb), "REVIEWER FLAGS") {
+		t.Fatal("editor task lacks flags")
+	}
+	if !strings.Contains(composerTask("t", "r", "blocks", "/d", "LIB"+hb), "REVIEWER FLAGS") {
+		t.Fatal("composer task lacks flags")
+	}
+}
+
 func TestTokenBudgetStopsChain(t *testing.T) {
 	cfg, h, src, lib := fixture(t)
 	imp := filepath.Join(os.Getenv("FYAGENT_HOME"), "improvements", "kb")
@@ -209,6 +222,7 @@ func TestTokenBudgetStopsChain(t *testing.T) {
 		SessionID: "s1", Task: "edit main.go", RefDigest: "REF",
 		RunID: "kb", K: 3, Mode: "sequential", Library: lib,
 		MaxTotalTokens: 100,
+		Hints:          []string{"declares done without re-running tests"},
 		Emit: func(v any) {
 			if e, ok := v.(map[string]any); ok {
 				events = append(events, e)
@@ -220,6 +234,9 @@ func TestTokenBudgetStopsChain(t *testing.T) {
 	}
 	if len(res.Iterations) != 1 || !strings.Contains(res.Note, "token budget") {
 		t.Fatalf("iterations=%d note=%q", len(res.Iterations), res.Note)
+	}
+	if len(res.Hints) != 1 || !strings.Contains(res.Hints[0], "re-running tests") {
+		t.Fatalf("hints not recorded: %+v", res.Hints)
 	}
 	var budget map[string]any
 	for _, e := range events {

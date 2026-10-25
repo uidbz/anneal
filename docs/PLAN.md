@@ -243,9 +243,10 @@ Milestones:
   improve stage events in the transcript, library browser with
   EXPERIENCE.md viewer + two-click promote (with backups), journey
   integration for promotes.
-- **M16 docs + review-loop bridge** — M7 reviewer flags candidate
-  harness deficiencies into an `/improve` priority queue (it never edits
-  harness files: no evidence → no edits); docs pass.
+- **M16 docs + review-loop bridge** ✔ — reviewer's `harness_flag` queues
+  work-style deficiencies to `harness-queue.json` (it never edits harness
+  files: no evidence → no edits); the next `/improve` consumes up to 6 as
+  CHECK-me hints; panel/REPL show pending flags; docs pass.
 
 Out of scope: editable middleware/plugin component (dive Hooks stay
 compiled Go), benchmark suites, second editor endpoint (config leaves room).

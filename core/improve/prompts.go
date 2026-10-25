@@ -148,6 +148,16 @@ Answer with exactly one letter (A-H) or NONE if none is clearly better.`,
 		clip(task, 800), clip(refDigest, 2500), blocks)
 }
 
+// hintsBlock frames reviewer flags as claims to check — the reviewer
+// observes, the probe evidence decides (M16 bridge).
+func hintsBlock(hints []string) string {
+	s := "\n\nREVIEWER FLAGS (the background reviewer observed these recurring deficiencies; treat as claims to CHECK against the reference execution, not as proven):"
+	for _, h := range hints {
+		s += "\n- " + h
+	}
+	return s
+}
+
 func reflectorTask(task, decisions, contrasts, refHead, succHead string) string {
 	return fmt.Sprintf(`Review this completed harness improvement step and distill it for the library.
 

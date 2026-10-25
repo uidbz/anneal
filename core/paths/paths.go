@@ -30,6 +30,7 @@ func Logs() string          { return filepath.Join(Root(), "logs") }
 // Harness components (M10): editable files mounted into every run.
 func Harness() string      { return filepath.Join(Root(), "harness") }
 func HarnessLib() string   { return filepath.Join(Root(), "harness-lib") }
+func HarnessQueue() string { return filepath.Join(Root(), "harness-queue.json") }
 func Probes() string       { return filepath.Join(Root(), "probes") }
 func Improvements() string { return filepath.Join(Root(), "improvements") }
 func Overlays() string     { return filepath.Join(Root(), "overlays") }

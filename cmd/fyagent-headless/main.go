@@ -112,6 +112,10 @@ func (s *sink) handle(v any) {
 		case s.done <- res:
 		default:
 		}
+	case "review.flag":
+		if !s.jsonMode {
+			fmt.Printf("🪧 review flagged a harness gap: %v\n", e["gap"])
+		}
 	case "review.done":
 		if !s.jsonMode {
 			if l, ok := e["ledger"].([]any); ok && len(l) > 0 {
@@ -339,6 +343,12 @@ func main() {
 					}
 				default:
 					fmt.Fprintln(os.Stderr, agent.FormatHarnessInfo(a.Runner.HarnessInfo()))
+					if fs := a.Review.PendingFlags(5); len(fs) > 0 {
+						fmt.Fprintf(os.Stderr, "reviewer flags (feed into the next /improve):\n")
+						for _, f := range fs {
+							fmt.Fprintf(os.Stderr, "  🪧 %s\n", f.Gap)
+						}
+					}
 				}
 				continue
 			}
@@ -368,6 +378,9 @@ func printImprove(res *improve.Result) {
 	fmt.Fprintf(os.Stderr, "improve %s → %s%s\n", res.RunID, res.Dir, depth)
 	if res.Note != "" {
 		fmt.Fprintf(os.Stderr, "  note: %s\n", res.Note)
+	}
+	for _, h := range res.Hints {
+		fmt.Fprintf(os.Stderr, "  reviewer flag: %s\n", h)
 	}
 	for _, it := range res.Iterations {
 		if it.Skipped != "" {

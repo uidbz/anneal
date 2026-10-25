@@ -58,6 +58,8 @@ type Manager struct {
 
 	emit func(any) // bridge passthrough (Event values + stage cards)
 
+	flags *FlagStore // harness-deficiency queue (M16; nil = disabled)
+
 	mu       sync.Mutex
 	queue    []string
 	firstQue time.Time
@@ -81,6 +83,25 @@ func NewManager(cfg config.Review, memCfg config.Memory, skCfg config.Skills,
 // SetActivityHooks wires the "is the user active" probes from the runner.
 func (m *Manager) SetActivityHooks(busy func() bool, lastActivity func() time.Time) {
 	m.busy, m.lastAct = busy, lastActivity
+}
+
+// SetFlagStore enables the harness_flag tool (reviewer -> improve queue).
+func (m *Manager) SetFlagStore(fs *FlagStore) { m.flags = fs }
+
+// ConsumeFlags marks up to n pending flags as consumed by improve runid.
+func (m *Manager) ConsumeFlags(runid string, n int) []Flag {
+	if m.flags == nil {
+		return nil
+	}
+	return m.flags.Consume(runid, n)
+}
+
+// PendingFlags peeks at the queue (oldest first).
+func (m *Manager) PendingFlags(n int) []Flag {
+	if m.flags == nil {
+		return nil
+	}
+	return m.flags.Pending(n)
 }
 
 // Enqueue records sessions for later review (deduped).
@@ -195,7 +216,7 @@ func (m *Manager) runOnce(ctx context.Context) {
 	m.emit(Event{Type: "review.start", Session: sessions, Ledger: []LedgerEntry{}})
 
 	ledger := []LedgerEntry{}
-	tools := m.reviewerTools(&ledger)
+	tools := m.reviewerTools(&ledger, sessions)
 	agent, err := dive.NewAgent(dive.AgentOptions{
 		Name:               "fyagent-review",
 		SystemPrompt:       reviewerPrompt,
@@ -250,10 +271,11 @@ Your job: mine them for things worth remembering, and save them:
 - Corrections the user made, conventions they stated, environment/project facts learned, user preferences -> memory tool (target 'memory' or 'user'). Keep each entry one short line.
 - Multi-step workflows that will recur (with commands/gotchas) -> skill_manage create (or patch an existing skill when you learn improvements). Check skill_manage list first.
 - Stale/wrong existing memories: patch or remove them.
+- Recurring WORK-STYLE deficiencies (done declared without verifying, the same failing call repeated, work started without a plan, files never re-read): call harness_flag with one short line describing the deficiency. harness_flag is a QUEUE for the separate improve loop — you must never edit or propose harness files yourself, and do not put task-specific facts in flags (facts go to memory).
 
 Rules: be selective (a few high-value lessons beat many trivia); do not store conversation play-by-play; no secrets/credentials; you may use Read/Glob/Grep/ListDirectory/session_search to verify facts, nothing that mutates the workspace. When done, reply with a one-line summary of what you saved (or 'nothing worth saving').`
 
-func (m *Manager) reviewerTools(ledger *[]LedgerEntry) []dive.Tool {
+func (m *Manager) reviewerTools(ledger *[]LedgerEntry, sessions string) []dive.Tool {
 	tools := []dive.Tool{
 		toolkit.NewReadFileTool(),
 		toolkit.NewGlobTool(),
@@ -346,6 +368,27 @@ func (m *Manager) reviewerTools(ledger *[]LedgerEntry) []dive.Tool {
 			return dive.NewToolResultText("skill_manage: " + res), nil
 		},
 		dive.WithFuncToolAnnotations(&dive.ToolAnnotations{ReadOnlyHint: true, Title: "Skill manager (review)"})))
+
+	if m.flags != nil {
+		type flagIn struct {
+			Gap string `json:"gap"`
+		}
+		tools = append(tools, dive.FuncTool("harness_flag",
+			"Queue one recurring work-style deficiency (verification gaps, repeated failing actions, planning gaps) for the harness improve loop. One short line; never task facts; you never edit harness files.",
+			func(ctx context.Context, in *flagIn) (*dive.ToolResult, error) {
+				gap := strings.TrimSpace(in.Gap)
+				if len(gap) < 8 {
+					return dive.NewToolResultText("harness_flag: gap too short"), nil
+				}
+				f := m.flags.Add(sessions, gap)
+				*ledger = append(*ledger, LedgerEntry{Kind: "harness-flag", Action: "add",
+					Name: f.ID, Content: gap, Result: "queued"})
+				m.emit(map[string]any{"type": "review.flag", "id": f.ID,
+					"gap": gap, "session": sessions})
+				return dive.NewToolResultText("flagged for the improve loop (" + f.ID + ")."), nil
+			},
+			dive.WithFuncToolAnnotations(&dive.ToolAnnotations{ReadOnlyHint: true, Title: "Flag harness gap (review)"})))
+	}
 
 	if m.idx != nil && m.idx.Enabled() {
 		type qIn struct {

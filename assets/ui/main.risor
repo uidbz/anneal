@@ -370,6 +370,12 @@ libRows = (arr, i, acc) => {
     return libRows(arr, i + 1, acc + [row])
 }
 
+let flagRows = (arr, i, acc) => acc
+flagRows = (arr, i, acc) => {
+    if (i >= len(arr)) { return acc }
+    return flagRows(arr, i + 1, acc + [label("🪧 " + arr[i].gap)])
+}
+
 buildHarness = () => {
     let h = json.parse(agent.harnessInfo())
     let files = json.parse(agent.harnessFiles())
@@ -393,6 +399,10 @@ buildHarness = () => {
     if (lb != []) { lt = sprintf("%d entries — promoting is the only route into the global harness", len(lb)) }
     rows = rows + [label("improvement library: " + lt)]
     rows = rows + libRows(lb, 0, [])
+    let fl = json.parse(agent.flagPeek(8))
+    if (fl != []) {
+        rows = rows + [label("reviewer flags (the next /improve consumes these as hints):")] + flagRows(fl, 0, [])
+    }
     if (openExp != "") {
         let ex = json.parse(agent.libExperience(openExp))
         if (ex.error != "") {
@@ -404,7 +414,10 @@ buildHarness = () => {
     if (harnessMsg != "") {
         rows = rows + [label(harnessMsg)]
     }
-    harnessRows = [widget.NewButton("« back to chat", () => { closeHarness() })] + rows
+    harnessRows = [container.NewHBox([
+        widget.NewButton("« back to chat", () => { closeHarness() }),
+        widget.NewButton("improve last task", () => { agent.improveStart() })
+    ])] + rows
     harnessDirty = false
 }
 
@@ -592,6 +605,11 @@ agent.on((evtJson) => {
         }
         return
     }
+    if (t == "review.flag") {
+        addBlock(label("🪧 review flagged a harness gap for the improve loop: " + evt.gap))
+        refreshHarness()
+        return
+    }
     if (t == "review.done") {
         window.SetStatus("ready")
         if (evt.error != "") {
@@ -639,6 +657,7 @@ agent.on((evtJson) => {
         } else {
             addBlock(label("🔧 improve: successor applied to this session's overlay (global harness untouched)\n" + evt.decisions))
         }
+        refreshHarness()
         return
     }
     if (t == "improve.error") {

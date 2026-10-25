@@ -43,16 +43,17 @@ type Options struct {
 	RefDigest string // bounded digest of the reference execution
 	Emit      func(any)
 
-	MaxDigestChars   int    // default 12000
-	ProbeIterations  int    // default 25
-	EditorIterations int    // default 12
-	WallTimeoutS     int    // per probe, default 300
-	RunID            string // override the timestamp run id (tests)
-	K                int    // recursion depth (default 1)
-	Mode             string // "sequential" (default) | "parallel"
-	TotalWallS       int    // whole-step wall budget, seconds (0 = none)
-	MaxTotalTokens   int    // stop before next iteration past this usage (0 = none)
-	Resume           bool   // skip iterations whose step.json already exists (with RunID)
+	MaxDigestChars   int      // default 12000
+	ProbeIterations  int      // default 25
+	EditorIterations int      // default 12
+	WallTimeoutS     int      // per probe, default 300
+	RunID            string   // override the timestamp run id (tests)
+	K                int      // recursion depth (default 1)
+	Mode             string   // "sequential" (default) | "parallel"
+	TotalWallS       int      // whole-step wall budget, seconds (0 = none)
+	MaxTotalTokens   int      // stop before next iteration past this usage (0 = none)
+	Resume           bool     // skip iterations whose step.json already exists (with RunID)
+	Hints            []string // reviewer-flagged deficiencies; seed editor/composer prompts
 
 	Library *harnesslib.Store     // improvement library (nil = disabled)
 	IndexFn func(id, text string) // optional tie indexing of experience notes
@@ -83,6 +84,7 @@ type Result struct {
 	Iter           int           `json:"iter,omitempty"`
 	K              int           `json:"k,omitempty"`
 	Mode           string        `json:"mode,omitempty"`
+	Hints          []string      `json:"hints,omitempty"`
 	Note           string        `json:"note,omitempty"`
 	Iterations     []iterRef     `json:"iterations,omitempty"`
 	FinishedAt     time.Time     `json:"finished_at"`
@@ -181,6 +183,9 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 	if opts.Library != nil {
 		libCtx = opts.Library.Context(opts.Task, 3, 3000)
 	}
+	if len(opts.Hints) > 0 {
+		libCtx += hintsBlock(opts.Hints)
+	}
 
 	var baseLayers []harness.Layer
 	if opts.Harness != nil && opts.Cfg.Harness.Enabled {
@@ -222,7 +227,7 @@ func stepK(ctx context.Context, opts *Options, dir, runid string, k int, mode st
 		defer cancel()
 	}
 	res := &Result{RunID: runid, Dir: dir, SessionID: opts.SessionID, Task: opts.Task,
-		K: k, Mode: mode, HarnessHash: h0hash}
+		K: k, Mode: mode, HarnessHash: h0hash, Hints: opts.Hints}
 	emit(ev("improve.start", runid, map[string]any{"session": opts.SessionID,
 		"harness_hash": h0hash, "k": k, "mode": mode}))
 
@@ -362,7 +367,7 @@ func stepOnce(ctx context.Context, opts *Options, dir, runid string, iter int,
 		emit = func(any) {}
 	}
 	limit := opts.Cfg.Harness.CharLimit
-	res := &Result{RunID: runid, Dir: dir, SessionID: opts.SessionID, Task: opts.Task, Iter: iter}
+	res := &Result{RunID: runid, Dir: dir, SessionID: opts.SessionID, Task: opts.Task, Iter: iter, Hints: opts.Hints}
 
 	// ℋ snapshot as component files (the base every candidate starts from)
 	h0 := filepath.Join(dir, "harness0")

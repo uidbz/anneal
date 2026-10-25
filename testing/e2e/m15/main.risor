@@ -55,5 +55,8 @@ if (lb != []) {
     }
 }
 
+let fl = json.parse(agent.flagPeek(8))
+log("FLAGS pending=" + sprintf("%v", len(fl)))
+
 log("=== M15 UI API OK")
 agent.quit()

@@ -107,7 +107,10 @@ cd repo && fyagent-headless -allow Read,Glob,Grep,Bash -json -p "run tests" \
   (overlay); nothing global changes. Evidence-backed steps land in the
   improvement library (`/harness list` in the headless REPL); making one
   permanent is your explicit call: `/harness promote <id>` (with backups).
-  Full records: `~/.fyagent/improvements/`.
+  Full records: `~/.fyagent/improvements/`. The background reviewer feeds
+  the loop too: recurring work-style deficiencies it observes get queued
+  via `harness_flag` (`~/.fyagent/harness-queue.json`) and the next
+  `/improve` consumes them as hints — evidence still decides.
 - **Harness panel** (GUI): the "harness" toolbar button (or `/harness`)
   opens a view over `~/.fyagent/harness/`: each component file is editable
   inline (saves take effect next run — except guardrail `deny:/ask:/allow:`

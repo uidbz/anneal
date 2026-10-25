@@ -90,6 +90,7 @@ func New() (*App, error) {
 	a.Review.Digest = func(ctx context.Context, sid string) string {
 		return a.Runner.Digest(ctx, sid, cfg.Review.MaxInputTokens*4)
 	}
+	a.Review.SetFlagStore(review.NewFlagStore(paths.HarnessQueue()))
 	a.Review.SetActivityHooks(func() bool { return a.Runner.Busy() || a.ImproveBusy() }, a.Runner.LastActivity)
 	a.Runner.SetReview(a.Review)
 	return a, nil
@@ -118,6 +119,8 @@ func (a *App) journeyTap(v any) {
 		if e["approved"] == true && e["error"] == "" {
 			a.Journey.Append("skill-"+toStr(e["action"]), map[string]any{"name": toStr(e["name"]), "staged": true})
 		}
+	case "review.flag":
+		a.Journey.Append("review-flag", map[string]any{"gap": toStr(e["gap"]), "session": toStr(e["session"])})
 	case "review.done":
 		if ledger, ok := e["ledger"].([]any); ok && len(ledger) > 0 {
 			a.Journey.Append("review", map[string]any{"session": toStr(e["session"]), "lessons": len(ledger)})
@@ -285,6 +288,13 @@ func (a *App) AgentAPI() map[string]any {
 		return toJSON(map[string]any{"entry": id, "backup": backup,
 			"error": errString(err), "warns": warns})
 	}
+	api["flagPeek"] = func(n int) any {
+		fs := a.Review.PendingFlags(n)
+		if fs == nil {
+			return toJSON([]any{})
+		}
+		return toJSON(fs)
+	}
 	api["journey"] = func(limit int) any {
 		list := a.Journey.Tail(limit)
 		if list == nil {
@@ -410,6 +420,16 @@ func (a *App) ImproveWith(ctx context.Context, kOverride int, modeOverride, resu
 	if modeOverride != "" {
 		mode = modeOverride
 	}
+	// M16 review-loop bridge: reviewer-flagged deficiencies become hints
+	// for this step's editors (evidence in the probe still decides).
+	runid := resumeID
+	if runid == "" {
+		runid = time.Now().UTC().Format("20060102-150405")
+	}
+	var hints []string
+	for _, f := range a.Review.ConsumeFlags(runid, 6) {
+		hints = append(hints, f.Gap)
+	}
 	res, err := improve.Step(ctx, improve.Options{
 		Cfg:            a.Cfg,
 		Model:          func() llm.LLM { return model.NewProvider(a.Cfg.Provider, a.Monitor.Current().Model) },
@@ -426,8 +446,9 @@ func (a *App) ImproveWith(ctx context.Context, kOverride int, modeOverride, resu
 		Mode:           mode,
 		TotalWallS:     a.Cfg.Improve.TotalWallS,
 		MaxTotalTokens: a.Cfg.Improve.MaxTotalTokens,
-		RunID:          resumeID,
+		RunID:          runid,
 		Resume:         resumeID != "",
+		Hints:          hints,
 	})
 	if err == nil && res.Successor != "" {
 		if oerr := a.Runner.SetSessionOverlay(res.Successor); oerr != nil {

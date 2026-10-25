@@ -2,7 +2,7 @@
 GO      ?= go
 BIN     := bin
 
-.PHONY: all build test vet fmt check-ui headless clean live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke
+.PHONY: all build test vet fmt check-ui headless clean live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke live-m16-test
 
 all: build
 
@@ -41,6 +41,10 @@ live-m14-test: build
 # Harness-panel GUI smoke (M15; needs a display; uses the test home)
 gui-m15-smoke: fyagent
 	FYAGENT_HOME=/tmp/opencode/fyagent-home FYAGENT_UI_DIR=$(CURDIR)/testing/e2e/m15 ./bin/fyagent
+
+# Live review-bridge gate (M16; task + learning pass, ~5 min; Strata up)
+live-m16-test: build
+	bash testing/e2e/m16/run.sh
 
 vet:
 	$(GO) vet ./...

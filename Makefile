@@ -2,7 +2,7 @@
 GO      ?= go
 BIN     := bin
 
-.PHONY: all build test vet fmt check-ui headless clean live-tie-test
+.PHONY: all build test vet fmt check-ui headless clean live-tie-test live-m10-test
 
 all: build
 
@@ -21,6 +21,10 @@ test:
 # Against the real tie triplestore (uses ~/.config/tie or FYAGENT_* env)
 live-tie-test:
 	FYAGENT_LIVE_TIE=1 $(GO) test ./core/tieindex -run TestLiveRoundtrip -v
+
+# Live harness-components gate (Strata + demo project must be up)
+live-m10-test: build
+	bash testing/e2e/m10/run.sh
 
 vet:
 	$(GO) vet ./...

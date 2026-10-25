@@ -5,12 +5,16 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+
+	"fyagent/core/harness"
 )
 
 // SystemPrompt returns the fyagent coding-agent persona, environment note,
-// and mode guidance. (Memory snapshots, skill rules, and learning-loop rules
-// are appended by their extensions in M5/M6.)
-func SystemPrompt(cwd, mode string) string {
+// and mode guidance, plus the editable harness component layers (M10).
+// (Memory snapshots, skill rules, and learning-loop rules are appended by
+// their extensions in M5/M6.)
+func SystemPrompt(cwd, mode string, layers []harness.Layer) string {
 	base := `You are fyagent, a precise and capable software engineering agent working on the user's machine.
 
 Working style:
@@ -38,6 +42,9 @@ Learning loop:
 `
 	if mode == "plan" {
 		base += "\nPLAN MODE is active: the user wants a plan, not changes. Non-read-only tools will be denied — investigate read-only and finish with a concrete, ordered plan.\n"
+	}
+	for _, l := range layers {
+		base += fmt.Sprintf("\n<harness-component name=%q>\n%s\n</harness-component>\n", l.Name, strings.TrimSpace(l.Content))
 	}
 	wd, _ := filepath.EvalSymlinks(cwd)
 	env := fmt.Sprintf("Working directory: %s\nPlatform: %s/%s\nModel server: local (Strata, OpenAI-compatible).", wd, runtime.GOOS, runtime.GOARCH)

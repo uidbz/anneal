@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"fyagent/core/config"
+	"fyagent/core/harness"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/permission"
@@ -119,9 +120,10 @@ func (r *Runner) SetMode(mode string) {
 // Mode returns the active permission mode.
 func (r *Runner) Mode() string { return string(r.mgr.Mode()) }
 
-// permConfig translates fyagent config into a dive permission.Config.
-// Rule strings look like "Bash" or "Bash(go test *)".
-func permConfig(cfg *config.Config) *permission.Config {
+// permConfig translates fyagent config + harness guardrail rules into a
+// dive permission.Config. Rule strings look like "Bash" or "Bash(go test *)".
+// Harness rules are read once at Runner creation; restart to apply edits.
+func permConfig(cfg *config.Config, harn *harness.Store) *permission.Config {
 	c := &permission.Config{Mode: permission.Mode(cfg.Agent.PermissionMode)}
 	for _, s := range cfg.Agent.Allow {
 		if s = strings.TrimSpace(s); s != "" {
@@ -136,6 +138,18 @@ func permConfig(cfg *config.Config) *permission.Config {
 	for _, s := range cfg.Agent.Deny {
 		if s = strings.TrimSpace(s); s != "" {
 			c.Rules = append(c.Rules, parseRule(permission.RuleDeny, s, "denied by config rule"))
+		}
+	}
+	if harn != nil && cfg.Harness.Enabled {
+		allow, ask, deny := harn.GuardRules()
+		for _, s := range allow {
+			c.Rules = append(c.Rules, parseRule(permission.RuleAllow, s, ""))
+		}
+		for _, s := range ask {
+			c.Rules = append(c.Rules, parseRule(permission.RuleAsk, s, ""))
+		}
+		for _, s := range deny {
+			c.Rules = append(c.Rules, parseRule(permission.RuleDeny, s, "denied by harness guardrail"))
 		}
 	}
 	return c

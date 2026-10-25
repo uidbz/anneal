@@ -27,9 +27,15 @@ func Pending() string       { return filepath.Join(Root(), "pending") }
 func Bundled() string       { return filepath.Join(Root(), "bundled") }
 func Logs() string          { return filepath.Join(Root(), "logs") }
 
+// Harness components (M10): editable files mounted into every run.
+func Harness() string      { return filepath.Join(Root(), "harness") }
+func HarnessLib() string   { return filepath.Join(Root(), "harness-lib") }
+func Probes() string       { return filepath.Join(Root(), "probes") }
+func Improvements() string { return filepath.Join(Root(), "improvements") }
+
 // Ensure creates the standard state directories.
 func Ensure() error {
-	for _, d := range []string{Root(), Sessions(), Memories(), Skills(), SkillsArchive(), Pending(), Logs()} {
+	for _, d := range []string{Root(), Sessions(), Memories(), Skills(), SkillsArchive(), Pending(), Logs(), Harness(), HarnessLib()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
 		}

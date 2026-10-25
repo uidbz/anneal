@@ -132,6 +132,20 @@ server reverse-indexes (`tag` + `tie-type`); rebuild with `fyagent
 Tools are exposed as `mcp__<server>__<tool>` and permission-gated like any
 non-allowlisted tool. State is shown in the header (`mcp: 1/1 up, N tools`).
 
+## `harness` — editable components (M10)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | true | mount `~/.fyagent/harness/` components into every run |
+| `char_limit` | 6000 | per-component cap on injected prompt text |
+
+Components are plain files (see `~/.fyagent/harness/README.md`):
+`system.md`, `guardrails.md` (prose + `allow:/ask:/deny:` rule lines —
+same syntax as `agent.allow/ask/deny`, applied at startup, restart to
+re-read), `tool-guidance.md`, `subagents/*.md` (dive FileLoader format;
+override built-ins), `scripts/` (manifest surfaced to the model).
+Check with `fyagent -check-harness` or `/harness`.
+
 ## `ui`
 
 | key | default | meaning |

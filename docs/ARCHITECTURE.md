@@ -21,6 +21,7 @@
                     ├──────────┴──────────┴──────────┴─────────────┤
                     │ core/model (Strata provider + HealthMonitor) │
                     │ core/config · core/paths · core/journey      │
+                    │ core/harness (file-mounted components)       │
                     └──────────────────────────────────────────────┘
               truth: dive FileStore JSONL   index: tie (rebuildable)
 ```

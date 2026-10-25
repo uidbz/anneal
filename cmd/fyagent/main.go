@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"fyagent/assets"
+	"fyagent/core/agent"
 	"fyagent/core/app"
 
 	"fyne.io/fyne/v2"
@@ -19,11 +20,17 @@ import (
 func main() {
 	rebuild := flag.Bool("rebuild-index", false, "re-index all sessions into tie and exit")
 	checkUI := flag.Bool("check-ui", false, "compile the UI script and exit")
+	checkHarness := flag.Bool("check-harness", false, "validate harness components and exit")
 	flag.Parse()
 
 	a, err := app.New()
 	if err != nil {
 		log.Fatalf("fyagent: %v", err)
+	}
+
+	if *checkHarness {
+		fmt.Println("fyagent:", agent.FormatHarnessInfo(a.Runner.HarnessInfo()))
+		return
 	}
 
 	if *rebuild {

@@ -173,4 +173,74 @@ permission.Manager rules/modes first; path policy (project + ~/.fyagent; deny `.
 | Risor VM threading | non-blocking API; JSON payloads; window.Do everywhere; delta batching |
 | dive experimental API churn | pinned go.mod; thin wrappers in core/ |
 | prompt-injection via learned stores | write-time scanner; staging mode; journey pruning |
+
+## 12. Recursive Harnessing (M10–M16, added 2026-10-25)
+
+Port of **Harness²** (arXiv 2610.14224, github.com/google-research/harness2,
+Apache-2.0 — concepts ported, no code vendored): recursive self-improvement
+of the *harness* (prompt/guardrails/memory/skills/tool-guidance/scripts/
+subagents as editable files), not the model. Two coupled loops:
+
+- **Task-level recursion** — contrastive **Propose–Probe–Compose** on the
+  current task *without ground truth*: reference execution → two scoped
+  editors (invariant deficiencies vs domain knowledge) propose candidate
+  harnesses → probes re-run the task per candidate in a sandbox → behavioral
+  contrasts → a composer selectively merges edits, decisions tied to
+  observations.
+- **Harnessing-level recursion** — an **improvement library**
+  (`~/.fyagent/harness-lib/<entry>/ = harness/ snapshot + EXPERIENCE.md +
+  meta.json`) written only when probe evidence supports the lesson. Every
+  task starts from the common ℋ₀ again; library entries are *re-drafted
+  from*, never blindly inherited. (Paper ablations: library −3.1, editor
+  scoping −2.9, composition −1.6 — all three are kept.)
+
+Why: fyagent's M7 review loop is the "ReasoningBank" baseline in the paper
+(lessons → memory only), which plateaus or regresses. Evidence-driven
+harness edits beat it consistently. Same-model editing is validated by the
+paper (executor == editor improves every tested model), so local Strata
+alone is viable.
+
+Locked decisions (user, 2026-10-25):
+1. **Default recursion mode: sequential** (k chained steps) — cheaper and
+   deeper per unit cost on one local model; parallel (k candidates + k
+   compositions + anonymized deliverable selector) is an explicit budget
+   choice in M14.
+2. **Successor harnesses never touch the global harness automatically.**
+   Task successions live in `sessions/<id>/harness-overlay/` (session
+   scope); only library entries accumulate automatically, and promoting one
+   into `~/.fyagent/harness/` is an explicit, approval-gated user action
+   (`/harness promote`). This keeps the paper's no-inheritance property and
+   the existing staging philosophy.
+
+Milestones:
+
+- **M10 harness component layer** ✔ — `~/.fyagent/harness/` file-mounted
+  components (`system.md`, `guardrails.md` prose + `deny:/ask:/allow:` rule
+  lines enforced via dive permission rules, `tool-guidance.md`,
+  `subagents/*.md` via dive's subagent FileLoader, `scripts/` manifest);
+  prompt composition per run; `-check-harness`, `/harness`.
+- **M11 probe infrastructure** — sandboxed task replay (`cp -a`/worktree
+  scratch copy, tool jail via path-checking PreToolUse hook, matched model
+  config recorded), execution records `e=(τ,y)`, step records `ξ` under
+  `~/.fyagent/improvements/<runid>/`.
+- **M12 one contrastive step (k=1)** — `core/improve`: invariant+domain
+  editors (edit right jailed to a scratch harness copy), probe+contrast
+  notes, evidence-tied composition, session overlay apply;
+  `fyagent-headless -improve`, GUI `/improve`. Ledger truth, never prose.
+- **M13 improvement library** — `core/harnesslib` + reflector
+  (EXPERIENCE.md only with evidence), index fetched into Propose/Compose
+  prompts; tie-index EXPERIENCE bodies (`tag` + Reverse, reuse tieindex);
+  `/harness promote` via staging.
+- **M14 recursion budget** — `--k N --mode sequential|parallel` (sequential
+  default), anonymized selector for k>1, cost preflight + token/wall
+  budgets, concurrency cap, resume from `improvements/<runid>/` stages.
+- **M15 GUI** — harness tab (components view/edit + guardrail rules),
+  improve stage cards (bridge events), library browser + promote/approve,
+  journey integration.
+- **M16 docs + review-loop bridge** — M7 reviewer flags candidate
+  harness deficiencies into an `/improve` priority queue (it never edits
+  harness files: no evidence → no edits); docs pass.
+
+Out of scope: editable middleware/plugin component (dive Hooks stay
+compiled Go), benchmark suites, second editor endpoint (config leaves room).
 | tie server restricted ReverseRelations | detect at startup; degrade session_search with warning (JSONL browse still works) |

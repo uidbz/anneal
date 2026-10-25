@@ -133,6 +133,18 @@ journeyText = (arr, i, acc) => {
     return journeyText(arr, i + 1, acc + "\n" + e.ts + "  " + e.kind)
 }
 
+let harnessCompText = (arr, i, acc) => acc
+harnessCompText = (arr, i, acc) => {
+    if (i >= len(arr)) { return acc }
+    let c = arr[i]
+    return harnessCompText(arr, i + 1, acc + " " + c.name + "(" + sprintf("%d", c.chars) + ")")
+}
+let harnessWarnText = (arr, i, acc) => acc
+harnessWarnText = (arr, i, acc) => {
+    if (i >= len(arr)) { return acc }
+    return harnessWarnText(arr, i + 1, acc + "\n  warn: " + arr[i])
+}
+
 let keepCards = (arr, i, dropID, acc) => acc
 keepCards = (arr, i, dropID, acc) => {
     if (i >= len(arr)) { return acc }
@@ -268,7 +280,7 @@ skillListText = (arr, i, acc) => {
 let slash = (text) => {
     let cmd = strings.split(text, " ")[0]
     if (cmd == "/help") {
-        addBlock(label("commands: /new /sessions /plan /build /skills /memory /index /journey /learn /quit  (shortcuts: Ctrl+N new, Ctrl+B sessions, Ctrl+D stop)"))
+        addBlock(label("commands: /new /sessions /plan /build /skills /memory /index /journey /learn /harness /quit  (shortcuts: Ctrl+N new, Ctrl+B sessions, Ctrl+D stop)"))
         return
     }
     if (cmd == "/new") { addBlock(label("⁘ new session")); agent.newSession(); return }
@@ -291,6 +303,17 @@ let slash = (text) => {
     if (cmd == "/journey") {
         let js = json.parse(agent.journey(25))
         if (js == []) { addBlock(label("journey: empty")) } else { addBlock(label("journey (newest last):" + journeyText(js, 0, ""))) }
+        return
+    }
+    if (cmd == "/harness") {
+        let h = json.parse(agent.harnessInfo())
+        let cs = harnessCompText(h.components, 0, "")
+        if (cs == "") { cs = " none (base harness)" }
+        let en = ""
+        if (h.enabled == false) { en = " (DISABLED)" }
+        let r = h.rules
+        let line = "harness " + h.root + en + "\n components:" + cs + "\n rules: allow=" + sprintf("%d", len(r.allow)) + " ask=" + sprintf("%d", len(r.ask)) + " deny=" + sprintf("%d", len(r.deny)) + harnessWarnText(h.warnings, 0, "")
+        addBlock(label(line))
         return
     }
     if (cmd == "/quit") { agent.quit(); return }

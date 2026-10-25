@@ -88,6 +88,12 @@ type UI struct {
 	UIDir string `json:"ui_dir"` // overrides embedded UI scripts
 }
 
+// Harness toggles the editable harness components (M10).
+type Harness struct {
+	Enabled   bool `json:"enabled"`
+	CharLimit int  `json:"char_limit"` // per-component cap on injected text
+}
+
 type Config struct {
 	Provider   Provider   `json:"provider"`
 	Agent      Agent      `json:"agent"`
@@ -97,6 +103,7 @@ type Config struct {
 	Review     Review     `json:"review"`
 	Tie        Tie        `json:"tie"`
 	MCP        MCP        `json:"mcp"`
+	Harness    Harness    `json:"harness"`
 	UI         UI         `json:"ui"`
 
 	path string `json:"-"`
@@ -130,6 +137,7 @@ func Default() *Config {
 		Review:     Review{Enabled: true, DeferUntilIdle: true, IdleSettleS: 45, MaxAgeS: 1800, MaxInputTokens: 48000, Notify: true},
 		Tie:        Tie{Enabled: true, Collection: "fyagent", ConfigName: ""},
 		MCP:        MCP{Enabled: true, Servers: map[string]MCPServer{}},
+		Harness:    Harness{Enabled: true, CharLimit: 6000},
 		UI:         UI{},
 	}
 }

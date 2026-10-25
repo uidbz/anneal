@@ -120,6 +120,16 @@ func (r *Runner) agentTool(provider llm.LLM, tools []dive.Tool) dive.Tool {
 		"explore":         readOnly(subagent.Explore),
 		"plan":            readOnly(subagent.Plan),
 	}
+	// Harness-defined subagents (M10): subagents/*.md override built-ins.
+	if r.harn != nil && r.cfg.Harness.Enabled {
+		defs, notes := r.harn.Subagents()
+		for _, n := range notes {
+			r.emit(map[string]any{"type": "harness.warning", "message": n})
+		}
+		for name, def := range defs {
+			types[name] = def
+		}
+	}
 	return orchestration.NewAgentTool(orchestration.AgentToolOptions{
 		Subagents:   types,
 		ParentTools: tools,

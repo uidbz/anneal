@@ -47,6 +47,25 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
 
+### 2026-10-25 — M10 harness component layer (Recursive Harnessing plan, PLAN.md §12)
+- Ported Harness² (arXiv 2610.14224) concepts into the plan; locked
+  decisions: **sequential default** recursion mode; successors never touch
+  the global harness automatically (session overlay + evidence-gated
+  library; promote is an explicit approval action).
+- `core/harness`: `~/.fyagent/harness/` components — `system.md`,
+  `guardrails.md` (prose + `allow:/ask:/deny:` rule lines → dive permission
+  rules; applied at startup, restart to re-read), `tool-guidance.md`,
+  `subagents/*.md` via dive's subagent FileLoader (override built-ins),
+  `scripts/` manifest. Char-capped layers (config `harness.char_limit`),
+  Seed() with format README, Validate(). `/harness` slash cmd (GUI +
+  headless REPL), `fyagent -check-harness`, warnings logged at boot.
+- Gates: hermetic (`core/harness`, prompt-order + perm-merge tests) green;
+  **live m10 gate green** (`make live-m10-test`): `subagents/summarizer.md`
+  callable as Agent type (one-line answer), and the deny rule blocked a
+  real `rm -rf` **twice under `-yolo`** ("denied by harness guardrail",
+  junkdir intact) — dive deny rules beat bypassPermissions, and dive's
+  specifier matcher caught the rm inside a compound command too.
+
 ### 2026-10-25 — MCP module upgrade: dive#347 was my duplicate of upstream #309
 - Maintainer response to dive#347: already fixed in **#309**, shipped in
   `experimental/mcp v1.33.0`. Verified: v1.33.0's adapter has

@@ -5,14 +5,17 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"time"
 
 	"fyagent/core/agent"
 	"fyagent/core/config"
+	"fyagent/core/harness"
 	"fyagent/core/journey"
 	"fyagent/core/memory"
 	"fyagent/core/model"
+	"fyagent/core/paths"
 	"fyagent/core/review"
 	"fyagent/core/skills"
 	"fyagent/core/tieindex"
@@ -32,6 +35,7 @@ type App struct {
 	Tie     *tieindex.Indexer
 	Mem     *memory.Store
 	Skills  *skills.Store
+	Harness *harness.Store
 	Review  *review.Manager
 	Journey *journey.Log
 	MCP     *mcp.Manager
@@ -57,6 +61,14 @@ func New() (*App, error) {
 	a.Runner.SetMemory(a.Mem)
 	a.Skills = skills.NewStore(cfg.Skills)
 	a.Runner.SetSkills(a.Skills)
+	a.Harness = harness.New(paths.Harness())
+	if err := a.Harness.Seed(); err != nil {
+		fmt.Fprintf(os.Stderr, "fyagent: harness seed: %v\n", err)
+	}
+	a.Runner.SetHarness(a.Harness)
+	for _, w := range a.Harness.Validate(cfg.Harness.CharLimit) {
+		fmt.Fprintf(os.Stderr, "fyagent: harness: %s\n", w)
+	}
 	a.Journey = journey.New()
 	a.Bridge.SetTap(a.journeyTap)
 	a.Review = review.NewManager(cfg.Review, cfg.Memory, cfg.Skills, a.Mem, a.Skills, a.Tie,
@@ -197,6 +209,7 @@ func (a *App) AgentAPI() map[string]any {
 		return toJSON(list)
 	}
 	api["learnNow"] = func() any { a.Review.LearnNow(); return nil }
+	api["harnessInfo"] = func() any { return toJSON(a.Runner.HarnessInfo()) }
 	api["journey"] = func(limit int) any {
 		list := a.Journey.Tail(limit)
 		if list == nil {

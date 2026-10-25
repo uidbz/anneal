@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"fyagent/core/agent"
 	"fyagent/core/app"
 )
 
@@ -265,6 +266,9 @@ func main() {
 				continue
 			case "/interrupt":
 				a.Runner.Interrupt()
+				continue
+			case "/harness":
+				fmt.Fprintln(os.Stderr, agent.FormatHarnessInfo(a.Runner.HarnessInfo()))
 				continue
 			}
 			code = runTask(line)

@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"fyagent/core/config"
+	"fyagent/core/harness"
 	"fyagent/core/memory"
 	"fyagent/core/model"
+	"fyagent/core/paths"
 	"fyagent/core/review"
 	"fyagent/core/skills"
 	"fyagent/core/tieindex"
@@ -39,6 +41,7 @@ type Runner struct {
 	index   *tieindex.Indexer
 	mem     *memory.Store
 	skills  *skills.Store
+	harn    *harness.Store
 	review  *review.Manager
 	mcp     *mcp.Manager
 	lastAct time.Time
@@ -63,6 +66,53 @@ func (r *Runner) SetMemory(m *memory.Store) { r.mem = m }
 // SetSkills attaches the skill store (nil or disabled = no skill_manage).
 func (r *Runner) SetSkills(s *skills.Store) { r.skills = s }
 
+// SetHarness attaches the harness component store (nil = base harness only).
+func (r *Runner) SetHarness(h *harness.Store) { r.harn = h }
+
+// HarnessInfo reports the active harness components and warnings (UI/CLI).
+func (r *Runner) HarnessInfo() map[string]any {
+	out := map[string]any{"root": "", "enabled": r.cfg.Harness.Enabled,
+		"components": []map[string]any{}, "rules": map[string]any{"allow": []string{}, "ask": []string{}, "deny": []string{}},
+		"warnings": []string{}}
+	if r.harn == nil {
+		return out
+	}
+	out["root"] = r.harn.Root()
+	lim := r.cfg.Harness.CharLimit
+	comps := []map[string]any{}
+	for _, l := range r.harn.Layers(lim) {
+		comps = append(comps, map[string]any{"name": l.Name, "chars": len(l.Content)})
+	}
+	out["components"] = comps
+	a, ask, d := r.harn.GuardRules()
+	out["rules"] = map[string]any{"allow": nzs(a), "ask": nzs(ask), "deny": nzs(d)}
+	out["warnings"] = nzs(r.harn.Validate(lim))
+	return out
+}
+
+func nzs(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
+// FormatHarnessInfo renders HarnessInfo for terminals.
+func FormatHarnessInfo(info map[string]any) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "harness %q (enabled=%v)\n", info["root"], info["enabled"])
+	for _, w := range info["warnings"].([]string) {
+		fmt.Fprintf(&sb, "  warn: %s\n", w)
+	}
+	for _, c := range info["components"].([]map[string]any) {
+		fmt.Fprintf(&sb, "  component %s: %d chars\n", c["name"], c["chars"])
+	}
+	rules := info["rules"].(map[string]any)
+	fmt.Fprintf(&sb, "  rules: allow=%d ask=%d deny=%d",
+		len(rules["allow"].([]string)), len(rules["ask"].([]string)), len(rules["deny"].([]string)))
+	return sb.String()
+}
+
 // SetReview attaches the background review manager (nil = no loop).
 func (r *Runner) SetReview(m *review.Manager) { r.review = m }
 
@@ -72,9 +122,10 @@ func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge,
 		monitor:      monitor,
 		bridge:       bridge,
 		cwd:          cwd,
+		harn:         harness.New(paths.Harness()),
 		pendingPerms: make(map[string]chan *dive.DialogOutput),
 	}
-	r.mgr = permission.NewManager(permConfig(cfg), &uiDialog{r: r})
+	r.mgr = permission.NewManager(permConfig(cfg, r.harn), &uiDialog{r: r})
 	if err := r.initStore(); err != nil {
 		return nil, err
 	}
@@ -192,7 +243,11 @@ func (r *Runner) run(id int, input string) {
 		tools = append(tools, r.agentTool(provider, tools))
 	}
 
-	prompt := SystemPrompt(r.cwd, r.Mode())
+	var layers []harness.Layer
+	if r.harn != nil && r.cfg.Harness.Enabled {
+		layers = r.harn.Layers(r.cfg.Harness.CharLimit)
+	}
+	prompt := SystemPrompt(r.cwd, r.Mode(), layers)
 	hooks := dive.Hooks{
 		PreToolUse: []dive.PreToolUseHook{permission.HookFromManager(r.mgr)},
 	}

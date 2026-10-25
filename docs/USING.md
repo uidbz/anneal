@@ -42,6 +42,7 @@ provider settings live.
 | `/index` | rebuild the session search index |
 | `/journey` | self-improvement timeline |
 | `/learn` | queue a background-review pass now (runs when idle) |
+| `/harness` | show mounted harness components, guardrail rules, warnings |
 | `/quit` | exit |
 
 Shortcuts: **Ctrl+N** new session · **Ctrl+B** sessions sidebar ·

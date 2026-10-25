@@ -49,6 +49,26 @@ func TestCreateListContext(t *testing.T) {
 	if _, err := s.CreateEntry(succDir(t), "x", "", "", "", "  "); err == nil {
 		t.Fatal("empty experience accepted")
 	}
+	// same task in the same second must not collide
+	a, err := s.CreateEntry(succDir(t), "collide task", "s", "r", "h", "lesson lesson lesson lesson lesson lesson")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := s.CreateEntry(succDir(t), "collide task", "s", "r", "h", "other lesson other lesson other lesson ok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a == b {
+		t.Fatalf("id collision: %s", a)
+	}
+	// experience read + id jail
+	x, err := s.Experience(b)
+	if err != nil || !strings.Contains(x, "other lesson") {
+		t.Fatalf("experience: %q %v", x, err)
+	}
+	if _, err := s.Experience("../x"); err == nil {
+		t.Fatal("bad id accepted")
+	}
 	ctx := s.Context("verify files before done", 2, 2000)
 	if !strings.Contains(ctx, "verify rule") {
 		t.Fatalf("context: %q", ctx)

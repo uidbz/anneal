@@ -2,7 +2,7 @@
 GO      ?= go
 BIN     := bin
 
-.PHONY: all build test vet fmt check-ui headless clean live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test
+.PHONY: all build test vet fmt check-ui headless clean live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke
 
 all: build
 
@@ -37,6 +37,10 @@ live-m13-test: build
 # Live k-step recursion gate (M14; one -k 2 run, ~50 min; Strata up)
 live-m14-test: build
 	bash testing/e2e/m14/run.sh
+
+# Harness-panel GUI smoke (M15; needs a display; uses the test home)
+gui-m15-smoke: fyagent
+	FYAGENT_HOME=/tmp/opencode/fyagent-home FYAGENT_UI_DIR=$(CURDIR)/testing/e2e/m15 ./bin/fyagent
 
 vet:
 	$(GO) vet ./...

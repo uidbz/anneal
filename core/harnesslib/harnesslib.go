@@ -239,6 +239,18 @@ func (s *Store) EntryDir(id string) (string, error) {
 	return d, nil
 }
 
+// Experience returns one entry's EXPERIENCE.md.
+func (s *Store) Experience(id string) (string, error) {
+	if id == "" || strings.ContainsAny(id, "/\\") {
+		return "", fmt.Errorf("harnesslib: bad entry id %q", id)
+	}
+	b, err := os.ReadFile(filepath.Join(s.root, id, "EXPERIENCE.md"))
+	if err != nil {
+		return "", fmt.Errorf("harnesslib: no experience for %q", id)
+	}
+	return string(b), nil
+}
+
 // Promote copies an entry's components into the GLOBAL harness directory
 // (the only path by which agent-authored changes become permanent).
 // Replaced files are backed up under promote-backup/<ts>/.

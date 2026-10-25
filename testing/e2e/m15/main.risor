@@ -1,0 +1,59 @@
+// fyagent M15 GUI smoke: harness-panel bridge APIs round-trip headlessly.
+// Drives exactly what the harness tab calls; never promotes (that mutates
+// the global harness — covered by the m13 gate).
+require(["v0.9", "@json", "@strings"])
+
+let log = (s) => { print("M15: " + s + "\n") }
+
+let files = json.parse(agent.harnessFiles())
+log("FILES " + sprintf("%d", len(files)) + " " + strings.join(files, ","))
+if (files == []) {
+    log("FAIL no component files (seed the test home harness)")
+    agent.quit()
+}
+
+let h = json.parse(agent.harnessInfo())
+log("INFO root=" + h.root + " enabled=" + sprintf("%v", h.enabled) +
+    " components=" + sprintf("%v", len(h.components)) +
+    " allow=" + sprintf("%v", len(h.rules.allow)) +
+    " deny=" + sprintf("%v", len(h.rules.deny)))
+
+let name = files[0]
+let got = json.parse(agent.harnessGet(name))
+log("GET " + name + " chars=" + sprintf("%v", len(got.content)) + " err=" + got.error)
+if (got.error != "") {
+    log("FAIL get " + name)
+    agent.quit()
+}
+
+// write the same content back — must succeed and re-validate
+let save = json.parse(agent.harnessSave(name, got.content))
+log("SAVE err=" + save.error + " warns=" + sprintf("%v", len(save.warns)))
+if (save.error != "") {
+    log("FAIL save round-trip")
+    agent.quit()
+}
+
+// path jail: traversal + non-md must be rejected
+let bad = json.parse(agent.harnessGet("../evil.md"))
+log("JAIL ../evil.md rejected=" + sprintf("%v", bad.error != ""))
+let bad2 = json.parse(agent.harnessGet("scripts/run.sh"))
+log("JAIL scripts/run.sh rejected=" + sprintf("%v", bad2.error != ""))
+if (bad.error == "" || bad2.error == "") {
+    log("FAIL path jail leak")
+    agent.quit()
+}
+
+let lb = json.parse(agent.harnessLibList())
+log("LIB entries=" + sprintf("%v", len(lb)))
+if (lb != []) {
+    let ex = json.parse(agent.libExperience(lb[0].id))
+    log("EXP " + lb[0].id + " chars=" + sprintf("%v", len(ex.content)) + " err=" + ex.error)
+    if (ex.error != "") {
+        log("FAIL experience read")
+        agent.quit()
+    }
+}
+
+log("=== M15 UI API OK")
+agent.quit()

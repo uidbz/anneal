@@ -12,7 +12,9 @@ const componentRules = `You work in a directory holding the editable harness com
 - guardrails.md    behavioral guardrails; lines "deny: Tool(spec)", "ask: ...",
                    "allow: ..." are machine-enforced permission rules
 - tool-guidance.md extra instructions on using fyagent's tools well
-- scripts.md       notes about helper workflows (text guidance only)
+- subagents/<name>.md subagent definitions (frontmatter: description,
+  model, tools; the key is the file name)
+Do NOT invent other files (there is no scripts.md component).
 Edit them with the file tools using their ABSOLUTE paths (the task text
 tells you the directory, e.g. Write file_path="<dir>/system.md"). Keep
 every file under 3500 characters.

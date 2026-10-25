@@ -238,9 +238,11 @@ Milestones:
   skipping completed `improvements/<runid>/iter<i>/` stages. Parallel
   iterations run one-at-a-time on purpose (one local GPU; concurrency
   would only starve streams).
-- **M15 GUI** — harness tab (components view/edit + guardrail rules),
-  improve stage cards (bridge events), library browser + promote/approve,
-  journey integration.
+- **M15 GUI** ✔ — harness view (toolbar button / `/harness`): component
+  files editable inline + guardrail rule counts (restart-to-apply note),
+  improve stage events in the transcript, library browser with
+  EXPERIENCE.md viewer + two-click promote (with backups), journey
+  integration for promotes.
 - **M16 docs + review-loop bridge** — M7 reviewer flags candidate
   harness deficiencies into an `/improve` priority queue (it never edits
   harness files: no evidence → no edits); docs pass.

@@ -136,6 +136,13 @@ func toStr(v any) string {
 	return ""
 }
 
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
 // ConnectTie connects the tie index (blocking; call off the GUI path) and
 // reports the result as a tie.state event. Safe to retry.
 func (a *App) ConnectTie() {
@@ -240,6 +247,43 @@ func (a *App) AgentAPI() map[string]any {
 			return toJSON([]any{})
 		}
 		return toJSON(ls)
+	}
+	api["harnessFiles"] = func() any {
+		fs := a.Harness.Files()
+		if fs == nil {
+			return toJSON([]string{})
+		}
+		return toJSON(fs)
+	}
+	api["harnessGet"] = func(name string) any {
+		b, err := a.Harness.GetFile(name)
+		return toJSON(map[string]any{"name": name, "content": b, "error": errString(err)})
+	}
+	api["harnessSave"] = func(name, content string) any {
+		err := a.Harness.SaveFile(name, content)
+		warns := a.Harness.Validate(a.Cfg.Harness.CharLimit)
+		if warns == nil {
+			warns = []string{}
+		}
+		a.Bridge.Emit(map[string]any{"type": "harness.warn", "warns": warns, "saved": name})
+		return toJSON(map[string]any{"error": errString(err), "warns": warns,
+			"restart_for_rules": true})
+	}
+	api["libExperience"] = func(id string) any {
+		b, err := a.Libs.Experience(id)
+		return toJSON(map[string]any{"id": id, "content": b, "error": errString(err)})
+	}
+	api["libPromote"] = func(id string) any {
+		backup, err := a.Libs.Promote(id)
+		warns := a.Harness.Validate(a.Cfg.Harness.CharLimit)
+		if warns == nil {
+			warns = []string{}
+		}
+		a.Bridge.Emit(map[string]any{"type": "harness.promoted", "entry": id,
+			"backup": backup, "error": errString(err), "warns": warns})
+		a.Journey.Append("harness-promote", map[string]any{"entry": id, "backup": backup})
+		return toJSON(map[string]any{"entry": id, "backup": backup,
+			"error": errString(err), "warns": warns})
 	}
 	api["journey"] = func(limit int) any {
 		list := a.Journey.Tail(limit)

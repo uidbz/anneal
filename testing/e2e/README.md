@@ -44,6 +44,7 @@ timeout 300 <repo>/bin/fyagent
 | `m6/` | `skill_manage` create → next session `Skill` tool injects → behavioral compliance; `Agent` subagent (explore) |
 | `m7/` | background reviewer fires while idle, writes lessons, journey populated |
 | `m8/` | MCP: boot connect, `mcp__demo__echo` tool call through permission prompt, output verbatim |
+| `m15/` | harness-panel bridge APIs: files/get/save round-trip, path jail, library + EXPERIENCE.md reads (`make gui-m15-smoke`) |
 
 Notes:
 - `m4b`/`m5`/`m6` create their own fresh sessions (`agent.newSession()`), so

@@ -16,6 +16,39 @@ func newStore(t *testing.T) *Store {
 	return s
 }
 
+func TestFilesAndEdit(t *testing.T) {
+	s := newStore(t)
+	if err := os.MkdirAll(filepath.Join(s.Root(), "subagents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(s.Root(), "subagents", "auditor.md"), []byte("# audit"), 0o644)
+	os.WriteFile(filepath.Join(s.Root(), "system.md"), []byte("base"), 0o644)
+	fs := s.Files()
+	joined := strings.Join(fs, ",")
+	if !strings.Contains(joined, "subagents/auditor.md") || !strings.Contains(joined, "system.md") {
+		t.Fatalf("files: %v", fs)
+	}
+	if strings.Contains(joined, "README") {
+		t.Fatalf("README editable: %v", fs)
+	}
+	for _, bad := range []string{"../evil.md", "/abs.md", "scripts/x.md", "x.txt",
+		"a/../b.md", `a\b.md`, ""} {
+		if _, err := s.GetFile(bad); err == nil {
+			t.Fatalf("jail accepted get %q", bad)
+		}
+		if err := s.SaveFile(bad, "x"); err == nil {
+			t.Fatalf("jail accepted save %q", bad)
+		}
+	}
+	if err := s.SaveFile("subagents/auditor.md", "# changed"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetFile("subagents/auditor.md")
+	if err != nil || got != "# changed" {
+		t.Fatalf("roundtrip: %q %v", got, err)
+	}
+}
+
 func TestSeedIdempotent(t *testing.T) {
 	s := newStore(t)
 	write := filepath.Join(s.Root(), "system.md")

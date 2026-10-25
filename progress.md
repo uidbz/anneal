@@ -47,6 +47,32 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
 
+### 2026-10-25 — M15 GUI harness panel
+- New bridge APIs: `harnessFiles/harnessGet/harnessSave` (path jail: only
+  `*.md` at root or under `subagents/`, no `..`/absolute/backslash),
+  `libExperience`, `libPromote`; `harness.warn`/`harness.promoted` events;
+  promote also lands in the journey (`harness-promote` kind).
+- UI: "harness" toolbar button + `/harness` open a viewMode panel —
+  component files as MultiLineEntry editors with save buttons (prose
+  applies next run; guardrail RULE lines need restart — stated inline),
+  library list with experience viewer and TWO-CLICK promote (first click
+  arms, second commits; backup path shown). compose() swaps the center;
+  panel widgets persist across recomposes (entries aren't rebuilt unless
+  dirty), so typing survives transcript events.
+- Risor gotchas hit again: identifiers referenced from earlier callbacks
+  need `let` placeholder slots (openHarness/buildHarness); plain
+  `name = fn` assignment for a never-declared name is a compile error
+  (closeHarness needed its own `let`).
+- Prompt fix found by the smoke: componentRules advertised a `scripts.md`
+  component that doesn't exist (the scripts layer is GENERATED from the
+  scripts/ dir manifest) — composers wrote it and promotion warned
+  "unknown entry". Now the prompt lists subagents/<name>.md and forbids
+  inventing files; stale scripts.md purged from test-home entries.
+- Verified: harness Files/jail tests, harnesslib Experience + id-collision
+  test, GUI smoke driver (`FYAGENT_UI_DIR=testing/e2e/m15 bin/fyagent`)
+  round-trips every panel API against the promoted test-home harness —
+  `=== M15 UI API OK`; desktop restarted on the M15 binary (BOOT-DONE).
+
 ### 2026-10-25 — M14 recursion budget (k-step chaining + governors)
 - `improve.Step` splits into orchestration (`stepK`) + pipeline
   (`stepOnce`). **sequential** (default per the locked decision): each

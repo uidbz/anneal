@@ -218,6 +218,71 @@ var known = map[string]bool{
 	"README.md": true, "subagents": true, "scripts": true,
 }
 
+// Files lists editable component files (top-level .md + subagents/*.md),
+// as slash-prefixed relative paths.
+func (s *Store) Files() []string {
+	var out []string
+	entries, _ := os.ReadDir(s.root)
+	for _, e := range entries {
+		if e.IsDir() && e.Name() == "subagents" {
+			sub, _ := os.ReadDir(filepath.Join(s.root, "subagents"))
+			for _, x := range sub {
+				if !x.IsDir() && strings.HasSuffix(x.Name(), ".md") {
+					out = append(out, "subagents/"+x.Name())
+				}
+			}
+			continue
+		}
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") && e.Name() != "README.md" {
+			out = append(out, e.Name())
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// safeRel validates an editable component path relative to the root.
+func (s *Store) safeRel(rel string) (string, error) {
+	if rel == "" || strings.HasPrefix(rel, "/") || strings.Contains(rel, "..") ||
+		strings.Contains(rel, "\\") {
+		return "", fmt.Errorf("harness: bad component path %q", rel)
+	}
+	clean := filepath.ToSlash(filepath.Clean(rel))
+	if !strings.HasSuffix(clean, ".md") {
+		return "", fmt.Errorf("harness: only .md components are editable (%q)", rel)
+	}
+	if strings.Contains(clean, "/") && !strings.HasPrefix(clean, "subagents/") {
+		return "", fmt.Errorf("harness: bad component path %q", rel)
+	}
+	return filepath.Join(s.root, clean), nil
+}
+
+// GetFile reads one component file.
+func (s *Store) GetFile(rel string) (string, error) {
+	p, err := s.safeRel(rel)
+	if err != nil {
+		return "", err
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// SaveFile writes one component file (prose layers re-read next run;
+// guardrail RULES need a restart).
+func (s *Store) SaveFile(rel, content string) error {
+	p, err := s.safeRel(rel)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(p, []byte(content), 0o644)
+}
+
 // FormatDoc returns the component-format documentation (seeded README);
 // improvement editors get it verbatim.
 func FormatDoc() string { return readme }

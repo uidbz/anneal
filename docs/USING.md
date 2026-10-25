@@ -43,7 +43,7 @@ provider settings live.
 | `/journey` | self-improvement timeline |
 | `/learn` | queue a background-review pass now (runs when idle) |
 | `/improve` | one contrastive harness-improvement step for the last task |
-| `/harness` | show mounted harness components, guardrail rules, warnings |
+| `/harness` | open the harness panel (components, guardrail rules, improvement library) |
 | `/quit` | exit |
 
 Shortcuts: **Ctrl+N** new session · **Ctrl+B** sessions sidebar ·
@@ -108,6 +108,12 @@ cd repo && fyagent-headless -allow Read,Glob,Grep,Bash -json -p "run tests" \
   improvement library (`/harness list` in the headless REPL); making one
   permanent is your explicit call: `/harness promote <id>` (with backups).
   Full records: `~/.fyagent/improvements/`.
+- **Harness panel** (GUI): the "harness" toolbar button (or `/harness`)
+  opens a view over `~/.fyagent/harness/`: each component file is editable
+  inline (saves take effect next run — except guardrail `deny:/ask:/allow:`
+  rule lines, which need a restart), and the improvement library lists
+  every entry with its EXPERIENCE.md and a two-click **promote** button
+  (replaced files are backed up under `harness-lib/promote-backup/`).
 
 ## Scripting the GUI (UI hacking)
 

@@ -55,12 +55,13 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
   prefix. `Gyre`/`Haft`/`Hone`/`Weft`/`Whetstone`/`Skein`/`Gimlet` were
   rejected after finding collisions in adjacent agent tooling.
 - Renamed module/imports (`anneal`), binaries (`anneal`, `anneal-headless`),
-  and docs; added `anneal-legacy` for the original all-Risor UI and e2e drivers.
-- Compatibility: `~/.fyagent` → `~/.anneal` one-time directory rename;
-  `FYAGENT_*` env aliases; `.fyagent/skills` read path; old
-  `fyagent-memory` reminder detection; `agent` script global unchanged;
-  existing tie collection values preserved. `make build` creates
-  `bin/fyagent*` symlinks for one release.
+  and docs; initially added `anneal-legacy` for the original all-Risor UI and
+  e2e drivers (later removed in Phase 6).
+- Compatibility at rename: `~/.fyagent` → `~/.anneal` one-time directory
+  rename; `FYAGENT_*` env aliases, `.fyagent/skills` read path, and
+  `bin/fyagent*` symlinks (the env aliases/symlinks were removed in Phase 6);
+  old `fyagent-memory` reminder detection and the `agent` script global stay
+  for historical sessions/scripts; existing tie collection values preserved.
 - New hybrid shell (`cmd/anneal`): Go/Fyne transcript/composer/permission
   inbox/todos/status/session picker, plus the harness editor/library as an
   embedded `gui.NewCanvasObject` pane (`assets/ui/harness.risor`).
@@ -86,6 +87,13 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
   send/session changes, and `-send`/`-quit-after-run` verified the real
   composer path (input → submit → streamed reply → persisted session → exit).
   License added: BSD 3-Clause (same as tie).
+- Phase 6 cleanup: removed `anneal-legacy` and the embedded full UI; full
+  scripted UIs run via `anneal -script-ui` (e2e/custom hacking). Removed
+  `FYAGENT_*` env aliases, `.fyagent/skills`, old binary symlinks, and the
+  root build artifact. The `~/.fyagent` one-time state-directory migration and
+  historical `fyagent-memory` detection remain.
+- Activity tab: journey timeline + improvement-run records with candidate
+  outcomes/decisions/successor/library entry; Ctrl+1/2/3 switch tabs.
 - Gates: build, vet, hermetic tests, race, legacy `-check-ui`, pane
   `-check-ui`; manual launch/screenshot of the hybrid shell and legacy replay.
 

@@ -1,25 +1,18 @@
-# anneal — build, test, docs gates
+# Anneal — build, test, docs gates
 GO      ?= go
 BIN     := bin
 
-.PHONY: all build test vet fmt check-ui check-pane headless legacy clean live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke live-m16-test
+.PHONY: all build test vet fmt check-ui check-script-ui headless clean live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke live-m16-test
 
 all: build
 
-build: anneal headless legacy
-	ln -sf anneal $(BIN)/fyagent
-	ln -sf anneal-headless $(BIN)/fyagent-headless
-	ln -sf anneal-legacy $(BIN)/fyagent-legacy
+build: anneal headless
 
 anneal:
 	$(GO) build -o $(BIN)/anneal ./cmd/anneal
 
 headless:
 	$(GO) build -o $(BIN)/anneal-headless ./cmd/anneal-headless
-
-# Preserved all-Risor UI for e2e drivers and one-release fallback.
-legacy:
-	$(GO) build -o $(BIN)/anneal-legacy ./cmd/anneal-legacy
 
 # Hermetic tests (no network; live-infrastructure tests skip unless opted in)
 test:
@@ -45,9 +38,9 @@ live-m13-test: build
 live-m14-test: build
 	bash testing/e2e/m14/run.sh
 
-# Harness-panel GUI smoke (M15; needs a display; uses the test home)
-gui-m15-smoke: legacy
-	ANNEAL_HOME=/tmp/opencode/anneal-home ANNEAL_UI_DIR=$(CURDIR)/testing/e2e/m15 ./bin/anneal-legacy
+# Scripted full-UI e2e driver smoke (M15; needs a display; test home)
+gui-m15-smoke: anneal
+	ANNEAL_HOME=/tmp/opencode/anneal-home ANNEAL_UI_DIR=$(CURDIR)/testing/e2e/m15 ./bin/anneal -script-ui
 
 # Live review-bridge gate (M16; task + learning pass, ~5 min; Strata up)
 live-m16-test: build
@@ -57,18 +50,18 @@ vet:
 	$(GO) vet ./...
 
 fmt:
-	gofmt -w core cmd assets 2>/dev/null || gofmt -w core cmd
+	gofmt -w core cmd
 
-# Compile-check the legacy full UI (fynerisor CompileScript)
-check-ui: legacy
-	$(BIN)/anneal-legacy -check-ui
-
-# Compile-check the scripted pane embedded in the new Go shell
-check-pane: anneal
+# Compile-check the embedded scripted pane (product UI)
+check-ui: anneal
 	$(BIN)/anneal -check-ui
 
+# Compile-check the full-window scripted UI used by e2e/custom UI drivers
+check-script-ui: anneal
+	ANNEAL_UI_DIR=$(CURDIR)/testing/e2e/m15 $(BIN)/anneal -check-script-ui
+
 # Recommended pre-commit gate
-ci: vet test check-ui check-pane
+ci: vet test check-ui check-script-ui
 
 clean:
 	rm -rf $(BIN)

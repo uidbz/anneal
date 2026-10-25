@@ -18,8 +18,8 @@ fynerisor to it until the next release.
 ## Workarounds currently in use (Anneal)
 
 - Hybrid shell: Go/Fyne owns the transcript and window; the harness pane uses
-  `gui.NewCanvasObject` and a narrow, pull-based `agent` API. The legacy
-  all-Risor UI still uses the recompose pattern.
+  `gui.NewCanvasObject` and a narrow, pull-based `agent` API plus a filtered
+  event feed. `-script-ui` keeps the full-window driver/e2e scripts working.
 - `agent.quit()` Go bridge (still fine; `app.Quit()` now also works for
   gui.NewApp apps).
 

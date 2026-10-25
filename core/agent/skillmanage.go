@@ -39,8 +39,6 @@ func (r *Runner) skillLoader() *skill.Loader {
 	extra := []string{
 		paths.Skills(),
 		filepath.Join(r.cwd, ".anneal", "skills"),
-		// Read-only compatibility with the pre-rename project layout.
-		filepath.Join(r.cwd, ".fyagent", "skills"),
 	}
 	extra = append(extra, r.cfg.Skills.ExtraDirs...)
 	loader, err := skill.Load(context.Background(), skill.LoaderOptions{

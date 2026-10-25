@@ -2,12 +2,9 @@
 
 Risor **driver scripts** that drive the real Anneal binary against live
 infrastructure (Strata + optionally tie/MCP) and assert on the event stream.
-They replace the legacy GUI script (`ANNEAL_UI_DIR`), so no clicking is
-needed — each prints `=== … OK/FAIL` markers and quits itself.
-
-During the hybrid UI migration the drivers target **`anneal-legacy`** (the
-original all-Risor UI). The new hybrid shell has its own event-rendering tests
-and will get scripted-pane drivers in Phase 5.
+They replace the product UI with `-script-ui` and a full-window script
+(`ANNEAL_UI_DIR`), so no clicking is needed — each prints `=== … OK/FAIL`
+markers and quits itself.
 
 ## Prerequisites
 
@@ -34,7 +31,13 @@ cd /tmp/opencode/demo            # or any cwd the tasks expect
 ANNEAL_HOME=/tmp/opencode/anneal-home \
 ANNEAL_UI_DIR=<repo>/testing/e2e/<driver> \
 ANNEAL_ENDPOINT=http://127.0.0.1:8081/v1/chat/completions \
-timeout 300 <repo>/bin/anneal-legacy
+timeout 300 <repo>/bin/anneal -script-ui
+```
+
+Compile a driver without running it:
+
+```sh
+ANNEAL_UI_DIR=<repo>/testing/e2e/<driver> <repo>/bin/anneal -check-script-ui
 ```
 
 ## Gates

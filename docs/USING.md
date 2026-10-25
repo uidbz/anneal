@@ -17,8 +17,7 @@ for scripted settings UIs (there is no built-in settings tab yet).
 
 ## GUI tour (hybrid shell)
 
-The default `anneal` binary is a plain Fyne shell with one scripted pane. The
-older all-Risor UI is still available as `anneal-legacy`.
+The `anneal` binary is a plain Fyne shell with scripted panes.
 
 - **Transcript** (center): user/assistant blocks, streaming tail, tool calls
   with previews, notices (✔/⚠/🧠). It appends incrementally and lays out at
@@ -33,6 +32,10 @@ older all-Risor UI is still available as `anneal-legacy`.
   `config.json` in an editor; saving re-points the health monitor and applies
   live-capable store settings immediately.
 - **Todo panel** (right): the model's live checklist for multi-step work.
+- **Activity tab**: journey timeline + improvement-run records
+  (`~/.anneal/improvements/*/step.json`): task, k/mode, candidates, decisions,
+  library entry, successor overlay. Refresh-on-demand; no background model
+  work.
 - **Session picker** (`sessions` or `/sessions`): newest first — click to
   replay/resume.
 - **Harness tab**: a fynerisor `CanvasObject` pane. Edit component files
@@ -41,8 +44,6 @@ older all-Risor UI is still available as `anneal-legacy`.
   flags, and start `/improve`. The pane is pull-based and receives only a
   filtered harness/improve event feed that updates a notice line; it never
   gets chat deltas or host-window capabilities. Ctrl+R reloads it.
-- **Legacy UI**: `./bin/anneal-legacy` (same core) for comparison and the
-  existing e2e driver scripts.
 
 ### Slash commands (entry box)
 
@@ -54,6 +55,7 @@ older all-Risor UI is still available as `anneal-legacy`.
 | `/skills` | list installed skills |
 | `/memory` | show MEMORY.md / USER.md with usage vs caps |
 | `/journey` | self-improvement timeline |
+| `/activity`, `/runs` | switch to the Activity tab |
 | `/index` | rebuild the session search index |
 | `/learn` | queue a background-review pass now (runs when idle) |
 | `/improve` | one contrastive harness-improvement step for the last task |
@@ -69,9 +71,8 @@ older all-Risor UI is still available as `anneal-legacy`.
 | Ctrl+D | stop the current run |
 | Ctrl+L | focus the composer |
 | Ctrl+R | reload the scripted harness pane |
+| Ctrl+1/2/3 | Chat / Harness / Activity |
 | Ctrl+Q | quit |
-
-The legacy UI keeps Ctrl+N/B/D too.
 
 For UI smoke tests without typing, `anneal -send "task" -quit-after-run` fills
 the composer, submits it, and exits after the run finishes.
@@ -143,14 +144,16 @@ cd repo && anneal-headless -allow Read,Glob,Grep,Bash -json -p "run tests" \
 
 ## Scripting the UI
 
-- **Panes (new):** `ANNEAL_PANE_DIR=/path/to/panes ./bin/anneal` loads
+- **Panes (product):** `ANNEAL_PANE_DIR=/path/to/panes ./bin/anneal` loads
   `harness.risor` from that directory instead of the embedded copy. Compile
   with `anneal -check-ui`. A pane receives a restricted `agent` global
-  (harness/library/flags/improve only) and is hosted by
-  `gui.NewCanvasObject`.
-- **Legacy full UI:** `ANNEAL_UI_DIR=/path/to/ui ./bin/anneal-legacy` loads
-  `main.risor` instead of the embedded copy; compile with
-  `anneal-legacy -check-ui`. It sees the full `agent` bridge API.
+  (harness/library/flags/improve only) plus a filtered event feed, and is
+  hosted by `gui.NewCanvasObject`.
+- **Full-window script UI (e2e/custom hacking):**
+  `ANNEAL_UI_DIR=/path/to/ui ./bin/anneal -script-ui` runs `main.risor` with
+  the full `agent` bridge API. Compile with
+  `ANNEAL_UI_DIR=… ./bin/anneal -check-script-ui`. This is the driver mode
+  used by the e2e gates; there is no embedded full UI anymore.
 
 Language gotchas (no `for`, `} else {` hugging, all event keys always present,
 etc.) are listed in `docs/PLAN.md` §7 and the fynerisor skill notes.

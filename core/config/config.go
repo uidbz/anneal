@@ -85,8 +85,8 @@ type MCP struct {
 }
 
 type UI struct {
-	UIDir   string `json:"ui_dir"`   // overrides embedded legacy UI scripts
-	PaneDir string `json:"pane_dir"` // overrides embedded scripted-pane scripts
+	UIDir   string `json:"ui_dir"`   // full-window script UI override (ANNEAL_UI_DIR)
+	PaneDir string `json:"pane_dir"` // scripted-pane override
 }
 
 // Harness toggles the editable harness components (M10).
@@ -178,31 +178,20 @@ func Load() (*Config, error) {
 		}
 	}
 
-	if v := envFirst("ANNEAL_ENDPOINT", "FYAGENT_ENDPOINT"); v != "" {
+	if v := os.Getenv("ANNEAL_ENDPOINT"); v != "" {
 		cfg.Provider.Endpoint = v
 	}
-	if v := envFirst("ANNEAL_MODEL", "FYAGENT_MODEL"); v != "" {
+	if v := os.Getenv("ANNEAL_MODEL"); v != "" {
 		cfg.Provider.Model = v
 	}
-	if v := envFirst("ANNEAL_UI_DIR", "FYAGENT_UI_DIR"); v != "" {
+	if v := os.Getenv("ANNEAL_UI_DIR"); v != "" {
 		cfg.UI.UIDir = v
 	}
-	if v := envFirst("ANNEAL_PANE_DIR", "FYAGENT_PANE_DIR"); v != "" {
+	if v := os.Getenv("ANNEAL_PANE_DIR"); v != "" {
 		cfg.UI.PaneDir = v
 	}
 	cfg.normalize()
 	return cfg, nil
-}
-
-// envFirst returns the first non-empty env value (new name first, deprecated
-// alias second).
-func envFirst(names ...string) string {
-	for _, n := range names {
-		if v := os.Getenv(n); v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // Apply parses a full-config JSON document (from the settings UI) and

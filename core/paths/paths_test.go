@@ -6,15 +6,10 @@ import (
 	"testing"
 )
 
-func TestRootEnvPrecedence(t *testing.T) {
+func TestRootEnv(t *testing.T) {
 	t.Setenv("ANNEAL_HOME", "/tmp/anneal-new")
-	t.Setenv("FYAGENT_HOME", "/tmp/fyagent-old")
 	if got := Root(); got != "/tmp/anneal-new" {
-		t.Fatalf("ANNEAL_HOME should win: %q", got)
-	}
-	t.Setenv("ANNEAL_HOME", "")
-	if got := Root(); got != "/tmp/fyagent-old" {
-		t.Fatalf("legacy env fallback: %q", got)
+		t.Fatalf("ANNEAL_HOME: %q", got)
 	}
 }
 
@@ -22,7 +17,6 @@ func TestRootMigratesLegacyDirectory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("ANNEAL_HOME", "")
-	t.Setenv("FYAGENT_HOME", "")
 	oldDir := filepath.Join(home, ".fyagent")
 	if err := os.MkdirAll(filepath.Join(oldDir, "sessions"), 0o755); err != nil {
 		t.Fatal(err)
@@ -47,7 +41,6 @@ func TestRootPrefersExistingNewDirectory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("ANNEAL_HOME", "")
-	t.Setenv("FYAGENT_HOME", "")
 	if err := os.MkdirAll(filepath.Join(home, ".anneal"), 0o755); err != nil {
 		t.Fatal(err)
 	}

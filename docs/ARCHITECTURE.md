@@ -1,6 +1,7 @@
 # Anneal architecture
 
-Anneal was renamed from `fyagent`; the hybrid UI migration is in progress.
+Anneal was renamed from `fyagent`; the hybrid UI migration is complete
+(follow-ups: deeper accessibility, optional virtualization benchmark).
 The stable shell is Go/Fyne; scripted `CanvasObject` panes use fynerisor.
 
 ```
@@ -8,7 +9,7 @@ The stable shell is Go/Fyne; scripted `CanvasObject` panes use fynerisor.
                     │ cmd/anneal (hybrid)      cmd/anneal-headless   │
                     │  Go/Fyne shell            terminal sink        │
                     │  + harness.risor pane     (-p/-i/-json)        │
-                    │ cmd/anneal-legacy (all-Risor fallback/e2e)     │
+                    │  -script-ui for e2e drivers                    │
                     └──────────┬────────────────────────┬────────────┘
                                │        core/app (wiring)
                     ┌──────────┴────────────────────────────────────┐
@@ -47,9 +48,10 @@ The stable shell is Go/Fyne; scripted `CanvasObject` panes use fynerisor.
   The harness editor/library is a fynerisor `CanvasObject`
   (`assets/ui/harness.risor`) embedded in a tab; it receives a restricted
   `agent` API (pull/actions only) and never controls the host window content.
-- **Legacy UI.** `cmd/anneal-legacy` still runs the original all-Risor
-  `assets/ui/main.risor` (`ANNEAL_UI_DIR` hot reload) and remains the target
-  for the existing e2e drivers during the migration.
+- **Legacy/scripted full UI.** `anneal -script-ui` runs a full-window
+  fynerisor host from `ANNEAL_UI_DIR/main.risor` with the complete `agent`
+  bridge API. It is the driver mode for the e2e gates and custom UI hacking;
+  no full UI is embedded anymore.
 - **Threading rule:** Go never touches Fyne widgets from its own goroutines.
   `core/events.Bus` is the UI-agnostic fan-out: the journey log, Go shell, and
   headless sink are taps. The Go shell installs one `AddTap` consumer; a single
@@ -58,9 +60,9 @@ The stable shell is Go/Fyne; scripted `CanvasObject` panes use fynerisor.
   JSON, and queues onto fynerisor's `functionCalls` channel; pre-handler events
   are buffered (≤4096) until `Ready()`/`setOn`.
 - **Compile gate:** the embedded harness pane is compiled at boot and by
-  `anneal -check-ui`; the legacy full UI is compiled by
-  `anneal-legacy -check-ui`. A broken script fails fast instead of producing
-  an empty pane/window.
+  `anneal -check-ui`; `-script-ui -check-script-ui` compiles a driver/full
+  script UI. A broken script fails fast instead of producing an empty
+  pane/window.
 
 ## Events (Go → UI)
 
@@ -161,5 +163,5 @@ a transport error reports `unreachable` without touching a nil response.
 - Go shell event-rendering tests with `fyne.io/fyne/v2/test` (no display).
 - Live-infrastructure tests opt-in (`make live-tie-test`).
 - Legacy Risor driver scripts exercising the real binary end-to-end —
-  `testing/e2e/README.md` (targets `anneal-legacy`).
-- `make ci` = vet + test + legacy `-check-ui` + pane `-check-ui`.
+  `testing/e2e/README.md` (`anneal -script-ui`).
+- `make ci` = vet + test + pane `-check-ui` + driver `-check-script-ui`.

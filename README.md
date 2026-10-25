@@ -5,10 +5,11 @@ A self-improving, opencode-style desktop coding agent in Go.
 
 - **Agent runtime:** [dive](https://github.com/deepnoodle-ai/dive)
 - **UI:** a plain Go/[Fyne](https://fyne.io) shell for the stable surfaces
-  (transcript, composer, permissions, sessions, todos) plus
+  (transcript, composer, permissions, sessions, todos, activity) plus
   [fynerisor](https://github.com/uidbz/fynerisor) `CanvasObject` panes for
-  editable/agent-adjacent surfaces (harness editor/library first). The original
-  all-Risor UI is preserved as `anneal-legacy` during the migration.
+  editable/agent-adjacent surfaces (harness editor/library first). A
+  `-script-ui` developer mode keeps full-window scripted e2e drivers and
+  custom UI hacking working.
 - **Model:** local [Strata](https://github.com/Niko1221/Strata) or any
   OpenAI Chat-Completions server
 - **Episodic memory / session search:** [tie](https://github.com/uidbz/tie)
@@ -45,17 +46,17 @@ active follow-ups (see [progress.md](progress.md)).
 ## Requirements
 
 - Go ≥ 1.27 (`go.mod` pins `go 1.27.2`)
-- Fyne C dependencies (X11/Wayland dev libs, OpenGL) for the GUI binaries
-  (`anneal`, `anneal-legacy`) — same as any Fyne app.
-- `anneal-headless` no longer imports Fyne/fynerisor (the event bus is
+- Fyne C dependencies (X11/Wayland dev libs, OpenGL) for `anneal` — same as any
+  Fyne app.
+- `anneal-headless` does not import Fyne/fynerisor (the event bus is
   UI-agnostic), so it builds and runs without GUI libraries.
 
 ## Build
 
 ```sh
-make build            # bin/anneal, bin/anneal-headless, bin/anneal-legacy
+make build            # bin/anneal, bin/anneal-headless
 make test             # hermetic unit tests
-make ci               # vet + test + legacy/pane compile gates
+make ci               # vet + test + pane/script-UI compile gates
 make live-tie-test    # tie round-trip against the real triplestore (opt-in)
 ```
 
@@ -67,19 +68,17 @@ unreleased fixes (issues #2–#6 and the `CanvasObject` embedding API, commit
 
 ```sh
 ./bin/anneal                       # hybrid Go shell + scripted harness pane
-./bin/anneal-legacy                # original all-Risor UI (fallback/e2e)
 ./bin/anneal-headless -p "…"       # one-shot task, exit 0/1
 ./bin/anneal-headless -i           # REPL
 ./bin/anneal -rebuild-index        # rebuild the tie session index
 ./bin/anneal -check-ui             # compile-check the scripted pane
-./bin/anneal-legacy -check-ui      # compile-check the legacy UI
+./bin/anneal -script-ui -check-script-ui  # compile-check a driver UI
 ./bin/anneal -send "task" -quit-after-run   # developer UI smoke
 ```
 
 Model endpoint: `~/.anneal/config.json` or `ANNEAL_ENDPOINT` /
-`ANNEAL_MODEL` (`FYAGENT_*` remains a deprecated alias). Everything degrades
-gracefully: tie down ⇒ session search disabled (`index: offline`); Strata cold
-⇒ health status and auto-reconnect.
+`ANNEAL_MODEL`. Everything degrades gracefully: tie down ⇒ session search
+disabled (`index: offline`); Strata cold ⇒ health status and auto-reconnect.
 
 ## Migration
 
@@ -87,15 +86,14 @@ Anneal was previously `fyagent`. On first run:
 
 - an existing `~/.fyagent` state directory is renamed to `~/.anneal` if the new
   one does not exist (sessions, memory, skills, harnesses, logs move together);
-- `FYAGENT_HOME`, `FYAGENT_ENDPOINT`, `FYAGENT_MODEL`, `FYAGENT_UI_DIR`, and
-  other `FYAGENT_*` variables are accepted as deprecated aliases;
 - the script global remains `agent`, so existing `.risor` scripts keep working;
 - existing tie collection names in `config.json` are preserved (new installs
   default to `anneal`);
-- project-local `.fyagent/skills` is read as a compatibility path.
+- `fyagent-memory` blocks in historical sessions are still recognized, so they
+  are not re-injected.
 
-`bin/fyagent`, `bin/fyagent-headless`, and `bin/fyagent-legacy` symlinks are
-created for one release.
+The `FYAGENT_*` environment variables and `fyagent` binary symlinks were
+removed with the legacy UI. Use `ANNEAL_*` and `anneal`.
 
 ## Docs
 
@@ -117,17 +115,16 @@ BSD 3-Clause. See [LICENSE](LICENSE).
 
 ```
 cmd/anneal             hybrid Go/Fyne shell + embedded scripted harness pane
-cmd/anneal-legacy      original all-Risor UI (fallback + e2e drivers)
-cmd/anneal-headless    terminal entry (same core)
-core/app               wiring + bridge API surface + journey tap + MCP connect
+cmd/anneal-headless    terminal entry (same core, no GUI deps)
+core/app               wiring + bus API surface + journey tap + MCP connect
 core/agent             Runner: dive agent per run, tools, hooks, transcripts
-core/uiapi             Go ⇄ Risor event bridge (queue + guithread dispatch)
+core/events            UI-agnostic event bus (Go shell, journey, headless)
+core/uiapi             script adapter (queue/Ready/vmguard) for fynerisor
 core/model             Strata provider factory + health monitor
 core/memory skills tieindex review journey   learning-loop stores
 core/harness harnesslib improve probe toolset  harness/improvement stack
 core/config paths fsutil textutil            config, state paths, helpers
-assets/ui/main.risor   legacy full UI
 assets/ui/harness.risor scripted harness pane
-testing/e2e            live driver-script gates
+testing/e2e            live driver-script gates (`-script-ui`)
 docs                   design + user/config/architecture docs
 ```

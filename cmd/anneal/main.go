@@ -10,12 +10,16 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/uidbz/anneal/assets"
 	"github.com/uidbz/anneal/core/agent"
 	coreapp "github.com/uidbz/anneal/core/app"
+	"github.com/uidbz/anneal/core/improve"
+	"github.com/uidbz/anneal/core/paths"
 
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
@@ -33,6 +37,8 @@ func main() {
 	rebuild := flag.Bool("rebuild-index", false, "re-index all sessions into tie and exit")
 	checkUI := flag.Bool("check-ui", false, "compile the scripted pane and exit")
 	checkHarness := flag.Bool("check-harness", false, "validate harness components and exit")
+	scriptUI := flag.Bool("script-ui", false, "run a full-window scripted UI from ANNEAL_UI_DIR (e2e/dev)")
+	checkScriptUI := flag.Bool("check-script-ui", false, "compile the ANNEAL_UI_DIR scripted UI and exit")
 	sendTask := flag.String("send", "", "developer: auto-send this task after boot")
 	quitAfterRun := flag.Bool("quit-after-run", false, "developer: quit after the auto-sent run finishes")
 	flag.Parse()
@@ -44,6 +50,12 @@ func main() {
 	paneSrc, err := paneSource(a.Cfg.UI.PaneDir)
 	if err != nil {
 		log.Fatalf("anneal: pane missing: %v", err)
+	}
+	if *scriptUI || *checkScriptUI {
+		if err := runScriptUI(a, *checkScriptUI); err != nil {
+			log.Fatalf("anneal: %v", err)
+		}
+		return
 	}
 	if *checkUI {
 		if _, err := newScriptPane(nil, paneSrc,
@@ -108,6 +120,7 @@ type shell struct {
 	hidden   []fyne.CanvasObject
 	perms    *fyne.Container
 	todos    *fyne.Container
+	activity *fyne.Container
 	tabs     *container.AppTabs
 	harness  *scriptPane
 	paneSrc  string
@@ -170,6 +183,7 @@ func (s *shell) build() {
 	s.earlier.Hide()
 	s.perms = container.NewVBox()
 	s.todos = container.NewVBox()
+	s.activity = container.NewVBox()
 
 	sendBtn := widget.NewButton("send", s.submit)
 	stopBtn := widget.NewButton("stop", func() { s.a.Runner.Interrupt() })
@@ -219,8 +233,10 @@ func (s *shell) wireLayout() {
 	s.tabs = container.NewAppTabs(
 		container.NewTabItem("Chat", chat),
 		container.NewTabItem("Harness", s.harness.view),
+		container.NewTabItem("Activity", container.NewVScroll(s.activity)),
 	)
 	s.root = container.NewBorder(s.header, s.composer, nil, nil, s.tabs)
+	s.refreshActivity()
 }
 
 // header/composer/root are set by build/wireLayout.
@@ -277,7 +293,7 @@ func (s *shell) slash(line string) {
 	cmd := fields[0]
 	switch cmd {
 	case "/help":
-		s.showText("commands", "/new /sessions /plan /build /stop /memory /skills /journey /index /learn /improve /harness /quit")
+		s.showText("commands", "/new /sessions /plan /build /stop /memory /skills /journey /activity /runs /index /learn /improve /harness /quit")
 	case "/new":
 		s.a.Runner.NewSession()
 	case "/sessions":
@@ -310,6 +326,9 @@ func (s *shell) slash(line string) {
 			fmt.Fprintf(&b, "%s  %s\n", e.TS, e.Kind)
 		}
 		s.showText("journey", b.String())
+	case "/activity", "/runs":
+		s.refreshActivity()
+		s.tabs.SelectIndex(2)
 	case "/index":
 		go func() {
 			n, err := s.a.Runner.RebuildIndex(context.Background())
@@ -380,6 +399,99 @@ func (s *shell) showText(title, body string) {
 	d.Show()
 }
 
+// refreshActivity rebuilds the Activity tab from the journey log and the
+// improvement records on disk. It is deliberately a plain, refresh-on-demand
+// view: no model calls and no background watchers.
+func (s *shell) refreshActivity() {
+	if s.activity == nil {
+		return
+	}
+	s.activity.RemoveAll()
+	s.activity.Add(widget.NewButton("refresh", s.refreshActivity))
+	s.activity.Add(widget.NewLabelWithStyle("Journey (newest last)", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+	journey := s.a.Journey.Tail(40)
+	if len(journey) == 0 {
+		s.activity.Add(widget.NewLabel("empty"))
+	}
+	for _, e := range journey {
+		lbl := widget.NewLabel(fmt.Sprintf("%s  %s  %v", e.TS, e.Kind, e.Attrs))
+		lbl.Wrapping = fyne.TextWrapWord
+		s.activity.Add(lbl)
+	}
+	s.activity.Add(widget.NewSeparator())
+	s.activity.Add(widget.NewLabelWithStyle("Improvement runs", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+	runs := loadImprovementRuns(20)
+	if len(runs) == 0 {
+		s.activity.Add(widget.NewLabel("none yet — /improve creates records under ~/.anneal/improvements/"))
+	}
+	for _, r := range runs {
+		title := fmt.Sprintf("%s — k=%d mode=%s", r.RunID, r.K, r.Mode)
+		if title == "" {
+			title = r.Dir
+		}
+		s.activity.Add(widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+		body := r.Task
+		if r.Note != "" {
+			body += "\nnote: " + r.Note
+		}
+		if r.Successor != "" {
+			body += "\noverlay: " + r.Successor
+		}
+		if r.LibraryEntry != "" {
+			body += "\nlibrary: " + r.LibraryEntry
+		}
+		for _, c := range r.Candidates {
+			state := "probed"
+			if c.Skipped != "" {
+				state = "skipped: " + c.Skipped
+			} else if c.Probe != nil {
+				state = fmt.Sprintf("probed: %d steps", len(c.Probe.Steps))
+			}
+			body += fmt.Sprintf("\n- %s: %s", c.Kind, state)
+		}
+		if r.Decisions != "" {
+			body += "\ndecisions: " + shortText(oneLine(r.Decisions), 500)
+		}
+		lbl := widget.NewLabel(body)
+		lbl.Wrapping = fyne.TextWrapWord
+		s.activity.Add(lbl)
+		s.activity.Add(widget.NewSeparator())
+	}
+	s.activity.Refresh()
+}
+
+// loadImprovementRuns reads step.json records, newest first. Corrupt or
+// partial records are skipped rather than failing the view.
+func loadImprovementRuns(limit int) []improve.Result {
+	entries, err := os.ReadDir(paths.Improvements())
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(names)))
+	out := make([]improve.Result, 0, len(names))
+	for _, name := range names {
+		b, err := os.ReadFile(filepath.Join(paths.Improvements(), name, "step.json"))
+		if err != nil {
+			continue
+		}
+		var r improve.Result
+		if json.Unmarshal(b, &r) != nil || r.RunID == "" {
+			continue
+		}
+		out = append(out, r)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
 func (s *shell) showSettings() {
 	b, err := json.MarshalIndent(s.a.Cfg, "", "  ")
 	if err != nil {
@@ -405,8 +517,7 @@ func (s *shell) showSettings() {
 	d.Show()
 }
 
-// installShortcuts wires the same navigation keys as the legacy UI plus a
-// pane reload and quit.
+// installShortcuts wires the navigation keys plus pane reload/quit.
 func (s *shell) installShortcuts() {
 	add := func(key fyne.KeyName, mod fyne.KeyModifier, fn func()) {
 		s.win.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: key, Modifier: mod},
@@ -418,6 +529,9 @@ func (s *shell) installShortcuts() {
 	add(fyne.KeyL, fyne.KeyModifierControl, func() { s.win.Canvas().Focus(s.entry) })
 	add(fyne.KeyR, fyne.KeyModifierControl, s.reloadPane)
 	add(fyne.KeyQ, fyne.KeyModifierControl, func() { s.app.Quit() })
+	add(fyne.Key1, fyne.KeyModifierControl, func() { s.tabs.SelectIndex(0) })
+	add(fyne.Key2, fyne.KeyModifierControl, func() { s.tabs.SelectIndex(1) })
+	add(fyne.Key3, fyne.KeyModifierControl, func() { s.tabs.SelectIndex(2) })
 }
 
 // reloadPane re-reads the pane script from disk (or the embedded copy),
@@ -723,6 +837,7 @@ func (s *shell) handleEvent(e map[string]any) {
 		}
 	case "review.flag":
 		s.addNotice("🪧 reviewer flagged a harness gap: " + str(e["gap"]))
+		s.refreshActivity()
 	case "review.done":
 		s.status.SetText("ready")
 		ledger := list(e["ledger"])
@@ -734,6 +849,7 @@ func (s *shell) handleEvent(e map[string]any) {
 		default:
 			s.addNotice(fmt.Sprintf("🧠 review saved %d lessons", len(ledger)))
 		}
+		s.refreshActivity()
 	case "improve.start":
 		s.status.SetText("improving harness…")
 		s.addNotice("🔧 harness improvement started (run " + str(e["run"]) + ")")
@@ -754,9 +870,18 @@ func (s *shell) handleEvent(e map[string]any) {
 		default:
 			s.addNotice("🔧 improve: successor applied to this session")
 		}
+		s.refreshActivity()
+	case "improve.library":
+		if str(e["entry"]) != "" {
+			s.addNotice("🔧 improvement library entry: " + str(e["entry"]))
+		} else if str(e["error"]) != "" {
+			s.addNotice("⚠ improvement library: " + str(e["error"]))
+		}
+		s.refreshActivity()
 	case "improve.error":
 		s.status.SetText("ready")
 		s.addNotice("⚠ improve: " + str(e["error"]))
+		s.refreshActivity()
 	case "memory.updated":
 		s.addNotice(fmt.Sprintf("💾 memory %s: %s", str(e["target"]), str(e["action"])))
 	case "memory.resolved":
@@ -775,6 +900,16 @@ func (s *shell) handleEvent(e map[string]any) {
 		}
 	case "harness.warning":
 		s.addNotice("⚠ harness: " + str(e["message"]))
+	case "harness.warn":
+		s.addNotice("⚠ harness files changed — prose applies next run")
+		s.refreshActivity()
+	case "harness.promoted":
+		if str(e["error"]) != "" {
+			s.addNotice("⚠ harness promote: " + str(e["error"]))
+		} else {
+			s.addNotice("✔ harness promoted (restart for guardrail rules)")
+		}
+		s.refreshActivity()
 	case "config.changed":
 		s.addNotice("⚙ configuration changed")
 	case "skill.error":
@@ -958,15 +1093,13 @@ func list(v any) []any {
 }
 
 // paneSource prefers an on-disk pane script (config `ui.pane_dir`, then the
-// legacy UI dir for co-located development) and falls back to the embedded
-// copy.
+// full script-UI dir for co-located development) and falls back to the
+// embedded copy.
 func paneSource(configDir string) (string, error) {
 	dirs := []string{
 		configDir,
 		os.Getenv("ANNEAL_PANE_DIR"),
 		os.Getenv("ANNEAL_UI_DIR"),
-		os.Getenv("FYAGENT_PANE_DIR"),
-		os.Getenv("FYAGENT_UI_DIR"),
 	}
 	for _, dir := range dirs {
 		if dir == "" {

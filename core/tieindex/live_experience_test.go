@@ -12,7 +12,7 @@ import (
 // TestLiveExperience indexes and queries a library EXPERIENCE note on the
 // real triplestore. Opt-in: ANNEAL_LIVE_TIE=1.
 func TestLiveExperience(t *testing.T) {
-	if os.Getenv("ANNEAL_LIVE_TIE") != "1" && os.Getenv("FYAGENT_LIVE_TIE") != "1" {
+	if os.Getenv("ANNEAL_LIVE_TIE") != "1" {
 		t.Skip("set ANNEAL_LIVE_TIE=1 to test against the real triplestore")
 	}
 	x := New(config.Tie{Enabled: true, Collection: "anneal", ConfigName: ""})

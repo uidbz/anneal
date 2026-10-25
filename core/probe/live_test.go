@@ -20,7 +20,7 @@ import (
 // sandbox, proving the probe plumbing end-to-end (record written, sandbox
 // mutated, original untouched). Opt-in: ANNEAL_LIVE_PROBE=1.
 func TestLiveReplay(t *testing.T) {
-	if os.Getenv("ANNEAL_LIVE_PROBE") != "1" && os.Getenv("FYAGENT_LIVE_PROBE") != "1" {
+	if os.Getenv("ANNEAL_LIVE_PROBE") != "1" {
 		t.Skip("set ANNEAL_LIVE_PROBE=1 to run against live Strata")
 	}
 	cfg, err := config.Load()

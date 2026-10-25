@@ -95,7 +95,7 @@ func (r *Runner) Sessions() []SessionInfo {
 	return out
 }
 
-// SessionsJSON lists sessions as a JSON array (Risor/legacy UI).
+// SessionsJSON lists sessions as a JSON array (script UI bridge).
 func (r *Runner) SessionsJSON() string {
 	b, err := json.Marshal(r.Sessions())
 	if err != nil {

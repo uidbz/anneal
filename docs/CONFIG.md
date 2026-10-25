@@ -19,11 +19,11 @@ if the new directory does not exist.
 
 | var | effect |
 |-----|--------|
-| `ANNEAL_HOME` | state directory root (`FYAGENT_HOME` deprecated alias) |
-| `ANNEAL_ENDPOINT` | provider endpoint URL (`FYAGENT_ENDPOINT` deprecated) |
-| `ANNEAL_MODEL` | model id (`auto` = first from `/v1/models`; `FYAGENT_MODEL` deprecated) |
-| `ANNEAL_UI_DIR` | legacy full UI override (`main.risor`; hot reload; `FYAGENT_UI_DIR` deprecated) |
-| `ANNEAL_PANE_DIR` | scripted-pane override (`harness.risor`; hot reload) |
+| `ANNEAL_HOME` | state directory root |
+| `ANNEAL_ENDPOINT` | provider endpoint URL |
+| `ANNEAL_MODEL` | model id (`auto` = first from `/v1/models`) |
+| `ANNEAL_UI_DIR` | full-window script UI directory (`main.risor`, `-script-ui`) |
+| `ANNEAL_PANE_DIR` | scripted-pane directory (`harness.risor`) |
 
 ## `provider`
 
@@ -185,11 +185,10 @@ only via explicit `/harness promote <id>` (headless REPL; backups under
 
 | key | default | meaning |
 |-----|---------|---------|
-| `ui_dir` | `""` | legacy full-UI script directory (`main.risor`); `ANNEAL_UI_DIR` env does the same |
+| `ui_dir` | `""` | full-window script UI directory (`main.risor`, `-script-ui`); `ANNEAL_UI_DIR` env does the same |
 | `pane_dir` | `""` | scripted-pane directory (`harness.risor`); `ANNEAL_PANE_DIR` env does the same |
 
 ## Live-DB test opt-ins
 
 Go tests stay hermetic unless opted in: `ANNEAL_LIVE_TIE=1 go test
 ./core/tieindex` exercises the real triplestore (and cleans up after itself).
-`FYAGENT_LIVE_TIE`/`FYAGENT_LIVE_PROBE` remain as deprecated aliases.

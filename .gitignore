@@ -1,4 +1,4 @@
-bin/
+/bin/
 /anneal
 /anneal-headless
 *.test
@@ -6,5 +6,3 @@ bin/
 .DS_Store
 coverage.out
 vendor/
-/fyagent
-/fyagent-headless

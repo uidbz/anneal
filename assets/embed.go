@@ -1,6 +1,6 @@
-// Package assets embeds the Risor UI scripts (and later bundled skills)
-// so the anneal binary is self-contained. ANNEAL_UI_DIR overrides at
-// runtime for live UI development.
+// Package assets embeds the scripted panes (and later bundled skills) so the
+// anneal binary is self-contained. ANNEAL_PANE_DIR overrides pane scripts at
+// runtime; full-window script UIs are loaded from ANNEAL_UI_DIR.
 package assets
 
 import "embed"

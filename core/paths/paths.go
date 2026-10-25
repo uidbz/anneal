@@ -6,15 +6,11 @@ import (
 	"path/filepath"
 )
 
-// Root returns the anneal state directory (override with ANNEAL_HOME).
-// FYAGENT_HOME is accepted as a deprecated alias for one release. On first
-// run after the rename, an existing ~/.fyagent directory is renamed to
+// Root returns the anneal state directory (override with ANNEAL_HOME). On
+// first run after the rename, an existing ~/.fyagent directory is renamed to
 // ~/.anneal so sessions, memory, skills, harnesses, and logs move together.
 func Root() string {
 	if h := os.Getenv("ANNEAL_HOME"); h != "" {
-		return h
-	}
-	if h := os.Getenv("FYAGENT_HOME"); h != "" {
 		return h
 	}
 	home, err := os.UserHomeDir()

@@ -12,7 +12,7 @@ import (
 // Live-server test: only runs when ANNEAL_LIVE_TIE=1 and the configured
 // triplestore answers. Run with: ANNEAL_LIVE_TIE=1 go test ./core/tieindex
 func TestLiveRoundtrip(t *testing.T) {
-	if os.Getenv("ANNEAL_LIVE_TIE") != "1" && os.Getenv("FYAGENT_LIVE_TIE") != "1" {
+	if os.Getenv("ANNEAL_LIVE_TIE") != "1" {
 		t.Skip("set ANNEAL_LIVE_TIE=1 to test against the real triplestore")
 	}
 	x := New(config.Tie{Enabled: true, Collection: "anneal", ConfigName: ""})

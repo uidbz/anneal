@@ -58,8 +58,6 @@ func TestPaneEventFilter(t *testing.T) {
 func TestEmbeddedPaneSource(t *testing.T) {
 	t.Setenv("ANNEAL_PANE_DIR", "")
 	t.Setenv("ANNEAL_UI_DIR", "")
-	t.Setenv("FYAGENT_PANE_DIR", "")
-	t.Setenv("FYAGENT_UI_DIR", "")
 	src, err := paneSource("")
 	if err != nil {
 		t.Fatal(err)

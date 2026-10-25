@@ -110,11 +110,18 @@ first send probes synchronously once.
 
 ## Known upstream issues & workarounds
 
-- **dive#347**: dive hands tool input as plain `[]byte`; the mcp-go adapter's
-  type switch misses it (base64 default branch) → every MCP call failed.
-  fyagent wraps MCP tools (`qualifiedTool`) and normalizes input to
-  `json.RawMessage` (+ unwraps double-encoded JSON strings some local servers
-  emit).
+- **MCP tool input** — dive hands tool input as plain `[]byte`; the mcp-go
+  adapter used to miss it (base64 default branch, broke every MCP call).
+  Fixed **upstream** (dive #309, shipped in `experimental/mcp v1.33.0`);
+  fyagent pins mcp **v1.42.0**, so the input-normalization wrapper was
+  removed. The `qualifiedTool` rename wrapper stays: the Manager still
+  registers unqualified tool names (`mcp__<server>__<tool>` collisions with
+  built-ins are real — an unqualified `echo` misled the model). My issue
+  dive#347 was a duplicate of #309 — root cause: I pinned "latest" from a
+  *lexicographically* sorted tag list (v1.9.0 sorts above v1.33.0). Rule:
+  verify with `go list -m -versions` / `sort -V` / `@latest` before ever
+  claiming an upstream bug, and never file issues in repos the user doesn't
+  own without explicit permission.
 - **fynerisor issues #2–#6** (all fixed on `main`, unreleased): `app.Quit`,
   `Markdown.SetText`, container `Append/Remove/Refresh`, `tie.connect`
   collection hijack, `CompileScript`. fyagent `go.mod` `replace`s fynerisor

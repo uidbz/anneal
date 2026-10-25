@@ -6,9 +6,12 @@ import (
 	"testing"
 
 	"github.com/deepnoodle-ai/dive"
+	"github.com/deepnoodle-ai/dive/experimental/mcp"
 )
 
-type captureTool struct{ got any }
+type captureTool struct {
+	got any
+}
 
 func (c *captureTool) Name() string                       { return "cap" }
 func (c *captureTool) Description() string                { return "" }
@@ -19,32 +22,20 @@ func (c *captureTool) Call(ctx context.Context, input any) (*dive.ToolResult, er
 	return dive.NewToolResultText("ok"), nil
 }
 
-func TestRepairInputShapes(t *testing.T) {
-	// dive hands tool input as []byte (openaicompletions Input: []byte(args))
+// The wrapper must rename but pass input through untouched — the mcp
+// adapter handles dive's []byte input natively since v1.33.0.
+func TestQualifiedToolPassThrough(t *testing.T) {
 	cap := &captureTool{}
-	q := &qualifiedTool{base: cap, name: "mcp__demo__echo"}
-	double := json.RawMessage(`"{\"text\":\"hello mcp\"}"`)
-	if _, err := q.Call(context.Background(), double); err != nil {
+	q := &qualifiedTool{base: cap, name: mcp.QualifiedToolName("demo", "echo")}
+	if q.Name() != "mcp__demo__echo" {
+		t.Fatalf("qualified name: %s", q.Name())
+	}
+	raw := json.RawMessage(`{"text":"hello mcp"}`)
+	if _, err := q.Call(context.Background(), raw); err != nil {
 		t.Fatal(err)
 	}
-	var m map[string]any
-	switch v := cap.got.(type) {
-	case json.RawMessage:
-		json.Unmarshal(v, &m)
-	case []byte:
-		t.Fatalf("base got []byte (adapter default-branch trap): %q", v)
-	default:
-		t.Fatalf("base got %T %v", v, v)
-	}
-	if m["text"] != "hello mcp" {
-		t.Fatalf("repaired map wrong: %v", m)
-	}
-
-	// plain object passes through as RawMessage
-	cap2 := &captureTool{}
-	q2 := &qualifiedTool{base: cap2, name: "x"}
-	q2.Call(context.Background(), json.RawMessage(`{"a":1}`))
-	if _, ok := cap2.got.(json.RawMessage); !ok {
-		t.Fatalf("plain object reshaped to %T", cap2.got)
+	g, ok := cap.got.(json.RawMessage)
+	if !ok || string(g) != `{"text":"hello mcp"}` {
+		t.Fatalf("input rewritten: %T %v", cap.got, cap.got)
 	}
 }

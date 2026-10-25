@@ -47,6 +47,27 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
 
+### 2026-10-25 — MCP module upgrade: dive#347 was my duplicate of upstream #309
+- Maintainer response to dive#347: already fixed in **#309**, shipped in
+  `experimental/mcp v1.33.0`. Verified: v1.33.0's adapter has
+  `case json.RawMessage, []byte:` — exactly the bug. Upgraded to
+  **mcp v1.42.0** (aligns with dive v1.42.0; mcp-go bumped to v1.0.0 as an
+  internal dep), deleted the `repairInput` normalization wrapper (the
+  double-encoded-string case never existed — `%q` log escaping fooled me),
+  replaced local `qualifiedName` with exported `mcp.QualifiedToolName`.
+  Kept the `qualifiedTool` rename wrapper: v1.42.0 Manager still registers
+  **unqualified** names (collision with built-ins; the earlier `echo`
+  misbehavior was exactly that).
+- **Why the bad issue**: pinned "latest" from `git ls-remote --tags | tail` —
+  lexicographic sort puts v1.9.0 above v1.33.0/v1.42.0. Never ran `@latest`.
+  **New workflow rules (saved to skill)**: never file issues in repos the
+  user doesn't own unless explicitly permitted (suggest first); before
+  declaring an upstream bug, check latest versions version-aware
+  (`go list -m -versions` / `sort -V`) and grep upstream fix history.
+- Gates: `make ci` green; live m8 e2e (repo driver) green on v1.42.0:
+  `mcp__demo__echo` → `ECHO(hello mcp)` with no wrapper. #347 thread left to
+  the user per instruction.
+
 ### 2026-10-25 — code review pass + documentation
 - Review fixes (2676eab): MCP tools registered before the subagent tool so
   `ParentTools` includes `mcp__*`; todo list always persisted (empty

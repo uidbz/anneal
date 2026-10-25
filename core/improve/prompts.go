@@ -127,6 +127,25 @@ Your successor directory is %s — edit its files with ABSOLUTE paths
 	return out
 }
 
+// selectorTask presents anonymized parallel-candidate outcomes; the
+// iteration identity is deliberately absent.
+func selectorTask(task, refDigest string, blocks string) string {
+	return fmt.Sprintf(`The same task was run under several candidate harness improvements.
+Pick which final outcome to adopt, by task fit and observed behavior
+(verified work beats claims; shorter beats longer when equal).
+
+TASK:
+%s
+
+REFERENCE (old harness):
+%s
+
+%s
+
+Answer with exactly one letter (A-H) or NONE if none is clearly better.`,
+		clip(task, 800), clip(refDigest, 2500), blocks)
+}
+
 func reflectorTask(task, decisions, contrasts, refHead, succHead string) string {
 	return fmt.Sprintf(`Review this completed harness improvement step and distill it for the library.
 

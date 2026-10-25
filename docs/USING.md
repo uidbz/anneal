@@ -65,6 +65,8 @@ fyagent-headless -p "…" -learn                            # review pass after
 |------|---------|
 | `-p TASK` | one-shot task |
 | `-i` | REPL (`/new`, `/interrupt`, `/improve`, `/harness [list|promote <id>]`, `/quit`) |
+| `-k N` | improve recursion depth with `-improve` (default from config) |
+| `-improve-mode` | `sequential` (default) or `parallel` |
 | `-json` | emit every GUI event as a JSONL line (machine-readable) |
 | `-v` | log every event to stderr |
 | `-session ID` / `--new` | resume / fresh session (default: resume most recent) |

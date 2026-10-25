@@ -96,8 +96,12 @@ type Harness struct {
 
 // Improve configures contrastive harness improvement (M12+).
 type Improve struct {
-	Enabled bool `json:"enabled"` // /improve, -improve
-	Library bool `json:"library"` // improvement library + reflection
+	Enabled        bool   `json:"enabled"` // /improve, -improve
+	Library        bool   `json:"library"` // improvement library + reflection
+	K              int    `json:"k"`       // recursion depth (1 = single step)
+	Mode           string `json:"mode"`    // sequential (default) | parallel
+	TotalWallS     int    `json:"total_wall_s"`
+	MaxTotalTokens int    `json:"max_total_tokens"`
 }
 
 type Config struct {
@@ -145,7 +149,7 @@ func Default() *Config {
 		Tie:        Tie{Enabled: true, Collection: "fyagent", ConfigName: ""},
 		MCP:        MCP{Enabled: true, Servers: map[string]MCPServer{}},
 		Harness:    Harness{Enabled: true, CharLimit: 6000},
-		Improve:    Improve{Enabled: true, Library: true},
+		Improve:    Improve{Enabled: true, Library: true, K: 1, Mode: "sequential"},
 		UI:         UI{},
 	}
 }

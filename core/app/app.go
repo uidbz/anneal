@@ -321,6 +321,12 @@ func (a *App) ImproveBusy() bool {
 // finished run (reference = that session) and installs the successor as a
 // session overlay. Serialized; returns the step record.
 func (a *App) Improve(ctx context.Context) (*improve.Result, error) {
+	return a.ImproveWith(ctx, 0, "", "")
+}
+
+// ImproveWith runs the recursion with k/mode overrides (0/"" = config) and
+// optional resume of a prior run id (completed iterations are skipped).
+func (a *App) ImproveWith(ctx context.Context, kOverride int, modeOverride, resumeID string) (*improve.Result, error) {
 	a.improveMu.Lock()
 	if a.improveRunning {
 		a.improveMu.Unlock()
@@ -353,18 +359,31 @@ func (a *App) Improve(ctx context.Context) (*improve.Result, error) {
 		}
 	}
 	h := a.Monitor.Current()
+	k, mode := a.Cfg.Improve.K, a.Cfg.Improve.Mode
+	if kOverride > 0 {
+		k = kOverride
+	}
+	if modeOverride != "" {
+		mode = modeOverride
+	}
 	res, err := improve.Step(ctx, improve.Options{
-		Cfg:       a.Cfg,
-		Model:     func() llm.LLM { return model.NewProvider(a.Cfg.Provider, a.Monitor.Current().Model) },
-		ModelID:   h.Model,
-		Harness:   a.Harness,
-		Workdir:   a.Runner.Cwd(),
-		SessionID: sid,
-		Task:      task,
-		RefDigest: digest,
-		Emit:      a.Bridge.Emit,
-		Library:   lib,
-		IndexFn:   indexFn,
+		Cfg:            a.Cfg,
+		Model:          func() llm.LLM { return model.NewProvider(a.Cfg.Provider, a.Monitor.Current().Model) },
+		ModelID:        h.Model,
+		Harness:        a.Harness,
+		Workdir:        a.Runner.Cwd(),
+		SessionID:      sid,
+		Task:           task,
+		RefDigest:      digest,
+		Emit:           a.Bridge.Emit,
+		Library:        lib,
+		IndexFn:        indexFn,
+		K:              k,
+		Mode:           mode,
+		TotalWallS:     a.Cfg.Improve.TotalWallS,
+		MaxTotalTokens: a.Cfg.Improve.MaxTotalTokens,
+		RunID:          resumeID,
+		Resume:         resumeID != "",
 	})
 	if err == nil && res.Successor != "" {
 		if oerr := a.Runner.SetSessionOverlay(res.Successor); oerr != nil {

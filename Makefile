@@ -2,7 +2,7 @@
 GO      ?= go
 BIN     := bin
 
-.PHONY: all build test vet fmt check-ui headless clean live-tie-test live-m10-test live-probe-test live-m13-test
+.PHONY: all build test vet fmt check-ui headless clean live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test
 
 all: build
 
@@ -33,6 +33,10 @@ live-probe-test:
 # Live improvement-library gate (M13; two full steps, ~40 min; Strata up)
 live-m13-test: build
 	bash testing/e2e/m13/run.sh
+
+# Live k-step recursion gate (M14; one -k 2 run, ~50 min; Strata up)
+live-m14-test: build
+	bash testing/e2e/m14/run.sh
 
 vet:
 	$(GO) vet ./...

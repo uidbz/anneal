@@ -152,6 +152,10 @@ Check with `fyagent -check-harness` or `/harness`.
 |-----|---------|---------|
 | `enabled` | true | `/improve`, `-improve`, headless `/improve` |
 | `library` | true | reflection + `~/.fyagent/harness-lib/` improvement library |
+| `k` | 1 | recursion depth (iterations under `improvements/<run>/iter<i>/`) |
+| `mode` | `sequential` | `sequential` chains each probed successor into the next iteration; `parallel` runs k independent steps and an anonymized selector picks the winner |
+| `total_wall_s` | 0 | whole-step wall budget (0 = unbounded) |
+| `max_total_tokens` | 0 | stop before starting an iteration past this usage |
 
 One step = Propose (invariant + domain editors) → Probe (sandboxed replay +
 behavioral contrast) → Compose (evidence-tied successor + `decisions.md`).

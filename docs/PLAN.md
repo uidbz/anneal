@@ -232,9 +232,12 @@ Milestones:
   (EXPERIENCE.md only with evidence), index fetched into Propose/Compose
   prompts; tie-index EXPERIENCE bodies (`tag` + Reverse, reuse tieindex);
   `/harness promote <id>` explicit (REPL), with promote-backup snapshots.
-- **M14 recursion budget** — `--k N --mode sequential|parallel` (sequential
-  default), anonymized selector for k>1, cost preflight + token/wall
-  budgets, concurrency cap, resume from `improvements/<runid>/` stages.
+- **M14 recursion budget** ✔ — `-k N -improve-mode sequential|parallel` +
+  config keys (sequential default, per locked decision), anonymized
+  deliverable selector for k>1, token/wall budgets, `-improve-resume <id>`
+  skipping completed `improvements/<runid>/iter<i>/` stages. Parallel
+  iterations run one-at-a-time on purpose (one local GPU; concurrency
+  would only starve streams).
 - **M15 GUI** — harness tab (components view/edit + guardrail rules),
   improve stage cards (bridge events), library browser + promote/approve,
   journey integration.

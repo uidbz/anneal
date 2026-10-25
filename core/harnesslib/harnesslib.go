@@ -81,6 +81,12 @@ func (s *Store) CreateEntry(successorDir, task, sessionID, runID, harnessHash, e
 		return "", fmt.Errorf("harnesslib: successor dir has no components")
 	}
 	id := time.Now().UTC().Format("20060102-150405") + "-" + slug(task, 28)
+	for n := 2; ; n++ {
+		if _, err := os.Stat(filepath.Join(s.root, id)); err != nil {
+			break
+		}
+		id = fmt.Sprintf("%s-%s-%d", time.Now().UTC().Format("20060102-150405"), slug(task, 28), n)
+	}
 	dir := filepath.Join(s.root, id)
 	if err := os.MkdirAll(filepath.Join(dir, "harness"), 0o755); err != nil {
 		return "", err

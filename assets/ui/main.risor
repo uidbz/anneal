@@ -509,6 +509,14 @@ agent.on((evtJson) => {
         addBlock(label("🔧 composed successor, files changed: " + strings.join(evt.changed, ", ")))
         return
     }
+    if (t == "improve.selector") {
+        addBlock(label("🔧 selector: iter " + sprintf("%d", evt.chosen_iter) + " (" + evt.reason + ")"))
+        return
+    }
+    if (t == "improve.budget") {
+        addBlock(label("🔧 improve: budget reached at iter " + sprintf("%d", evt.iter)))
+        return
+    }
     if (t == "improve.done") {
         window.SetStatus("ready")
         if (evt.ok == false) {

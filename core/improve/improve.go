@@ -48,6 +48,11 @@ type Options struct {
 	EditorIterations int    // default 12
 	WallTimeoutS     int    // per probe, default 300
 	RunID            string // override the timestamp run id (tests)
+	K                int    // recursion depth (default 1)
+	Mode             string // "sequential" (default) | "parallel"
+	TotalWallS       int    // whole-step wall budget, seconds (0 = none)
+	MaxTotalTokens   int    // stop before next iteration past this usage (0 = none)
+	Resume           bool   // skip iterations whose step.json already exists (with RunID)
 
 	Library *harnesslib.Store     // improvement library (nil = disabled)
 	IndexFn func(id, text string) // optional tie indexing of experience notes
@@ -75,7 +80,48 @@ type Result struct {
 	Successor      string        `json:"successor,omitempty"`
 	SuccessorProbe *probe.Record `json:"successor_probe,omitempty"`
 	LibraryEntry   string        `json:"library_entry,omitempty"`
+	Iter           int           `json:"iter,omitempty"`
+	K              int           `json:"k,omitempty"`
+	Mode           string        `json:"mode,omitempty"`
+	Note           string        `json:"note,omitempty"`
+	Iterations     []iterRef     `json:"iterations,omitempty"`
 	FinishedAt     time.Time     `json:"finished_at"`
+}
+
+// iterRef summarizes one iteration of a k>1 recursion.
+type iterRef struct {
+	Iter      int    `json:"iter"`
+	Dir       string `json:"dir"`
+	Successor string `json:"successor,omitempty"`
+	Entry     string `json:"entry,omitempty"`
+	Skipped   string `json:"skipped,omitempty"`
+}
+
+// loadStep reads a completed iteration record for resume/chaining.
+func loadStep(dir string) (*Result, bool) {
+	b, err := os.ReadFile(filepath.Join(dir, "step.json"))
+	if err != nil {
+		return nil, false
+	}
+	var r Result
+	if json.Unmarshal(b, &r) != nil || r.RunID == "" {
+		return nil, false
+	}
+	return &r, true
+}
+
+// tokens sums reported usage across an iteration's executions.
+func tokens(r *Result) int {
+	n := 0
+	for _, c := range r.Candidates {
+		if c.Probe != nil {
+			n += c.Probe.Tin + c.Probe.Tout
+		}
+	}
+	if r.SuccessorProbe != nil {
+		n += r.SuccessorProbe.Tin + r.SuccessorProbe.Tout
+	}
+	return n
 }
 
 func clip(s string, n int) string {
@@ -85,9 +131,11 @@ func clip(s string, n int) string {
 	return s[:n] + "…"
 }
 
-// Step runs one contrastive improvement step. Every stage is recorded; the
-// returned Result is complete even when the step bails early (e.g. no
-// candidate edited anything).
+// Step runs one contrastive improvement step (k=1), or a budgeted
+// recursion when K>1: sequential chaining (each iteration's probed
+// successor becomes the next reference) or parallel candidates plus an
+// anonymized deliverable selector. Every stage is recorded; the returned
+// Result is complete even when the step bails early.
 func Step(ctx context.Context, opts Options) (*Result, error) {
 	if opts.Task == "" || opts.RefDigest == "" {
 		return nil, fmt.Errorf("improve: task and reference digest required")
@@ -104,6 +152,14 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 	if opts.WallTimeoutS <= 0 {
 		opts.WallTimeoutS = 300
 	}
+	k := opts.K
+	if k < 1 {
+		k = 1
+	}
+	mode := strings.ToLower(opts.Mode)
+	if mode == "" {
+		mode = "sequential"
+	}
 	emit := opts.Emit
 	if emit == nil {
 		emit = func(any) {}
@@ -118,7 +174,6 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	res := &Result{RunID: runid, Dir: dir, SessionID: opts.SessionID, Task: opts.Task}
 
 	// library experience re-enters refinement (selective re-draft, never
 	// wholesale inheritance)
@@ -127,30 +182,206 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 		libCtx = opts.Library.Context(opts.Task, 3, 3000)
 	}
 
-	// ℋ snapshot as component files (the base every candidate starts from)
-	h0 := filepath.Join(dir, "harness0")
-	var layers []harness.Layer
+	var baseLayers []harness.Layer
 	if opts.Harness != nil && opts.Cfg.Harness.Enabled {
-		layers = opts.Harness.Layers(limit)
+		baseLayers = opts.Harness.Layers(limit)
 	}
-	res.HarnessHash = probe.HarnessHash(layerContents(layers))
-	if err := writeLayers(h0, layers); err != nil {
-		return nil, err
+	h0hash := probe.HarnessHash(layerContents(baseLayers))
+
+	// fast path: single step (unchanged M12 shape: everything at dir/)
+	if k == 1 && mode != "parallel" {
+		emit(ev("improve.start", runid, map[string]any{"session": opts.SessionID, "harness_hash": h0hash}))
+		res, err := stepOnce(ctx, &opts, dir, runid, 1, baseLayers, opts.RefDigest, libCtx)
+		if err != nil {
+			return res, err
+		}
+		ok := res.Successor != "" || res.Decisions != ""
+		errMsg := ""
+		if !ok {
+			errMsg = "no candidate produced probed edits"
+		}
+		emit(ev("improve.done", runid, map[string]any{"ok": ok, "error": errMsg,
+			"decisions": clip(res.Decisions, 800), "successor": res.Successor != ""}))
+		return res, nil
+	}
+	return stepK(ctx, &opts, dir, runid, k, mode, baseLayers, h0hash, libCtx)
+}
+
+// stepK runs k iterations under dir/iter<i> per the locked plan default
+// (sequential), with token/wall governors and per-iteration resume.
+func stepK(ctx context.Context, opts *Options, dir, runid string, k int, mode string,
+	baseLayers []harness.Layer, h0hash, libCtx string) (*Result, error) {
+	emit := opts.Emit
+	if emit == nil {
+		emit = func(any) {}
+	}
+	limit := opts.Cfg.Harness.CharLimit
+	if opts.TotalWallS > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(opts.TotalWallS)*time.Second)
+		defer cancel()
+	}
+	res := &Result{RunID: runid, Dir: dir, SessionID: opts.SessionID, Task: opts.Task,
+		K: k, Mode: mode, HarnessHash: h0hash}
+	emit(ev("improve.start", runid, map[string]any{"session": opts.SessionID,
+		"harness_hash": h0hash, "k": k, "mode": mode}))
+
+	var sub []*Result
+	curLayers, refd := baseLayers, opts.RefDigest
+	spent, stopped := 0, ""
+	for i := 1; i <= k; i++ {
+		iterDir := filepath.Join(dir, fmt.Sprintf("iter%d", i))
+		if opts.Resume {
+			if prev, ok := loadStep(iterDir); ok {
+				sub = append(sub, prev)
+				res.Iterations = append(res.Iterations, iterRef{Iter: i, Dir: iterDir,
+					Successor: prev.Successor, Entry: prev.LibraryEntry, Skipped: "resumed"})
+				spent += tokens(prev)
+				if mode == "sequential" {
+					if prev.Successor == "" {
+						stopped = fmt.Sprintf("iter %d kept the harness", i)
+						break
+					}
+					curLayers = harness.LayersFromDir(prev.Successor, limit)
+					if prev.SuccessorProbe != nil {
+						refd = prev.SuccessorProbe.Digest(opts.MaxDigestChars)
+					}
+				}
+				continue
+			}
+		}
+		if opts.MaxTotalTokens > 0 && spent >= opts.MaxTotalTokens {
+			emit(ev("improve.budget", runid, map[string]any{"spent_tokens": spent,
+				"budget": opts.MaxTotalTokens, "iter": i}))
+			stopped = fmt.Sprintf("token budget reached after iter %d", i-1)
+			break
+		}
+		ir, err := stepOnce(ctx, opts, iterDir, runid, i, curLayers, refd, libCtx)
+		if err != nil {
+			return res, err
+		}
+		ir.K, ir.Mode = k, mode
+		sub = append(sub, ir)
+		res.Iterations = append(res.Iterations, iterRef{Iter: i, Dir: iterDir,
+			Successor: ir.Successor, Entry: ir.LibraryEntry})
+		spent += tokens(ir)
+		if mode == "sequential" {
+			if ir.Successor == "" {
+				stopped = fmt.Sprintf("iter %d kept the harness", i)
+				break
+			}
+			curLayers = harness.LayersFromDir(ir.Successor, limit)
+			if ir.SuccessorProbe != nil {
+				refd = ir.SuccessorProbe.Digest(opts.MaxDigestChars)
+			}
+		}
+	}
+	if len(sub) == 0 {
+		return res, writeStep(dir, res)
 	}
 
-	emit(ev("improve.start", runid, map[string]any{"session": opts.SessionID, "harness_hash": res.HarnessHash}))
+	final := sub[len(sub)-1]
+	if mode == "parallel" {
+		final = selectSuccessor(ctx, opts, runid, sub)
+	}
+	res.Iter = final.Iter
+	res.Candidates = final.Candidates
+	res.Decisions = final.Decisions
+	res.Successor = final.Successor
+	res.SuccessorProbe = final.SuccessorProbe
+	res.LibraryEntry = final.LibraryEntry
+	res.Note = stopped
+	emit(ev("improve.done", runid, map[string]any{"ok": true, "error": "",
+		"decisions": clip(res.Decisions, 800), "successor": res.Successor != "",
+		"k": k, "mode": mode, "iters_done": len(sub)}))
+	return res, writeStep(dir, res)
+}
+
+// selectSuccessor compares anonymized parallel candidates by their final
+// deliverables (paper §2.2.2 k>1 selection); the iteration identity is
+// hidden from the selector on purpose.
+func selectSuccessor(ctx context.Context, opts *Options, runid string, sub []*Result) *Result {
+	emit := opts.Emit
+	if emit == nil {
+		emit = func(any) {}
+	}
+	var elig []*Result
+	for _, r := range sub {
+		if r != nil && r.Successor != "" && r.SuccessorProbe != nil {
+			elig = append(elig, r)
+		}
+	}
+	if len(elig) == 0 {
+		return sub[len(sub)-1]
+	}
+	if len(elig) == 1 {
+		emit(ev("improve.selector", runid, map[string]any{"chosen_iter": elig[0].Iter,
+			"label": "only", "reason": "single probed successor"}))
+		return elig[0]
+	}
+	labels := []string{"A", "B", "C", "D", "E", "F", "G", "H"}
+	var blocks []string
+	for i, r := range elig {
+		li := labels[i%len(labels)]
+		blocks = append(blocks, fmt.Sprintf("OPTION %s\nfinal run:\n%s\ndecisions:\n%s\n",
+			li, r.SuccessorProbe.Digest(2500), clip(r.Decisions, 1200)))
+	}
+	out, err := generate(ctx, *opts,
+		"You compare anonymized candidate outcomes for one task. Choose by task fit and observed behavior, never by length, confidence, or ordering. Output one letter or NONE.",
+		selectorTask(opts.Task, opts.RefDigest, strings.Join(blocks, "\n")))
+	pick := ""
+	if err == nil {
+		for _, r := range strings.ToUpper(strings.TrimSpace(out)) {
+			if r >= 'A' && r <= 'H' {
+				pick = string(r)
+				break
+			}
+		}
+	}
+	idx := 0
+	reason := "none clearly better (kept last)"
+	for i := range elig {
+		if pick != "" && labels[i%len(labels)] == pick {
+			idx, reason = i, "selector picked "+pick
+			break
+		}
+	}
+	emit(ev("improve.selector", runid, map[string]any{"chosen_iter": elig[idx].Iter,
+		"label": pick, "reason": reason}))
+	return elig[idx]
+}
+
+// stepOnce runs the Propose→Probe→Compose→Reflect pipeline inside dir,
+// starting from layers0 as the base harness and refd as the reference
+// execution digest. Records (candidates/, probes/, compose/, step.json)
+// live under dir.
+func stepOnce(ctx context.Context, opts *Options, dir, runid string, iter int,
+	layers0 []harness.Layer, refd, libCtx string) (*Result, error) {
+	emit := opts.Emit
+	if emit == nil {
+		emit = func(any) {}
+	}
+	limit := opts.Cfg.Harness.CharLimit
+	res := &Result{RunID: runid, Dir: dir, SessionID: opts.SessionID, Task: opts.Task, Iter: iter}
+
+	// ℋ snapshot as component files (the base every candidate starts from)
+	h0 := filepath.Join(dir, "harness0")
+	res.HarnessHash = probe.HarnessHash(layerContents(layers0))
+	if err := writeLayers(h0, layers0); err != nil {
+		return res, err
+	}
 
 	// Propose: two scoped editors, one sandboxed candidate dir each.
 	names := [kinds]string{"invariant", "domain"}
 	for _, kind := range names {
 		c := Candidate{Kind: kind, Dir: filepath.Join(dir, "candidates", kind)}
-		emit(ev("improve.propose", runid, map[string]any{"kind": kind}))
+		emit(ev("improve.propose", runid, map[string]any{"kind": kind, "iter": iter}))
 		if err := copyFiles(h0, c.Dir); err != nil {
 			c.Skipped = err.Error()
 			res.Candidates = append(res.Candidates, c)
 			continue
 		}
-		if err := runEditor(ctx, opts, kind, c.Dir, editorTask(opts.Task, opts.RefDigest, c.Dir, libCtx)); err != nil {
+		if err := runEditor(ctx, *opts, kind, c.Dir, editorTask(opts.Task, refd, c.Dir, libCtx)); err != nil {
 			c.Skipped = "editor: " + err.Error()
 			res.Candidates = append(res.Candidates, c)
 			continue
@@ -187,11 +418,11 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 			MaxIterations: opts.ProbeIterations, WallTimeoutS: opts.WallTimeoutS, Emit: emit,
 		})
 		c.Probe = rec
-		emit(ev("improve.probe", runid, map[string]any{"kind": c.Kind,
+		emit(ev("improve.probe", runid, map[string]any{"kind": c.Kind, "iter": iter,
 			"ok": runErr == nil, "steps": len(rec.Steps), "duration_s": int(rec.DurationS),
 			"error": errStr(runErr)}))
-		note, err := generate(ctx, opts, "You write terse, evidence-quoted behavioral contrast notes. No scores.",
-			contrastPrompt(c.Kind, opts.Task, opts.RefDigest, c.Diff, rec.Digest(opts.MaxDigestChars)))
+		note, err := generate(ctx, *opts, "You write terse, evidence-quoted behavioral contrast notes. No scores.",
+			contrastPrompt(c.Kind, opts.Task, refd, c.Diff, rec.Digest(opts.MaxDigestChars)))
 		if err != nil {
 			c.Skipped = "contrast: " + err.Error()
 			continue
@@ -209,32 +440,32 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 			c.Kind, c.Diff, clip(c.Contrast, 2500)))
 	}
 	if len(blocks) == 0 {
-		emit(ev("improve.done", runid, map[string]any{"ok": false,
-			"error": "no candidate produced probed edits", "decisions": "", "successor": false}))
+		emit(ev("improve.iterdone", runid, map[string]any{"iter": iter, "ok": false,
+			"error": "no candidate produced probed edits", "successor": false}))
 		return res, writeStep(dir, res)
 	}
 	composeDir := filepath.Join(dir, "compose")
 	if err := copyFiles(h0, composeDir); err != nil {
 		return res, writeStep(dir, res)
 	}
-	composerErr := runComposer(ctx, opts, composeDir,
-		composerTask(opts.Task, opts.RefDigest, strings.Join(blocks, "\n"), composeDir, libCtx))
+	composerErr := runComposer(ctx, *opts, composeDir,
+		composerTask(opts.Task, refd, strings.Join(blocks, "\n"), composeDir, libCtx))
 	if composerErr != nil {
-		emit(ev("improve.done", runid, map[string]any{"ok": false,
-			"error": "composer: " + composerErr.Error(), "decisions": "", "successor": false}))
+		emit(ev("improve.iterdone", runid, map[string]any{"iter": iter, "ok": false,
+			"error": "composer: " + composerErr.Error(), "successor": false}))
 		return res, writeStep(dir, res)
 	}
 	res.Decisions = readFile(filepath.Join(composeDir, "decisions.md"))
 	changed := strings.TrimSpace(dirDiff(h0, composeDir, 60000))
 	if changed == "" {
-		emit(ev("improve.done", runid, map[string]any{"ok": true, "error": "",
-			"decisions": clip(res.Decisions, 800), "successor": false, "note": "composer kept the current harness"}))
+		emit(ev("improve.iterdone", runid, map[string]any{"iter": iter, "ok": true, "error": "",
+			"successor": false, "note": "composer kept the current harness"}))
 		return res, writeStep(dir, res)
 	}
 	res.Successor = composeDir
-	emit(ev("improve.compose", runid, map[string]any{"changed": changedFiles(h0, composeDir)}))
+	emit(ev("improve.compose", runid, map[string]any{"changed": changedFiles(h0, composeDir), "iter": iter}))
 
-	// Successor execution e′ (evidence for the library step, M13).
+	// Successor execution e′ (evidence for the library + next reference).
 	sb, err := probe.Prepare(opts.Workdir, filepath.Join(dir, "successor"))
 	if err == nil {
 		task := opts.Task
@@ -266,24 +497,24 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 		if res.SuccessorProbe != nil {
 			succ = res.SuccessorProbe.Digest(3000)
 		}
-		note, err := generate(ctx, opts,
+		note, err := generate(ctx, *opts,
 			"You distill one harness improvement step into library experience notes. Terse; unsupported means NONE.",
-			reflectorTask(opts.Task, res.Decisions, contrasts.String(), clip(opts.RefDigest, 2500), succ))
+			reflectorTask(opts.Task, res.Decisions, contrasts.String(), clip(refd, 2500), succ))
 		if err == nil && !strings.EqualFold(strings.TrimSpace(note), "NONE") && len(strings.TrimSpace(note)) >= 60 {
-			id, cerr := opts.Library.CreateEntry(composeDir, opts.Task, opts.SessionID, res.RunID, res.HarnessHash, strings.TrimSpace(note))
+			id, cerr := opts.Library.CreateEntry(composeDir, opts.Task, opts.SessionID, runid, res.HarnessHash, strings.TrimSpace(note))
 			if cerr == nil {
 				res.LibraryEntry = id
-				emit(ev("improve.library", runid, map[string]any{"entry": id, "error": ""}))
+				emit(ev("improve.library", runid, map[string]any{"entry": id, "error": "", "iter": iter}))
 				if opts.IndexFn != nil {
 					go opts.IndexFn(id, note)
 				}
 			} else {
-				emit(ev("improve.library", runid, map[string]any{"entry": "", "error": cerr.Error()}))
+				emit(ev("improve.library", runid, map[string]any{"entry": "", "error": cerr.Error(), "iter": iter}))
 			}
 		}
 	}
 
-	emit(ev("improve.done", runid, map[string]any{"ok": true, "error": "",
+	emit(ev("improve.iterdone", runid, map[string]any{"iter": iter, "ok": true, "error": "",
 		"decisions": clip(res.Decisions, 800), "successor": true}))
 	return res, writeStep(dir, res)
 }

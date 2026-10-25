@@ -47,6 +47,27 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
 
+### 2026-10-25 — M14 recursion budget (k-step chaining + governors)
+- `improve.Step` splits into orchestration (`stepK`) + pipeline
+  (`stepOnce`). **sequential** (default per the locked decision): each
+  iteration's probed successor becomes the next iteration's base harness
+  AND its successor probe becomes the next reference — iter<i+1>/harness0
+  starts file-for-file from iter<i>/compose (asserted hermetically).
+  **parallel**: k independent steps + anonymized selector (options A-H,
+  iteration identity hidden, "letter or NONE").
+- Governors: `improve.max_total_tokens` (stops before starting an
+  over-budget iteration, `improve.budget` event), `improve.total_wall_s`;
+  `-improve-resume <runid>` skips iterations with a completed step.json.
+- config `improve.{k,mode,total_wall_s,max_total_tokens}`; headless `-k`,
+  `-improve-mode`, `-improve-resume`; UI labels for selector/budget
+  events; k=1 wire-compatible with M12/M13 tests.
+- Live gates (`make live-m14-test` x2): green. Both live runs exercised
+  the honest-stop path (clean references → composer kept the harness,
+  chain note recorded, full iter1 evidence kept) — chaining itself proven
+  by the hermetic file-for-file test. Note: make ci does NOT rebuild
+  the headless binary — rebuild before live gates or the new flags
+  "don't exist".
+
 ### 2026-10-25 — M13 improvement library (harnessing-level recursion)
 - `core/harnesslib`: entries at `harness-lib/<id>/{harness/,EXPERIENCE.md,
   meta.json}` + auto-rebuilt INDEX.md. Reflector agent distills each

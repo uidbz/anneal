@@ -124,6 +124,14 @@ func (s *sink) handle(v any) {
 		case s.learn <- struct{}{}:
 		default:
 		}
+	case "improve.budget":
+		if !s.jsonMode {
+			fmt.Printf("🔧 improve: budget reached (%v tokens ≥ %v) at iter %v\n", e["spent_tokens"], e["budget"], e["iter"])
+		}
+	case "improve.selector":
+		if !s.jsonMode {
+			fmt.Printf("🔧 improve: selector chose iter %v (%v: %v)\n", e["chosen_iter"], e["label"], e["reason"])
+		}
 	case "improve.library":
 		if s.jsonMode {
 			return
@@ -189,6 +197,9 @@ func main() {
 	session := flag.String("session", "", "resume a session by id")
 	learn := flag.Bool("learn", false, "run the self-improvement review pass after the task")
 	improveFlag := flag.Bool("improve", false, "after the task, run one contrastive harness-improvement step (propose→probe→compose)")
+	improveK := flag.Int("k", 0, "recursion depth for -improve (0 = config, default 1)")
+	improveMode := flag.String("improve-mode", "", "improve recursion mode: sequential (default) | parallel")
+	improveResume := flag.String("improve-resume", "", "resume a prior improve run by id, skipping completed iterations")
 	flag.Parse()
 
 	if *prompt == "" && !*interactive {
@@ -263,7 +274,7 @@ func main() {
 				fmt.Fprintln(os.Stderr, "🔧 harness improvement: propose → probe → compose …")
 				ictx, icancel := context.WithTimeout(context.Background(), 25*time.Minute)
 				defer icancel()
-				ires, ierr := a.Improve(ictx)
+				ires, ierr := a.ImproveWith(ictx, *improveK, *improveMode, *improveResume)
 				if ierr != nil {
 					fmt.Fprintf(os.Stderr, "fyagent-headless: improve: %v\n", ierr)
 				} else {
@@ -334,7 +345,7 @@ func main() {
 			if strings.HasPrefix(line, "/improve") {
 				fmt.Fprintln(os.Stderr, "🔧 harness improvement: propose → probe → compose …")
 				ictx, icancel := context.WithTimeout(context.Background(), 25*time.Minute)
-				ires, ierr := a.Improve(ictx)
+				ires, ierr := a.ImproveWith(ictx, *improveK, *improveMode, *improveResume)
 				icancel()
 				if ierr != nil {
 					fmt.Fprintf(os.Stderr, "fyagent-headless: improve: %v\n", ierr)
@@ -350,7 +361,21 @@ func main() {
 }
 
 func printImprove(res *improve.Result) {
-	fmt.Fprintf(os.Stderr, "improve %s → %s\n", res.RunID, res.Dir)
+	depth := ""
+	if res.K > 1 {
+		depth = fmt.Sprintf("  k=%d mode=%s", res.K, res.Mode)
+	}
+	fmt.Fprintf(os.Stderr, "improve %s → %s%s\n", res.RunID, res.Dir, depth)
+	if res.Note != "" {
+		fmt.Fprintf(os.Stderr, "  note: %s\n", res.Note)
+	}
+	for _, it := range res.Iterations {
+		if it.Skipped != "" {
+			fmt.Fprintf(os.Stderr, "  iter %d: %s\n", it.Iter, it.Skipped)
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "  iter %d: successor=%v entry=%s\n", it.Iter, it.Successor != "", it.Entry)
+	}
 	for _, c := range res.Candidates {
 		if c.Skipped != "" {
 			fmt.Fprintf(os.Stderr, "  candidate %s: skipped (%s)\n", c.Kind, c.Skipped)

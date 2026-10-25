@@ -26,6 +26,10 @@ live-tie-test:
 live-m10-test: build
 	bash testing/e2e/m10/run.sh
 
+# Live probe replay gate (M11; Strata must be up)
+live-probe-test:
+	FYAGENT_LIVE_PROBE=1 $(GO) test ./core/probe -run TestLiveReplay -v
+
 vet:
 	$(GO) vet ./...
 

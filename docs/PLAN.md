@@ -219,9 +219,10 @@ Milestones:
   lines enforced via dive permission rules, `tool-guidance.md`,
   `subagents/*.md` via dive's subagent FileLoader, `scripts/` manifest);
   prompt composition per run; `-check-harness`, `/harness`.
-- **M11 probe infrastructure** — sandboxed task replay (`cp -a`/worktree
-  scratch copy, tool jail via path-checking PreToolUse hook, matched model
-  config recorded), execution records `e=(τ,y)`, step records `ξ` under
+- **M11 probe infrastructure** ✔ — sandboxed task replay (Go tree copy with
+  heavy-dir exclusions, dive-native WorkspaceDir jail + defense-in-depth
+  PreToolUse hook, matched model config recorded), execution records
+  `e=(τ,y)`, step records `ξ` under
   `~/.fyagent/improvements/<runid>/`.
 - **M12 one contrastive step (k=1)** — `core/improve`: invariant+domain
   editors (edit right jailed to a scratch harness copy), probe+contrast

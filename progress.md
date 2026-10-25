@@ -47,6 +47,24 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
 
+### 2026-10-25 — M11 probe infrastructure (sandboxed task replay)
+- `core/probe`: `Prepare(src,root)` copies the workspace (`SkipDirs` for
+  heavy junk, `.git` kept for fidelity); the probe agent runs dive-native
+  `WorkspaceDir`-jailed tools **plus** a belt-and-braces PreToolUse hook
+  (protects the original tree + fyagent state, demands absolute paths and
+  an in-sandbox `working_directory`).
+- `Run` executes the task once with the base toolkit (no memory/skills/
+  subagents/MCP — probes isolate harness-file effects) and emits a
+  `Record` = e(τ,y): condensed tool ledger, deliverable, usage, duration,
+  plus audit hashes — `ConfigHash` (matched model conditions) and
+  `HarnessHash` (component fingerprint). Written to
+  `improvements/<runid>/<name>.json`; `Record.Digest(max)` renders the
+  editor-facing bounded view.
+- Gates: hermetic (copy/exclusions, 15-case jail table, scripted-LLM run
+  asserting jailed write blocked + in-sandbox write applied + record
+  roundtrip); **live gate green** (`make live-probe-test`): real Strata
+  replay mutated the sandbox, original byte-identical, 3 steps in 11 s.
+
 ### 2026-10-25 — M10 harness component layer (Recursive Harnessing plan, PLAN.md §12)
 - Ported Harness² (arXiv 2610.14224) concepts into the plan; locked
   decisions: **sequential default** recursion mode; successors never touch

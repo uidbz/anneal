@@ -42,6 +42,7 @@ provider settings live.
 | `/index` | rebuild the session search index |
 | `/journey` | self-improvement timeline |
 | `/learn` | queue a background-review pass now (runs when idle) |
+| `/improve` | one contrastive harness-improvement step for the last task |
 | `/harness` | show mounted harness components, guardrail rules, warnings |
 | `/quit` | exit |
 
@@ -63,7 +64,7 @@ fyagent-headless -p "…" -learn                            # review pass after
 | flag | meaning |
 |------|---------|
 | `-p TASK` | one-shot task |
-| `-i` | REPL (supports `/new`, `/interrupt`, `/quit`) |
+| `-i` | REPL (`/new`, `/interrupt`, `/improve`, `/harness [list|promote <id>]`, `/quit`) |
 | `-json` | emit every GUI event as a JSONL line (machine-readable) |
 | `-v` | log every event to stderr |
 | `-session ID` / `--new` | resume / fresh session (default: resume most recent) |
@@ -97,6 +98,14 @@ cd repo && fyagent-headless -allow Read,Glob,Grep,Bash -json -p "run tests" \
   (idle ≥ `review.idle_settle_s`); watch 🧠 lines, check `/journey`, force a
   pass with `/learn`. Approve/deny what it wants to save via the inbox cards
   (when `write_approval` is on).
+- **Harness improvement** (`/improve`, or `-improve` in headless): after a
+  task, two scoped editors propose harness edits, each candidate is replayed
+  in a sandbox and behaviorally contrasted, and a composer merges only the
+  evidence-supported changes. The successor applies to **this session only**
+  (overlay); nothing global changes. Evidence-backed steps land in the
+  improvement library (`/harness list` in the headless REPL); making one
+  permanent is your explicit call: `/harness promote <id>` (with backups).
+  Full records: `~/.fyagent/improvements/`.
 
 ## Scripting the GUI (UI hacking)
 

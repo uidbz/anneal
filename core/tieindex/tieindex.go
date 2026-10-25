@@ -211,6 +211,89 @@ func (x *Indexer) IndexSession(sd SessionData) error {
 	return nil
 }
 
+// IndexExperience upserts one harness improvement library entry's tokens
+// (relation "tag", as required by older servers' reverse-index whitelist).
+func (x *Indexer) IndexExperience(id, text string) error {
+	tc, err := x.client()
+	if err != nil {
+		return err
+	}
+	b := tc.NewBatch()
+	key := "harness-exp:" + id
+	now := time.Now().UTC().Format(time.RFC3339)
+	b.Add(key, "tie-type", "harness-exp")
+	b.Set(key, "snippet", []string{snippet(text, 400)})
+	b.Set(key, "updated-at", []string{now})
+	b.Set(key, "tag", tokens(text, 300))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := tc.BatchContext(ctx, b); err != nil {
+		x.setDegraded(fmt.Sprintf("experience index write failed: %v", err))
+		return err
+	}
+	return nil
+}
+
+// ExpHit is one library-entry token match.
+type ExpHit struct {
+	ID      string  `json:"id"`
+	Snippet string  `json:"snippet"`
+	Score   float64 `json:"score"`
+}
+
+// SearchExperience runs an exact-token AND query over library entries.
+func (x *Indexer) SearchExperience(query string, limit int) ([]ExpHit, error) {
+	tc, err := x.client()
+	if err != nil {
+		return nil, err
+	}
+	toks := tokens(query, 12)
+	if len(toks) == 0 {
+		return nil, fmt.Errorf("no searchable tokens in query")
+	}
+	if limit <= 0 || limit > 20 {
+		limit = 5
+	}
+	spec := client.QuerySpec{
+		Terms: toks, Reverse: true, Scope: "harness-exp",
+		SortByValue: "updated-at", Descending: true, Expand: true,
+		Limit: limit * 3, Offset: 0,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	rows, _, err := tc.QueryContext(ctx, spec)
+	if emptyCollErr(err) {
+		return nil, nil
+	}
+	if err != nil {
+		x.setDegraded(fmt.Sprintf("experience query failed: %v", err))
+		return nil, err
+	}
+	var out []ExpHit
+	for _, row := range rows {
+		if len(out) >= limit {
+			break
+		}
+		vals := row.Attributes["tag"]
+		matched := 0
+		for _, want := range toks {
+			for _, have := range vals {
+				if have == want {
+					matched++
+					break
+				}
+			}
+		}
+		score := float64(matched) / float64(len(toks))
+		if score <= 0 {
+			continue
+		}
+		id := strings.TrimPrefix(row.Key, "harness-exp:")
+		out = append(out, ExpHit{ID: id, Snippet: first(row.Attributes["snippet"]), Score: score})
+	}
+	return out, nil
+}
+
 // Hit is one message match with its session context.
 type Hit struct {
 	SessionID string  `json:"sessionID"`

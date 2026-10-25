@@ -13,6 +13,7 @@ import (
 	"fyagent/core/agent"
 	"fyagent/core/config"
 	"fyagent/core/harness"
+	"fyagent/core/harnesslib"
 	"fyagent/core/improve"
 	"fyagent/core/journey"
 	"fyagent/core/memory"
@@ -38,13 +39,14 @@ type App struct {
 	Mem     *memory.Store
 	Skills  *skills.Store
 	Harness *harness.Store
+	Libs    *harnesslib.Store
 	Review  *review.Manager
 	Journey *journey.Log
 	MCP     *mcp.Manager
 
-	improveMu       sync.Mutex
-	improveRunning  bool
-	lastHealth string // dedupe provider.state events
+	improveMu      sync.Mutex
+	improveRunning bool
+	lastHealth     string // dedupe provider.state events
 }
 
 func New() (*App, error) {
@@ -70,6 +72,10 @@ func New() (*App, error) {
 		fmt.Fprintf(os.Stderr, "fyagent: harness seed: %v\n", err)
 	}
 	a.Runner.SetHarness(a.Harness)
+	a.Libs = harnesslib.New(paths.HarnessLib())
+	if err := a.Libs.Seed(); err != nil {
+		fmt.Fprintf(os.Stderr, "fyagent: harness-lib seed: %v\n", err)
+	}
 	for _, w := range a.Harness.Validate(cfg.Harness.CharLimit) {
 		fmt.Fprintf(os.Stderr, "fyagent: harness: %s\n", w)
 	}
@@ -228,6 +234,13 @@ func (a *App) AgentAPI() map[string]any {
 		return nil
 	}
 	api["harnessInfo"] = func() any { return toJSON(a.Runner.HarnessInfo()) }
+	api["harnessLibList"] = func() any {
+		ls := a.Libs.List()
+		if ls == nil {
+			return toJSON([]any{})
+		}
+		return toJSON(ls)
+	}
 	api["journey"] = func(limit int) any {
 		list := a.Journey.Tail(limit)
 		if list == nil {
@@ -326,8 +339,19 @@ func (a *App) Improve(ctx context.Context) (*improve.Result, error) {
 	if task == "" {
 		return nil, fmt.Errorf("improve: no completed task to improve")
 	}
+	if !a.Cfg.Improve.Enabled {
+		return nil, fmt.Errorf("improve: disabled in config")
+	}
 	a.Review.Interrupt() // improvement owns the GPU next; foreground semantics
 	digest := a.Runner.Digest(ctx, sid, a.Cfg.Review.MaxInputTokens*4)
+	var lib *harnesslib.Store
+	var indexFn func(string, string)
+	if a.Cfg.Improve.Library {
+		lib = a.Libs
+		if a.Tie.Enabled() {
+			indexFn = func(id, text string) { _ = a.Tie.IndexExperience(id, text) }
+		}
+	}
 	h := a.Monitor.Current()
 	res, err := improve.Step(ctx, improve.Options{
 		Cfg:       a.Cfg,
@@ -339,6 +363,8 @@ func (a *App) Improve(ctx context.Context) (*improve.Result, error) {
 		Task:      task,
 		RefDigest: digest,
 		Emit:      a.Bridge.Emit,
+		Library:   lib,
+		IndexFn:   indexFn,
 	})
 	if err == nil && res.Successor != "" {
 		if oerr := a.Runner.SetSessionOverlay(res.Successor); oerr != nil {
@@ -348,7 +374,8 @@ func (a *App) Improve(ctx context.Context) (*improve.Result, error) {
 	return res, err
 }
 
-func (a *App) onHealth(h model.Health) {	doc := toJSON(h)
+func (a *App) onHealth(h model.Health) {
+	doc := toJSON(h)
 	if doc == a.lastHealth {
 		return
 	}

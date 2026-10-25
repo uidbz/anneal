@@ -11,6 +11,7 @@ import (
 
 	"fyagent/core/config"
 	"fyagent/core/harness"
+	"fyagent/core/harnesslib"
 
 	"github.com/deepnoodle-ai/dive/llm"
 )
@@ -65,7 +66,7 @@ func respText(text string) *llm.Response {
 		Content: []llm.Content{&llm.TextContent{Text: text}}}
 }
 
-func fixture(t *testing.T) (*config.Config, *harness.Store, string) {
+func fixture(t *testing.T) (*config.Config, *harness.Store, string, *harnesslib.Store) {
 	t.Helper()
 	t.Setenv("FYAGENT_HOME", t.TempDir())
 	cfg := config.Default()
@@ -74,13 +75,17 @@ func fixture(t *testing.T) (*config.Config, *harness.Store, string) {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(h.Root(), "system.md"), []byte("base rule"), 0o644)
+	lib := harnesslib.New(filepath.Join(os.Getenv("FYAGENT_HOME"), "harness-lib"))
+	if err := lib.Seed(); err != nil {
+		t.Fatal(err)
+	}
 	src := t.TempDir()
 	os.WriteFile(filepath.Join(src, "main.go"), []byte("package main\n"), 0o644)
-	return cfg, h, src
+	return cfg, h, src, lib
 }
 
 func TestStepNoEditsBails(t *testing.T) {
-	cfg, h, src := fixture(t)
+	cfg, h, src, lib := fixture(t)
 	q := &queueLLM{scripts: []*scriptedLLM{
 		{resps: []*llm.Response{respText("no changes")}},
 		{resps: []*llm.Response{respText("no changes")}},
@@ -89,6 +94,7 @@ func TestStepNoEditsBails(t *testing.T) {
 	res, err := Step(context.Background(), Options{
 		Cfg: cfg, Model: q.next, ModelID: "scripted", Harness: h, Workdir: src,
 		SessionID: "s1", Task: "do the thing", RefDigest: "ref digest",
+		Library: lib,
 		Emit: func(v any) {
 			if e, ok := v.(map[string]any); ok {
 				types = append(types, e["type"].(string))
@@ -117,10 +123,13 @@ func TestStepNoEditsBails(t *testing.T) {
 	if doneErr != "seen" {
 		t.Fatalf("events: %v", types)
 	}
+	if len(lib.List()) != 0 {
+		t.Fatal("library entry created for a bailed step")
+	}
 }
 
 func TestStepFullFlow(t *testing.T) {
-	cfg, h, src := fixture(t)
+	cfg, h, src, lib := fixture(t)
 	imp := filepath.Join(os.Getenv("FYAGENT_HOME"), "improvements", "t1")
 	candDir := filepath.Join(imp, "candidates", "invariant")
 	composeDir := filepath.Join(imp, "compose")
@@ -149,12 +158,20 @@ func TestStepFullFlow(t *testing.T) {
 		{resps: []*llm.Response{
 			respTool("s1", "Read", map[string]any{"file_path": "main.go"}),
 			respText("successor run")}},
+		// reflector
+		{resps: []*llm.Response{respText(`## situation
+small Go feature addition; unverified-done deficiency
+## lessons
+- verify rule → successor run re-read produced files
+## evidence
+- contrast: probe re-read main.go (quoted)
+- decisions: system.md adopt`)}},
 	}}
 	var events []map[string]any
 	res, err := Step(context.Background(), Options{
 		Cfg: cfg, Model: q.next, ModelID: "scripted", Harness: h, Workdir: src,
 		SessionID: "s1", Task: "edit main.go", RefDigest: "REF: declared done without re-reading",
-		RunID: "t1",
+		RunID: "t1", Library: lib,
 		Emit: func(v any) {
 			if e, ok := v.(map[string]any); ok {
 				events = append(events, e)
@@ -216,5 +233,24 @@ func TestStepFullFlow(t *testing.T) {
 	// sandboxes stayed inside the improvement dir, src untouched
 	if _, err := os.Stat(filepath.Join(src, "main.go")); err != nil {
 		t.Fatal(err)
+	}
+	// harnessing-level recursion: evidence-supported entry in the library
+	if res.LibraryEntry == "" {
+		t.Fatal("no library entry")
+	}
+	ls := lib.List()
+	if len(ls) != 1 || !strings.Contains(ls[0].Situation, "unverified") {
+		t.Fatalf("lib list: %+v", ls)
+	}
+	idxB, err := os.ReadFile(filepath.Join(os.Getenv("FYAGENT_HOME"), "harness-lib", "INDEX.md"))
+	if err != nil || !strings.Contains(string(idxB), res.LibraryEntry) {
+		t.Fatalf("index: %s", idxB)
+	}
+	if ctxs := lib.Context("edit main.go verify files", 2, 2000); !strings.Contains(ctxs, "verify rule") {
+		t.Fatalf("lib context: %q", ctxs)
+	}
+	snap := filepath.Join(os.Getenv("FYAGENT_HOME"), "harness-lib", res.LibraryEntry, "harness", "system.md")
+	if b, err := os.ReadFile(snap); err != nil || !strings.Contains(string(b), "re-read") {
+		t.Fatalf("entry snapshot: %v", err)
 	}
 }

@@ -47,6 +47,30 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Bug #5 mattered for M4: a local `~/.config/tie/config.toml` with `[Collections.x]` + `DefaultCollection` silently hijacked namespace/collection **and** the connect URL.
 - Verified live: fyagent boots against patched fynerisor; NEWAPI-OK script probe (Append/Remove, SetText, SetTop, SetContent, Quit/Close present). UI workarounds (re-compose) still in place — adopt Append/SetText opportunistically from M4 on.
 
+### 2026-10-25 — M13 improvement library (harnessing-level recursion)
+- `core/harnesslib`: entries at `harness-lib/<id>/{harness/,EXPERIENCE.md,
+  meta.json}` + auto-rebuilt INDEX.md. Reflector agent distills each
+  evidence-backed step (`NONE` short-circuits — no entry without
+  evidence, the paper's rule). `Context(task)` ranks entries by local
+  token overlap and injects up to 3 excerpts into BOTH editors' and the
+  composer's prompts — selective re-drafting, never inheritance (every
+  task still starts from ℋ₀ + library, not the last successor).
+- tie: `IndexExperience`/`SearchExperience` (key `harness-exp:<id>`,
+  tokens under `tag` + `Reverse` — old-server-safe); fired async after
+  entry creation.
+- Promote = the ONLY path agent-authored components take into the global
+  harness: headless REPL `/harness promote <id>` (typed by the user =
+  the approval), replaced files backed up under `promote-backup/<ts>/`.
+  `/harness list` in REPL; GUI `/harness` shows the library;
+  config `improve.{enabled,library}`.
+- **Live gate green** (`make live-m13-test`, ~50 min): run 1 (Sub) and
+  run 2 (Mul) each produced a full entry with parsed situation lines;
+  run 2's composer correctly DROPPED probe-infrastructure "rules"
+  (preseeded files, jail paths) as not agent behavior — and the live
+  gate itself caught a real bug: the promote command had to move from an
+  exact-match case to a prefix match, or `/harness promote <id>` fell
+  through to the model (which politely refused to fabricate output).
+
 ### 2026-10-25 — M12 contrastive step (propose→probe→compose, k=1)
 - `core/improve`: one Φ step per Harness² §2.2.1 — reference = last
   finished session's digest; invariant+domain editors draft candidate

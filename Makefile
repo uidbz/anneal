@@ -2,7 +2,7 @@
 GO      ?= go
 BIN     := bin
 
-.PHONY: all build test vet fmt check-ui headless clean live-tie-test live-m10-test
+.PHONY: all build test vet fmt check-ui headless clean live-tie-test live-m10-test live-probe-test live-m13-test
 
 all: build
 
@@ -29,6 +29,10 @@ live-m10-test: build
 # Live probe replay gate (M11; Strata must be up)
 live-probe-test:
 	FYAGENT_LIVE_PROBE=1 $(GO) test ./core/probe -run TestLiveReplay -v
+
+# Live improvement-library gate (M13; two full steps, ~40 min; Strata up)
+live-m13-test: build
+	bash testing/e2e/m13/run.sh
 
 vet:
 	$(GO) vet ./...

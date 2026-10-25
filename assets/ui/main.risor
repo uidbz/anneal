@@ -144,6 +144,11 @@ harnessWarnText = (arr, i, acc) => {
     if (i >= len(arr)) { return acc }
     return harnessWarnText(arr, i + 1, acc + "\n  warn: " + arr[i])
 }
+let harnessLibText = (arr, i, acc) => acc
+harnessLibText = (arr, i, acc) => {
+    if (i >= len(arr)) { return acc }
+    return harnessLibText(arr, i + 1, acc + "\n  " + arr[i].id + " — " + arr[i].situation)
+}
 
 let keepCards = (arr, i, dropID, acc) => acc
 keepCards = (arr, i, dropID, acc) => {
@@ -313,7 +318,10 @@ let slash = (text) => {
         let en = ""
         if (h.enabled == false) { en = " (DISABLED)" }
         let r = h.rules
-        let line = "harness " + h.root + en + "\n components:" + cs + "\n rules: allow=" + sprintf("%d", len(r.allow)) + " ask=" + sprintf("%d", len(r.ask)) + " deny=" + sprintf("%d", len(r.deny)) + harnessWarnText(h.warnings, 0, "")
+        let lb = json.parse(agent.harnessLibList())
+        let lt = " none"
+        if (lb != []) { lt = harnessLibText(lb, 0, "") }
+        let line = "harness " + h.root + en + "\n components:" + cs + "\n rules: allow=" + sprintf("%d", len(r.allow)) + " ask=" + sprintf("%d", len(r.ask)) + " deny=" + sprintf("%d", len(r.deny)) + "\n library:" + lt + harnessWarnText(h.warnings, 0, "")
         addBlock(label(line))
         return
     }

@@ -146,6 +146,22 @@ re-read), `tool-guidance.md`, `subagents/*.md` (dive FileLoader format;
 override built-ins), `scripts/` (manifest surfaced to the model).
 Check with `fyagent -check-harness` or `/harness`.
 
+## `improve` — recursive harness improvement (M12–M13)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | true | `/improve`, `-improve`, headless `/improve` |
+| `library` | true | reflection + `~/.fyagent/harness-lib/` improvement library |
+
+One step = Propose (invariant + domain editors) → Probe (sandboxed replay +
+behavioral contrast) → Compose (evidence-tied successor + `decisions.md`).
+Successors apply as **session overlays** (`~/.fyagent/overlays/<session>/`);
+evidence-supported steps also store a library entry
+(`harness-lib/<id>/{harness/,EXPERIENCE.md,meta.json}`). Library entries are
+re-drafted from by later steps (never auto-inherited) and become global
+only via explicit `/harness promote <id>` (headless REPL; backups under
+`harness-lib/promote-backup/`). Records: `~/.fyagent/improvements/<run>/`.
+
 ## `ui`
 
 | key | default | meaning |

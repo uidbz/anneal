@@ -54,16 +54,21 @@ misstep each change targets.`
 	return role
 }
 
-func editorTask(task, refDigest, dir string) string {
-	return fmt.Sprintf(`Task that was executed:
+func editorTask(task, refDigest, dir, lib string) string {
+	out := fmt.Sprintf(`Task that was executed:
 %s
 
 Reference execution (what actually happened, condensed):
 %s
-
+`, clip(task, 1200), refDigest)
+	if lib != "" {
+		out += "\nPRIOR HARNESS IMPROVEMENT LIBRARY (reuse or adapt adopted\ncomponents and lessons; verify any task-specific fact against THIS task):\n" + lib + "\n"
+	}
+	out += fmt.Sprintf(`
 Your harness directory is %s — edit its files with ABSOLUTE paths
 (e.g. file_path="%s/system.md"). Inspect the deficiencies, then edit.
-Finish with the 3-line summary.`, clip(task, 1200), refDigest, dir, dir)
+Finish with the 3-line summary.`, dir, dir)
+	return out
 }
 
 func contrastPrompt(kind, task, refDigest, diff, probeDigest string) string {
@@ -104,16 +109,49 @@ Rules:
   note or reference>". Every decision must cite an observation.
 Keep the successor small: at most 60 new lines total across files.`
 
-func composerTask(task, refDigest string, blocks string, dir string) string {
-	return fmt.Sprintf(`Task:
+func composerTask(task, refDigest string, blocks string, dir, lib string) string {
+	out := fmt.Sprintf(`Task:
 %s
 
 REFERENCE execution (old harness):
 %s
-
-%s
+`, clip(task, 800), refDigest)
+	if lib != "" {
+		out += "\nPRIOR HARNESS IMPROVEMENT LIBRARY (prefer its proven components over\nreinventing the same rule):\n" + lib + "\n"
+	}
+	out += "\n" + blocks + fmt.Sprintf(`
 
 Your successor directory is %s — edit its files with ABSOLUTE paths
 (e.g. file_path="%s/system.md"), then write decisions.md, then reply
-"composed".`, clip(task, 800), refDigest, blocks, dir, dir)
+"composed".`, dir, dir)
+	return out
+}
+
+func reflectorTask(task, decisions, contrasts, refHead, succHead string) string {
+	return fmt.Sprintf(`Review this completed harness improvement step and distill it for the library.
+
+TASK: %s
+
+DECISIONS (composer):
+%s
+
+CONTRAST NOTES:
+%s
+
+REFERENCE (head):
+%s
+
+SUCCESSOR RUN (head):
+%s
+
+Write an EXPERIENCE entry, max 22 lines, exactly this shape:
+## situation
+<one line: kind of task + the deficiency class addressed>
+## lessons
+- <change → observed effect> (only changes supported by decisions/contrasts)
+## evidence
+- <at most 4 quoted observations>
+
+If no lesson is supported, reply NONE.`, clip(task, 500), clip(decisions, 2500),
+		clip(contrasts, 2500), clip(refHead, 2000), clip(succHead, 2000))
 }

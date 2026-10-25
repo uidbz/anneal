@@ -20,6 +20,7 @@ import (
 	"fyagent/core/agent"
 	"fyagent/core/config"
 	"fyagent/core/harness"
+	"fyagent/core/harnesslib"
 	"fyagent/core/paths"
 	"fyagent/core/probe"
 
@@ -47,6 +48,9 @@ type Options struct {
 	EditorIterations int    // default 12
 	WallTimeoutS     int    // per probe, default 300
 	RunID            string // override the timestamp run id (tests)
+
+	Library *harnesslib.Store     // improvement library (nil = disabled)
+	IndexFn func(id, text string) // optional tie indexing of experience notes
 }
 
 // Candidate is one proposed harness plus its probe evidence.
@@ -70,6 +74,7 @@ type Result struct {
 	Decisions      string        `json:"decisions"`
 	Successor      string        `json:"successor,omitempty"`
 	SuccessorProbe *probe.Record `json:"successor_probe,omitempty"`
+	LibraryEntry   string        `json:"library_entry,omitempty"`
 	FinishedAt     time.Time     `json:"finished_at"`
 }
 
@@ -115,6 +120,13 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 	}
 	res := &Result{RunID: runid, Dir: dir, SessionID: opts.SessionID, Task: opts.Task}
 
+	// library experience re-enters refinement (selective re-draft, never
+	// wholesale inheritance)
+	libCtx := ""
+	if opts.Library != nil {
+		libCtx = opts.Library.Context(opts.Task, 3, 3000)
+	}
+
 	// ℋ snapshot as component files (the base every candidate starts from)
 	h0 := filepath.Join(dir, "harness0")
 	var layers []harness.Layer
@@ -138,7 +150,7 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 			res.Candidates = append(res.Candidates, c)
 			continue
 		}
-		if err := runEditor(ctx, opts, kind, c.Dir, editorTask(opts.Task, opts.RefDigest, c.Dir)); err != nil {
+		if err := runEditor(ctx, opts, kind, c.Dir, editorTask(opts.Task, opts.RefDigest, c.Dir, libCtx)); err != nil {
 			c.Skipped = "editor: " + err.Error()
 			res.Candidates = append(res.Candidates, c)
 			continue
@@ -206,7 +218,7 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 		return res, writeStep(dir, res)
 	}
 	composerErr := runComposer(ctx, opts, composeDir,
-		composerTask(opts.Task, opts.RefDigest, strings.Join(blocks, "\n"), composeDir))
+		composerTask(opts.Task, opts.RefDigest, strings.Join(blocks, "\n"), composeDir, libCtx))
 	if composerErr != nil {
 		emit(ev("improve.done", runid, map[string]any{"ok": false,
 			"error": "composer: " + composerErr.Error(), "decisions": "", "successor": false}))
@@ -239,6 +251,36 @@ func Step(ctx context.Context, opts Options) (*Result, error) {
 			MaxIterations: opts.ProbeIterations, WallTimeoutS: opts.WallTimeoutS, Emit: emit,
 		})
 		res.SuccessorProbe = rec
+	}
+
+	// Harnessing-level recursion: reflect and record — ONLY with
+	// execution-supported evidence (paper rule: else no entry).
+	if opts.Library != nil {
+		var contrasts strings.Builder
+		for _, c := range res.Candidates {
+			if c.Contrast != "" {
+				fmt.Fprintf(&contrasts, "[%s] %s\n", c.Kind, clip(c.Contrast, 1200))
+			}
+		}
+		succ := ""
+		if res.SuccessorProbe != nil {
+			succ = res.SuccessorProbe.Digest(3000)
+		}
+		note, err := generate(ctx, opts,
+			"You distill one harness improvement step into library experience notes. Terse; unsupported means NONE.",
+			reflectorTask(opts.Task, res.Decisions, contrasts.String(), clip(opts.RefDigest, 2500), succ))
+		if err == nil && !strings.EqualFold(strings.TrimSpace(note), "NONE") && len(strings.TrimSpace(note)) >= 60 {
+			id, cerr := opts.Library.CreateEntry(composeDir, opts.Task, opts.SessionID, res.RunID, res.HarnessHash, strings.TrimSpace(note))
+			if cerr == nil {
+				res.LibraryEntry = id
+				emit(ev("improve.library", runid, map[string]any{"entry": id, "error": ""}))
+				if opts.IndexFn != nil {
+					go opts.IndexFn(id, note)
+				}
+			} else {
+				emit(ev("improve.library", runid, map[string]any{"entry": "", "error": cerr.Error()}))
+			}
+		}
 	}
 
 	emit(ev("improve.done", runid, map[string]any{"ok": true, "error": "",

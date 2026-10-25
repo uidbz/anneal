@@ -94,6 +94,12 @@ type Harness struct {
 	CharLimit int  `json:"char_limit"` // per-component cap on injected text
 }
 
+// Improve configures contrastive harness improvement (M12+).
+type Improve struct {
+	Enabled bool `json:"enabled"` // /improve, -improve
+	Library bool `json:"library"` // improvement library + reflection
+}
+
 type Config struct {
 	Provider   Provider   `json:"provider"`
 	Agent      Agent      `json:"agent"`
@@ -104,6 +110,7 @@ type Config struct {
 	Tie        Tie        `json:"tie"`
 	MCP        MCP        `json:"mcp"`
 	Harness    Harness    `json:"harness"`
+	Improve    Improve    `json:"improve"`
 	UI         UI         `json:"ui"`
 
 	path string `json:"-"`
@@ -138,6 +145,7 @@ func Default() *Config {
 		Tie:        Tie{Enabled: true, Collection: "fyagent", ConfigName: ""},
 		MCP:        MCP{Enabled: true, Servers: map[string]MCPServer{}},
 		Harness:    Harness{Enabled: true, CharLimit: 6000},
+		Improve:    Improve{Enabled: true, Library: true},
 		UI:         UI{},
 	}
 }

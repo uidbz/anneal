@@ -228,10 +228,10 @@ Milestones:
   editors (edit right jailed to a scratch harness copy), probe+contrast
   notes, evidence-tied composition, session overlay apply;
   `fyagent-headless -improve`, GUI `/improve`. Ledger truth, never prose.
-- **M13 improvement library** — `core/harnesslib` + reflector
+- **M13 improvement library** ✔ — `core/harnesslib` + reflector
   (EXPERIENCE.md only with evidence), index fetched into Propose/Compose
   prompts; tie-index EXPERIENCE bodies (`tag` + Reverse, reuse tieindex);
-  `/harness promote` via staging.
+  `/harness promote <id>` explicit (REPL), with promote-backup snapshots.
 - **M14 recursion budget** — `--k N --mode sequential|parallel` (sequential
   default), anonymized selector for k>1, cost preflight + token/wall
   budgets, concurrency cap, resume from `improvements/<runid>/` stages.

@@ -124,6 +124,15 @@ func (s *sink) handle(v any) {
 		case s.learn <- struct{}{}:
 		default:
 		}
+	case "improve.library":
+		if s.jsonMode {
+			return
+		}
+		if toStr := fmt.Sprint(e["entry"]); toStr != "" && toStr != "<nil>" {
+			fmt.Printf("🔧 improve: library entry %s\n", toStr)
+		} else {
+			fmt.Printf("🔧 improve: library entry failed: %v\n", e["error"])
+		}
 	case "improve.done":
 		if s.jsonMode {
 			return
@@ -294,10 +303,35 @@ func main() {
 			case "/interrupt":
 				a.Runner.Interrupt()
 				continue
-			case "/harness":
-				fmt.Fprintln(os.Stderr, agent.FormatHarnessInfo(a.Runner.HarnessInfo()))
+			}
+			if strings.HasPrefix(line, "/harness") {
+				fields := strings.Fields(line)
+				switch {
+				case len(fields) >= 3 && fields[1] == "promote":
+					backup, perr := a.Libs.Promote(fields[2])
+					if perr != nil {
+						fmt.Fprintf(os.Stderr, "promote: %v\n", perr)
+					} else {
+						msg := "promoted into the global harness"
+						if backup != "" {
+							msg += " (previous files backed up at " + backup + ")"
+						}
+						fmt.Fprintf(os.Stderr, "harness %s: %s — restart fyagent to re-read guardrail RULES\n", fields[2], msg)
+					}
+				case len(fields) >= 2 && fields[1] == "list":
+					ls := a.Libs.List()
+					if len(ls) == 0 {
+						fmt.Fprintln(os.Stderr, "library: empty")
+					}
+					for _, e := range ls {
+						fmt.Fprintf(os.Stderr, "  %s — %s [%s]\n", e.ID, e.Situation, e.Components)
+					}
+				default:
+					fmt.Fprintln(os.Stderr, agent.FormatHarnessInfo(a.Runner.HarnessInfo()))
+				}
 				continue
-			case "/improve":
+			}
+			if strings.HasPrefix(line, "/improve") {
 				fmt.Fprintln(os.Stderr, "🔧 harness improvement: propose → probe → compose …")
 				ictx, icancel := context.WithTimeout(context.Background(), 25*time.Minute)
 				ires, ierr := a.Improve(ictx)

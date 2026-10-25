@@ -73,6 +73,7 @@ unreleased fixes (issues #2–#6 and the `CanvasObject` embedding API, commit
 ./bin/anneal -rebuild-index        # rebuild the tie session index
 ./bin/anneal -check-ui             # compile-check the scripted pane
 ./bin/anneal-legacy -check-ui      # compile-check the legacy UI
+./bin/anneal -send "task" -quit-after-run   # developer UI smoke
 ```
 
 Model endpoint: `~/.anneal/config.json` or `ANNEAL_ENDPOINT` /
@@ -107,6 +108,10 @@ created for one release.
 | [docs/FYNERISOR-GAPS.md](docs/FYNERISOR-GAPS.md) | fynerisor gaps hit + issue/fix status |
 | [testing/e2e/README.md](testing/e2e/README.md) | Risor driver scripts: live end-to-end gates |
 | [progress.md](progress.md) | dated milestone log with gotchas & decisions |
+
+## License
+
+BSD 3-Clause. See [LICENSE](LICENSE).
 
 ## Repo layout
 

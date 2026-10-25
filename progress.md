@@ -80,7 +80,12 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
   per event.
 - Phase 5: pane has no host-window capability; Ctrl+R reloads it; a filtered
   `agent.on` feed (harness/improve lifecycle only) updates a notice label
-  without rebuilding or losing unsaved editor text.
+  without rebuilding or losing unsaved editor text. Capabilities are explicit
+  (`paneCapabilities`), with pull-only as the default.
+- Accessibility/composer: Ctrl+L focuses the entry, focus is restored after
+  send/session changes, and `-send`/`-quit-after-run` verified the real
+  composer path (input → submit → streamed reply → persisted session → exit).
+  License added: BSD 3-Clause (same as tie).
 - Gates: build, vet, hermetic tests, race, legacy `-check-ui`, pane
   `-check-ui`; manual launch/screenshot of the hybrid shell and legacy replay.
 

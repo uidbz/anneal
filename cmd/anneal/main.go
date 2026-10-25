@@ -16,7 +16,6 @@ import (
 	"github.com/uidbz/anneal/assets"
 	"github.com/uidbz/anneal/core/agent"
 	coreapp "github.com/uidbz/anneal/core/app"
-	"github.com/uidbz/anneal/core/uiapi"
 
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
@@ -24,7 +23,6 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
-	"github.com/uidbz/fynerisor/gui"
 )
 
 // defaultVisibleBlocks bounds how many transcript widgets are laid out at
@@ -35,6 +33,8 @@ func main() {
 	rebuild := flag.Bool("rebuild-index", false, "re-index all sessions into tie and exit")
 	checkUI := flag.Bool("check-ui", false, "compile the scripted pane and exit")
 	checkHarness := flag.Bool("check-harness", false, "validate harness components and exit")
+	sendTask := flag.String("send", "", "developer: auto-send this task after boot")
+	quitAfterRun := flag.Bool("quit-after-run", false, "developer: quit after the auto-sent run finishes")
 	flag.Parse()
 
 	a, err := coreapp.New()
@@ -46,11 +46,8 @@ func main() {
 		log.Fatalf("anneal: pane missing: %v", err)
 	}
 	if *checkUI {
-		view := gui.NewCanvasObject(paneSrc,
-			gui.WithGlobal("agent", a.HarnessAPI()),
-			gui.WithJSON(),
-		)
-		if err := view.CompileScript(); err != nil {
+		if _, err := newScriptPane(nil, paneSrc,
+			paneCapabilities{Events: true}, a.Bus, a.HarnessAPI(), paneEvent); err != nil {
 			log.Fatalf("anneal: pane compile: %v", err)
 		}
 		fmt.Println("anneal: pane compiles")
@@ -80,6 +77,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("anneal: UI: %v", err)
 	}
+	sh.autoSend = *sendTask
+	sh.autoQuit = *quitAfterRun
 	win.SetContent(sh.root)
 	win.Resize(fyne.NewSize(1100, 750))
 
@@ -110,8 +109,7 @@ type shell struct {
 	perms    *fyne.Container
 	todos    *fyne.Container
 	tabs     *container.AppTabs
-	harness  *gui.CanvasObject
-	paneAPI  *uiapi.Bridge
+	harness  *scriptPane
 	paneSrc  string
 	permRows map[string]fyne.CanvasObject
 
@@ -122,6 +120,8 @@ type shell struct {
 	tail       *widget.Label
 	tailBuf    string
 	mode       string
+	autoSend   string
+	autoQuit   bool
 	maxVisible int
 }
 
@@ -183,23 +183,11 @@ func (s *shell) build() {
 }
 
 func (s *shell) buildHarness(src string) error {
-	view := gui.NewCanvasObject(src,
-		gui.WithJSON(),
-		gui.WithStrings(),
-		gui.WithStatusCallback(func(status string) {
-			if strings.HasPrefix(status, "ERROR") {
-				fmt.Fprintln(os.Stderr, "anneal: harness pane:", status)
-			}
-		}))
-	s.harness = view
-	s.paneAPI = uiapi.NewFiltered(s.a.Bus, paneEvent)
-	s.paneAPI.Attach(view.Window())
-	api := s.a.HarnessAPI()
-	api["on"] = s.paneAPI.API()["on"]
-	view.Window().RegisterGlobal("agent", api)
-	if err := view.CompileScript(); err != nil {
+	p, err := newScriptPane(s.win, src, harnessPaneCaps, s.a.Bus, s.a.HarnessAPI(), paneEvent)
+	if err != nil {
 		return fmt.Errorf("harness pane: %w", err)
 	}
+	s.harness = p
 	return nil
 }
 
@@ -230,7 +218,7 @@ func (s *shell) wireLayout() {
 	)
 	s.tabs = container.NewAppTabs(
 		container.NewTabItem("Chat", chat),
-		container.NewTabItem("Harness", s.harness),
+		container.NewTabItem("Harness", s.harness.view),
 	)
 	s.root = container.NewBorder(s.header, s.composer, nil, nil, s.tabs)
 }
@@ -251,10 +239,17 @@ func (s *shell) start(ctx context.Context) {
 	s.a.ReplayState()
 
 	s.harness.Execute()
-	s.paneAPI.Ready()
 	s.a.Start(ctx)
 	s.installShortcuts()
 	fyne.Do(func() { s.win.Canvas().Focus(s.entry) })
+	if s.autoSend != "" {
+		time.AfterFunc(700*time.Millisecond, func() {
+			fyne.Do(func() {
+				s.entry.SetText(s.autoSend)
+				s.submit()
+			})
+		})
+	}
 	time.AfterFunc(500*time.Millisecond, func() {
 		// GLFW/Wayland ignores pre-show resize hints on some compositors.
 		fyne.Do(func() { s.win.Resize(fyne.NewSize(1100, 750)) })
@@ -273,6 +268,7 @@ func (s *shell) submit() {
 	}
 	s.addUser(text)
 	s.a.Runner.Send(text)
+	s.win.Canvas().Focus(s.entry)
 	s.scroll.ScrollToBottom()
 }
 
@@ -419,6 +415,7 @@ func (s *shell) installShortcuts() {
 	add(fyne.KeyN, fyne.KeyModifierControl, func() { s.a.Runner.NewSession() })
 	add(fyne.KeyB, fyne.KeyModifierControl, s.showSessions)
 	add(fyne.KeyD, fyne.KeyModifierControl, func() { s.a.Runner.Interrupt() })
+	add(fyne.KeyL, fyne.KeyModifierControl, func() { s.win.Canvas().Focus(s.entry) })
 	add(fyne.KeyR, fyne.KeyModifierControl, s.reloadPane)
 	add(fyne.KeyQ, fyne.KeyModifierControl, func() { s.app.Quit() })
 }
@@ -431,14 +428,12 @@ func (s *shell) reloadPane() {
 		s.addNotice("⚠ pane reload: " + err.Error())
 		return
 	}
-	s.harness.LoadScript(src)
-	if err := s.harness.CompileScript(); err != nil {
+	if err := s.harness.LoadScript(src); err != nil {
 		s.addNotice("⚠ pane reload: " + err.Error())
 		return
 	}
 	s.paneSrc = src
 	s.harness.Execute()
-	s.paneAPI.Ready()
 	s.addNotice("✔ harness pane reloaded")
 }
 
@@ -668,6 +663,9 @@ func (s *shell) handleEvent(e map[string]any) {
 			}
 		}
 		s.scroll.ScrollToBottom()
+		if s.autoQuit {
+			time.AfterFunc(1500*time.Millisecond, func() { fyne.Do(func() { s.app.Quit() }) })
+		}
 	case "session.started":
 		s.resetChat()
 		s.win.SetTitle("Anneal")

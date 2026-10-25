@@ -67,10 +67,14 @@ older all-Risor UI is still available as `anneal-legacy`.
 | Ctrl+N | new session |
 | Ctrl+B | session picker |
 | Ctrl+D | stop the current run |
+| Ctrl+L | focus the composer |
 | Ctrl+R | reload the scripted harness pane |
 | Ctrl+Q | quit |
 
 The legacy UI keeps Ctrl+N/B/D too.
+
+For UI smoke tests without typing, `anneal -send "task" -quit-after-run` fills
+the composer, submits it, and exits after the run finishes.
 
 ## Headless (`anneal-headless`)
 

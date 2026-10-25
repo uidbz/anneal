@@ -15,6 +15,14 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 - [x] **M7** background review + journey + notifications
 - [x] **M8** MCP + polish
 - [x] **M9** headless CLI (anneal-headless)
+- [x] **M10** editable harness components + Harness² plan
+- [x] **M11** sandboxed probe/replay infrastructure
+- [x] **M12** contrastive Propose–Probe–Compose step (k=1)
+- [x] **M13** improvement library + evidence-gated reflection
+- [x] **M14** k-step recursion with governors and resume
+- [x] **M15** Go harness panel (now a scripted `CanvasObject` pane)
+- [x] **M16** review→improve bridge via `harness_flag`
+- [~] **H1** hybrid Go shell + scripted panes (rename to Anneal)
 
 Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes below).
 

@@ -19,9 +19,10 @@ A self-improving, opencode-style desktop coding agent in Go.
 - Also: MCP client, subagents, plan/build permission modes, session replay,
   context compaction, headless CLI.
 
-All milestones (M0–M16) are complete. The hybrid UI migration is in progress
-(rename + Go shell + scripted harness pane landed first; see
-[progress.md](progress.md)).
+All milestones (M0–M16) are complete. The hybrid UI migration has landed its
+rename, Go shell, scripted harness pane, event-bus split, and headless
+decoupling; transcript virtualization and the remaining shell surfaces are the
+active follow-ups (see [progress.md](progress.md)).
 
 ## Features
 

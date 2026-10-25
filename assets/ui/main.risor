@@ -26,6 +26,7 @@ let harnessDirty = true
 let harnessMsg = ""   // one-line result of the last save/promote
 let pendingPromote = "" // two-step promote confirmation
 let openExp = ""      // library entry whose EXPERIENCE.md is shown
+let traceEvents = false // true: print unhandled event types (UI development)
 
 // ---------- helpers ----------
 let md = (text) => {
@@ -717,6 +718,12 @@ agent.on((evtJson) => {
             addBlock(label("⚠ " + evt.error))
         }
         return
+    }
+
+    // Unknown event types are ignored by default. Flip traceEvents while
+    // developing a new core→UI event to surface them in the transcript.
+    if (traceEvents) {
+        addBlock(label("· event " + t))
     }
 })
 

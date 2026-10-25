@@ -85,6 +85,23 @@ func fixture(t *testing.T) (*config.Config, *harness.Store, string, *harnesslib.
 	return cfg, h, src, lib
 }
 
+func TestExecutionEvidencePredicate(t *testing.T) {
+	if hasExecutionEvidence(&Result{}) {
+		t.Fatal("empty step admitted")
+	}
+	emptyProbe := &Result{Candidates: []Candidate{{Probe: &probe.Record{}}}}
+	if hasExecutionEvidence(emptyProbe) {
+		t.Fatal("probe with no executed steps admitted")
+	}
+	step := []probe.ToolStep{{Name: "Read", Input: "main.go"}}
+	if !hasExecutionEvidence(&Result{Candidates: []Candidate{{Probe: &probe.Record{Steps: step}}}}) {
+		t.Fatal("candidate evidence rejected")
+	}
+	if !hasExecutionEvidence(&Result{SuccessorProbe: &probe.Record{Steps: step}}) {
+		t.Fatal("successor evidence rejected")
+	}
+}
+
 func TestStepNoEditsBails(t *testing.T) {
 	cfg, h, src, lib := fixture(t)
 	q := &queueLLM{scripts: []*scriptedLLM{

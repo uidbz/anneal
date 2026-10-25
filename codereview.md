@@ -546,22 +546,20 @@ M12 does not break the default endpoint.
 | L6 | `SetMode` no-ops when the mode is unchanged | — |
 | L7 | `SetSessionOverlay` resolves the session id once | — |
 
-### Still deferred (explicitly not fixed)
+### Deferred items — second pass (implemented)
 
-- **M5 shared reviewer toolset.** The two memory/skill tool implementations
-  should move behind a small `toolset` package with callbacks for ledger and
-  event emission. Doing it safely needs a callback contract and would touch
-  three test suites; the current copies are covered and consistent after the
-  `WriteApproval()` change.
-- **M17 headless stale `run.finished` after timeout/interrupt.** Needs run-id
-  correlation (e.g. `Runner.Send` returning its run id) and a reset rule. The
-  one-shot path exits; the REPL path is the risky one.
-- **M20 library entries when the successor probe fails.** Candidate probe
-  evidence is still real evidence; decide explicitly whether that is enough
-  and encode it as a named predicate.
-- **L13-L16 helper consolidation** (`clip`, flat-dir copy, atomic write,
-  unknown-event debug branch). Low value versus churn; revisit when one of the
-  call sites is touched for another reason.
+| ID | change | tests |
+|----|--------|-------|
+| M5 | new `core/toolset` package with one memory tool and one skill tool; the agent supplies UI-event callbacks, the reviewer supplies ledger callbacks | `core/toolset/toolset_test.go`; review/agent tests unchanged and green |
+| M17 | `Runner.StartTask` returns the run id; headless awaits it and drops events from aborted runs (`sink.acceptRun`/`discardRun`) | `cmd/fyagent-headless/main_test.go` |
+| M20 | library admission now goes through `hasExecutionEvidence` (a probe must have executed at least one step; candidate evidence counts) | `TestExecutionEvidencePredicate` |
+| L13 | `core/textutil.Clip` centralizes the five identical truncation helpers (harness keeps its distinct marker) | `core/textutil/textutil_test.go` |
+| L14 | `core/fsutil.CopyFlatDir` replaces the runner/improve flat-copy loops | `core/fsutil/fsutil_test.go` |
+| L15 | `core/fsutil.WriteFileAtomic` replaces the config/memory/flags temp-file+rename copies | `TestWriteFileAtomic` |
+| L16 | `main.risor` has an opt-in `traceEvents` fallback for unhandled event types | UI compile gate |
+
+The second pass is committed separately; `go test -count=1 ./...`,
+`go test -race ./core/...`, `make build`, and `fyagent -check-ui` are green.
 
 ### Residual risks worth knowing
 

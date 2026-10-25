@@ -57,8 +57,12 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
   status (1), promote-without-backup (1).
 - Gate: `go vet`, `go test`, `go test -race ./core/...`, `make build`,
   `fyagent -check-ui` all green.
-- Deferred in the review: shared reviewer toolset, headless stale-run
-  correlation, library-entry evidence predicate, helper consolidation.
+- Deferred items were completed in a second pass: `core/toolset` (one
+  memory/skill tool implementation for the agent + reviewer), headless run-id
+  correlation (late `run.finished` from an aborted run can no longer satisfy
+  the next task), an explicit library `hasExecutionEvidence` predicate,
+  `core/textutil.Clip`, `core/fsutil` atomic write/flat copy, and an opt-in
+  `traceEvents` UI fallback for unknown events.
 
 ### 2026-10-24 — fynerisor gaps fixed upstream (issues #2–#5 closed)
 - User green-lit fixing fynerisor directly (issue-first). Local checkout `/go/src/github.com/uidbz/fynerisor`; fyagent `go.mod` now `replace`s fynerisor to it until a release ships these.

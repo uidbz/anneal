@@ -5,9 +5,9 @@ package config
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"time"
 
+	"fyagent/core/fsutil"
 	"fyagent/core/paths"
 )
 
@@ -212,18 +212,11 @@ func (c *Config) save() error {
 	if c.path == "" {
 		c.path = paths.Config()
 	}
-	if err := os.MkdirAll(filepath.Dir(c.path), 0o755); err != nil {
-		return err
-	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := c.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, c.path)
+	return fsutil.WriteFileAtomic(c.path, data, 0o600)
 }
 
 func (c *Config) normalize() {

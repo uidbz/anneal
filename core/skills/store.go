@@ -18,6 +18,7 @@ import (
 
 	"fyagent/core/config"
 	"fyagent/core/paths"
+	"fyagent/core/textutil"
 
 	"github.com/deepnoodle-ai/dive/skill"
 )
@@ -270,10 +271,7 @@ func (s *Store) Preview(op *Op) string {
 }
 
 func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return textutil.Clip(s, n)
 }
 
 // --- staging ---

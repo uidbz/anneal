@@ -42,6 +42,64 @@ type sink struct {
 	app      *app.App
 	allow    map[string]bool
 	denyAll  bool
+
+	// run correlation: after a timeout/interrupt the aborted run may still
+	// finish; its events are dropped instead of printing or satisfying the
+	// next task's wait.
+	await int
+	stale map[int]bool
+}
+
+func runID(e map[string]any) (int, bool) {
+	switch v := e["run"].(type) {
+	case float64:
+		return int(v), true
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	default:
+		return 0, false
+	}
+}
+
+// acceptRun filters run-scoped events by run id. Events without a numeric
+// run id (provider/review/improve, where "run" is a string or absent) pass.
+func (s *sink) acceptRun(e map[string]any) bool {
+	id, ok := runID(e)
+	if !ok {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stale[id] {
+		// Drop everything the aborted run still emits; its finish is last and
+		// releases the tombstone.
+		if e["type"] == "run.finished" {
+			delete(s.stale, id)
+		}
+		return false
+	}
+	return s.await == 0 || id == s.await
+}
+
+func (s *sink) setAwait(id int) {
+	s.mu.Lock()
+	s.await = id
+	s.mu.Unlock()
+}
+
+func (s *sink) discardRun(id int) {
+	if id == 0 {
+		return
+	}
+	s.mu.Lock()
+	if s.stale == nil {
+		s.stale = map[int]bool{}
+	}
+	s.stale[id] = true
+	s.await = 0
+	s.mu.Unlock()
 }
 
 func (s *sink) handle(v any) {
@@ -54,6 +112,9 @@ func (s *sink) handle(v any) {
 	}
 	var e map[string]any
 	if json.Unmarshal(data, &e) != nil {
+		return
+	}
+	if !s.acceptRun(e) {
 		return
 	}
 	t, _ := e["type"].(string)
@@ -265,9 +326,15 @@ func main() {
 	}()
 
 	runTask := func(task string) int {
-		a.Runner.Send(task)
+		id, ok := a.Runner.StartTask(task)
+		if !ok {
+			fmt.Fprintln(os.Stderr, "fyagent-headless: a run is already active")
+			return 1
+		}
+		s.setAwait(id)
 		select {
 		case res := <-s.done:
+			s.setAwait(0)
 			if *learn {
 				a.Review.LearnNow()
 				select {
@@ -293,8 +360,10 @@ func main() {
 			}
 			return code
 		case <-ctx.Done():
+			s.discardRun(id)
 			return 130
 		case <-time.After(60 * time.Minute):
+			s.discardRun(id)
 			a.Runner.Interrupt()
 			return 124
 		}

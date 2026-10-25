@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"fyagent/core/fsutil"
 )
 
 // Flag is one reviewer-observed harness deficiency: a work-style gap
@@ -45,18 +46,11 @@ func (s *FlagStore) load() {
 }
 
 func (s *FlagStore) save() error {
-	tmp := s.path + ".tmp"
 	b, err := json.MarshalIndent(s.flags, "", " ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.path)
+	return fsutil.WriteFileAtomic(s.path, b, 0o644)
 }
 
 // Add queues a flag (capped: oldest consumed entries are pruned).

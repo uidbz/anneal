@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"fyagent/core/config"
+	"fyagent/core/fsutil"
 	"fyagent/core/paths"
 )
 
@@ -221,14 +222,7 @@ func (s *Store) Apply(op *Op) (string, error) {
 }
 
 func writeFileAtomic(f, content string) error {
-	if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
-		return err
-	}
-	tmp := f + ".tmp"
-	if err := os.WriteFile(tmp, []byte(content), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, f)
+	return fsutil.WriteFileAtomic(f, []byte(content), 0o600)
 }
 
 // --- staging (write_approval) ---

@@ -2,12 +2,11 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
-	"strings"
 
 	"fyagent/core/paths"
 	"fyagent/core/skills"
+	"fyagent/core/toolset"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -20,68 +19,15 @@ import (
 // skillManageTool lets the agent author and refine skills (SKILL.md dirs
 // under ~/.fyagent/skills, discovered by the dive skill loader next run).
 func (r *Runner) skillManageTool() dive.Tool {
-	type skillInput struct {
-		Action      string `json:"action" description:"list | view | create | patch | write_file | remove"`
-		Name        string `json:"name,omitempty" description:"skill name (lowercase slug)"`
-		Description string `json:"description,omitempty" description:"create: when this skill should be used (one line)"`
-		Content     string `json:"content,omitempty" description:"create: SKILL.md body; write_file: file content"`
-		Path        string `json:"path,omitempty" description:"write_file: support file path inside the skill dir"`
-		Old         string `json:"old,omitempty" description:"patch: unique substring to replace"`
-		New         string `json:"new,omitempty" description:"patch: replacement text"`
-		Reason      string `json:"reason,omitempty" description:"one-line justification (shown when staging)"`
-	}
-	return dive.FuncTool("skill_manage",
-		"Author reusable skills — markdown playbooks auto-loaded into future sessions. Actions: list (see what exists), view (read SKILL.md), create (name+description+body), patch (unique-substring edit — prefer patching a skill when you learn something while using it), write_file (support file inside the skill), remove (archives the skill). Keep skills practical: steps, commands, gotchas.",
-		func(ctx context.Context, in *skillInput) (*dive.ToolResult, error) {
-			if r.skills == nil || !r.cfg.Skills.Enabled {
-				return dive.NewToolResultText("skill_manage: disabled"), nil
-			}
-			switch in.Action {
-			case "list":
-				list := r.skills.List()
-				if len(list) == 0 {
-					return dive.NewToolResultText("skills: none installed."), nil
-				}
-				var sb strings.Builder
-				fmt.Fprintf(&sb, "%d skills:\n", len(list))
-				for _, it := range list {
-					fmt.Fprintf(&sb, "- %s (%d chars): %s\n", it.Name, it.Chars, it.Description)
-				}
-				return dive.NewToolResultText(sb.String()), nil
-			case "view":
-				content, err := r.skills.View(in.Name)
-				if err != nil {
-					return dive.NewToolResultText("skill_manage: " + err.Error()), nil
-				}
-				return dive.NewToolResultText(content), nil
-			}
-			op := &skills.Op{
-				Action: in.Action, Name: in.Name, Description: in.Description,
-				Content: in.Content, Path: in.Path, Old: in.Old, New: in.New,
-				Reason: in.Reason, Source: "agent",
-			}
-			if err := r.skills.Validate(op); err != nil {
-				return dive.NewToolResultText("skill_manage: " + err.Error()), nil
-			}
-			if r.cfg.Skills.WriteApproval {
-				staged, err := r.skills.Stage(op)
-				if err != nil {
-					return dive.NewToolResultText("skill_manage: " + err.Error()), nil
-				}
-				r.emit(map[string]any{"type": "skill.stage", "op": staged,
-					"preview": r.skills.Preview(op)})
-				return dive.NewToolResultText(fmt.Sprintf(
-					"skill_manage: staged for user approval (id %s). NOT applied yet — the user sees the diff first.", staged.ID)), nil
-			}
-			result, err := r.skills.Apply(op)
-			if err != nil {
-				return dive.NewToolResultText("skill_manage: " + err.Error()), nil
-			}
-			r.emit(map[string]any{"type": "skill.applied", "action": op.Action, "name": op.Name})
-			return dive.NewToolResultText("skill_manage: " + result), nil
+	return toolset.SkillTool(r.skills, "agent", toolset.SkillCallbacks{
+		Stage: func(op, staged *skills.Op) {
+			r.emit(map[string]any{"type": "skill.stage", "op": staged,
+				"preview": r.skills.Preview(op)})
 		},
-		// Gate is staging/write_approval (see memory tool reasoning).
-		dive.WithFuncToolAnnotations(&dive.ToolAnnotations{ReadOnlyHint: true, Title: "Skill manager"}))
+		Apply: func(op *skills.Op, _ string) {
+			r.emit(map[string]any{"type": "skill.applied", "action": op.Action, "name": op.Name})
+		},
+	})
 }
 
 // skillLoader builds the dive skill loader for one run: fyagent-managed

@@ -20,10 +20,12 @@ import (
 
 	"fyagent/core/agent"
 	"fyagent/core/config"
+	"fyagent/core/fsutil"
 	"fyagent/core/harness"
 	"fyagent/core/harnesslib"
 	"fyagent/core/paths"
 	"fyagent/core/probe"
+	"fyagent/core/textutil"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -132,10 +134,7 @@ func tokens(r *Result) int {
 }
 
 func clip(s string, n int) string {
-	if n <= 0 || len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return textutil.Clip(s, n)
 }
 
 // Step runs one contrastive improvement step (k=1), or a budgeted
@@ -511,7 +510,8 @@ func stepOnce(ctx context.Context, opts *Options, dir, runid string, iter int,
 			"You distill one harness improvement step into library experience notes. Terse; unsupported means NONE.",
 			reflectorTask(opts.Task, res.Decisions, contrasts.String(), clip(refd, 2500), succ))
 		res.StageTokens += tin + tout
-		if err == nil && !strings.EqualFold(strings.TrimSpace(note), "NONE") && len(strings.TrimSpace(note)) >= 60 {
+		if err == nil && !strings.EqualFold(strings.TrimSpace(note), "NONE") &&
+			len(strings.TrimSpace(note)) >= 60 && hasExecutionEvidence(res) {
 			id, cerr := opts.Library.CreateEntry(composeDir, opts.Task, opts.SessionID, runid, res.HarnessHash, strings.TrimSpace(note))
 			if cerr == nil {
 				res.LibraryEntry = id
@@ -639,26 +639,7 @@ func layerContents(layers []harness.Layer) []probe.LayerContent {
 }
 
 func copyFiles(src, dst string) error {
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return err
-	}
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(src, e.Name()))
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(dst, e.Name()), data, 0o644); err != nil {
-			return err
-		}
-	}
-	return nil
+	return fsutil.CopyFlatDir(src, dst, nil)
 }
 
 func readFile(p string) string {
@@ -732,6 +713,23 @@ func mdFiles(dir string) []string {
 	return out
 }
 
+// hasExecutionEvidence is the library's admission rule: at least one replay
+// must have actually executed a tool step. A successor probe that never
+// started (wall/cancel) does not by itself justify an entry, but candidate
+// probe evidence does.
+func hasExecutionEvidence(res *Result) bool {
+	if res.SuccessorProbe != nil && len(res.SuccessorProbe.Steps) > 0 {
+		return true
+	}
+	for _, c := range res.Candidates {
+		if c.Probe != nil && len(c.Probe.Steps) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// writeStep persists the step record.
 func writeStep(dir string, res *Result) error {
 	res.FinishedAt = time.Now().UTC()
 	b, err := json.MarshalIndent(res, "", "  ")

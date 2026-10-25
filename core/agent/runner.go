@@ -5,19 +5,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"fyagent/core/config"
+	"fyagent/core/fsutil"
 	"fyagent/core/harness"
 	"fyagent/core/memory"
 	"fyagent/core/model"
 	"fyagent/core/paths"
 	"fyagent/core/review"
 	"fyagent/core/skills"
+	"fyagent/core/textutil"
 	"fyagent/core/tieindex"
 	"fyagent/core/uiapi"
 
@@ -159,7 +160,7 @@ func (r *Runner) Cwd() string { return r.cwd }
 func (r *Runner) SetSessionOverlay(srcDir string) error {
 	sid := r.SessionID()
 	dst := filepath.Join(paths.Overlays(), sid)
-	if err := copyTree(srcDir, dst); err != nil {
+	if err := fsutil.CopyFlatDir(srcDir, dst, nil); err != nil {
 		return err
 	}
 	r.emit(map[string]any{"type": "harness.overlay", "session": sid, "dir": dst})
@@ -175,26 +176,7 @@ func (r *Runner) sessionOverlayLayers() []harness.Layer {
 }
 
 func copyTree(src, dst string) error {
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(src, e.Name()))
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(dst, e.Name()), data, 0o644); err != nil {
-			return err
-		}
-	}
-	return nil
+	return fsutil.CopyFlatDir(src, dst, nil)
 }
 
 // SetReview attaches the background review manager (nil = no loop).
@@ -228,22 +210,30 @@ func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge,
 
 // Send starts a run; at most one run is active.
 func (r *Runner) Send(input string) {
+	r.StartTask(input)
+}
+
+// StartTask starts a run and returns its run id. ok is false when a run is
+// already active (a run.busy event is still emitted). Callers that must
+// correlate events with the run they started use this instead of Send.
+func (r *Runner) StartTask(input string) (id int, ok bool) {
 	r.mu.Lock()
 	if r.running {
 		r.mu.Unlock()
 		r.bridge.Emit(map[string]any{"type": "run.busy"})
-		return
+		return 0, false
 	}
 	r.running = true
 	r.runSeq++
 	r.lastTask = input
 	r.lastAct = time.Now()
-	id := r.runSeq
+	id = r.runSeq
 	r.mu.Unlock()
 	if r.review != nil {
 		r.review.Interrupt() // foreground preempts background
 	}
 	go r.run(id, input)
+	return id, true
 }
 
 // Busy reports whether a foreground run is active.
@@ -530,10 +520,7 @@ func previewJSON(v any, max int) string {
 }
 
 func clip(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "…"
+	return textutil.Clip(s, max)
 }
 
 // deltaBatcher coalesces text deltas so the script handler sees ≤ ~20/s.

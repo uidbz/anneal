@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"fyagent/core/paths"
+	"fyagent/core/textutil"
 )
 
 type Store struct {
@@ -307,10 +308,7 @@ func mdFiles(dir string) []string {
 }
 
 func clip(s string, n int) string {
-	if n <= 0 || len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return textutil.Clip(s, n)
 }
 
 func tokens(s string) []string {

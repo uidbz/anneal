@@ -10,6 +10,7 @@ import (
 
 	"fyagent/core/config"
 	"fyagent/core/model"
+	"fyagent/core/textutil"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -59,10 +60,7 @@ type Record struct {
 
 // clip truncates a string to n chars.
 func clip(s string, n int) string {
-	if n <= 0 || len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return textutil.Clip(s, n)
 }
 
 // Run executes the task once with the base toolkit (no memory/skills/

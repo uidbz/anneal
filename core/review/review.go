@@ -17,6 +17,7 @@ import (
 	"fyagent/core/memory"
 	"fyagent/core/skills"
 	"fyagent/core/tieindex"
+	"fyagent/core/toolset"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -301,92 +302,29 @@ func (m *Manager) reviewerTools(ledger *[]LedgerEntry, sessions string) []dive.T
 		toolkit.NewGrepTool(),
 		toolkit.NewListDirectoryTool(),
 	}
-	type memIn struct {
-		Target  string `json:"target"`
-		Action  string `json:"action"`
-		Content string `json:"content,omitempty"`
-		Old     string `json:"old,omitempty"`
-		New     string `json:"new,omitempty"`
-		Reason  string `json:"reason,omitempty"`
-	}
-	tools = append(tools, dive.FuncTool("memory",
-		"Save/patch/remove durable facts (same store the main agent uses; writes may be staged for user approval).",
-		func(ctx context.Context, in *memIn) (*dive.ToolResult, error) {
-			op := &memory.Op{Target: in.Target, Action: in.Action, Content: in.Content,
-				Old: in.Old, New: in.New, Reason: in.Reason, Source: "review"}
-			if err := m.mem.Validate(op); err != nil {
-				return dive.NewToolResultText("memory: " + err.Error()), nil
-			}
-			if m.mem.WriteApproval() {
-				staged, err := m.mem.Stage(op)
-				if err != nil {
-					return dive.NewToolResultText("memory: " + err.Error()), nil
-				}
-				*ledger = append(*ledger, LedgerEntry{Kind: "memory", Target: in.Target,
-					Action: in.Action, Content: in.Content, Result: "staged " + staged.ID})
-				m.emit(map[string]any{"type": "memory.stage", "op": staged})
-				return dive.NewToolResultText("memory: staged (id " + staged.ID + ") for user approval."), nil
-			}
-			content, err := m.mem.Apply(op)
-			if err != nil {
-				return dive.NewToolResultText("memory: " + err.Error()), nil
-			}
-			*ledger = append(*ledger, LedgerEntry{Kind: "memory", Target: in.Target,
-				Action: in.Action, Content: in.Content, Result: fmt.Sprintf("applied (%d chars)", len(content))})
-			return dive.NewToolResultText("memory: applied."), nil
+	tools = append(tools, toolset.MemoryTool(m.mem, "review", toolset.MemoryCallbacks{
+		Stage: func(_ *memory.Op, staged *memory.Op) {
+			*ledger = append(*ledger, LedgerEntry{Kind: "memory", Target: staged.Target,
+				Action: staged.Action, Content: staged.Content, Result: "staged " + staged.ID})
+			m.emit(map[string]any{"type": "memory.stage", "op": staged})
 		},
-		dive.WithFuncToolAnnotations(&dive.ToolAnnotations{ReadOnlyHint: true, Title: "Memory (review)"})))
+		Apply: func(op *memory.Op, content string) {
+			*ledger = append(*ledger, LedgerEntry{Kind: "memory", Target: op.Target,
+				Action: op.Action, Content: op.Content, Result: fmt.Sprintf("applied (%d chars)", len(content))})
+		},
+	}))
 
-	type skIn struct {
-		Action      string `json:"action"`
-		Name        string `json:"name,omitempty"`
-		Description string `json:"description,omitempty"`
-		Content     string `json:"content,omitempty"`
-		Old         string `json:"old,omitempty"`
-		New         string `json:"new,omitempty"`
-		Reason      string `json:"reason,omitempty"`
-	}
-	tools = append(tools, dive.FuncTool("skill_manage",
-		"List/view/create/patch/remove skills (same store as the main agent; writes may be staged).",
-		func(ctx context.Context, in *skIn) (*dive.ToolResult, error) {
-			switch in.Action {
-			case "list":
-				var sb strings.Builder
-				for _, it := range m.sk.List() {
-					fmt.Fprintf(&sb, "- %s: %s\n", it.Name, it.Description)
-				}
-				return dive.NewToolResultText(sb.String()), nil
-			case "view":
-				c, err := m.sk.View(in.Name)
-				if err != nil {
-					return dive.NewToolResultText("skill_manage: " + err.Error()), nil
-				}
-				return dive.NewToolResultText(c), nil
-			}
-			op := &skills.Op{Action: in.Action, Name: in.Name, Description: in.Description,
-				Content: in.Content, Old: in.Old, New: in.New, Reason: in.Reason, Source: "review"}
-			if err := m.sk.Validate(op); err != nil {
-				return dive.NewToolResultText("skill_manage: " + err.Error()), nil
-			}
-			if m.sk.WriteApproval() {
-				staged, err := m.sk.Stage(op)
-				if err != nil {
-					return dive.NewToolResultText("skill_manage: " + err.Error()), nil
-				}
-				*ledger = append(*ledger, LedgerEntry{Kind: "skill", Action: in.Action,
-					Name: in.Name, Result: "staged " + staged.ID})
-				m.emit(map[string]any{"type": "skill.stage", "op": staged})
-				return dive.NewToolResultText("skill_manage: staged (id " + staged.ID + ") for user approval."), nil
-			}
-			res, err := m.sk.Apply(op)
-			if err != nil {
-				return dive.NewToolResultText("skill_manage: " + err.Error()), nil
-			}
-			*ledger = append(*ledger, LedgerEntry{Kind: "skill", Action: in.Action,
-				Name: in.Name, Result: res})
-			return dive.NewToolResultText("skill_manage: " + res), nil
+	tools = append(tools, toolset.SkillTool(m.sk, "review", toolset.SkillCallbacks{
+		Stage: func(op, staged *skills.Op) {
+			*ledger = append(*ledger, LedgerEntry{Kind: "skill", Action: op.Action,
+				Name: op.Name, Result: "staged " + staged.ID})
+			m.emit(map[string]any{"type": "skill.stage", "op": staged})
 		},
-		dive.WithFuncToolAnnotations(&dive.ToolAnnotations{ReadOnlyHint: true, Title: "Skill manager (review)"})))
+		Apply: func(op *skills.Op, result string) {
+			*ledger = append(*ledger, LedgerEntry{Kind: "skill", Action: op.Action,
+				Name: op.Name, Result: result})
+		},
+	}))
 
 	if m.flags != nil {
 		type flagIn struct {

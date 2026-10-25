@@ -94,6 +94,8 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
   historical `fyagent-memory` detection remain.
 - Activity tab: journey timeline + improvement-run records with candidate
   outcomes/decisions/successor/library entry; Ctrl+1/2/3 switch tabs.
+- Local checkout renamed `fynerisor-agent` → `~/src/anneal`; GitHub remote is
+  `uidbz/anneal`.
 - Gates: build, vet, hermetic tests, race, legacy `-check-ui`, pane
   `-check-ui`; manual launch/screenshot of the hybrid shell and legacy replay.
 

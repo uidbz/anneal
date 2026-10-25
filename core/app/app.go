@@ -12,6 +12,7 @@ import (
 
 	"github.com/uidbz/anneal/core/agent"
 	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/events"
 	"github.com/uidbz/anneal/core/harness"
 	"github.com/uidbz/anneal/core/harnesslib"
 	"github.com/uidbz/anneal/core/improve"
@@ -22,7 +23,6 @@ import (
 	"github.com/uidbz/anneal/core/review"
 	"github.com/uidbz/anneal/core/skills"
 	"github.com/uidbz/anneal/core/tieindex"
-	"github.com/uidbz/anneal/core/uiapi"
 
 	"github.com/deepnoodle-ai/dive/experimental/mcp"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -33,7 +33,7 @@ const healthInterval = 10 * time.Second
 type App struct {
 	Cfg     *config.Config
 	Monitor *model.Monitor
-	Bridge  *uiapi.Bridge
+	Bus     *events.Bus
 	Runner  *agent.Runner
 	Tie     *tieindex.Indexer
 	Mem     *memory.Store
@@ -59,7 +59,7 @@ func New() (*App, error) {
 	if err != nil {
 		wd = "."
 	}
-	a := &App{Cfg: cfg, Bridge: uiapi.New()}
+	a := &App{Cfg: cfg, Bus: events.New()}
 	a.Monitor = model.NewMonitor(cfg.Provider, a.onHealth)
 	a.Harness = harness.New(paths.Harness())
 	if err := a.Harness.Seed(); err != nil {
@@ -68,7 +68,7 @@ func New() (*App, error) {
 	for _, w := range a.Harness.Validate(cfg.Harness.CharLimit) {
 		fmt.Fprintf(os.Stderr, "anneal: harness: %s\n", w)
 	}
-	a.Runner, err = agent.NewRunner(cfg, a.Monitor, a.Bridge, wd, a.Harness)
+	a.Runner, err = agent.NewRunner(cfg, a.Monitor, a.Bus, wd, a.Harness)
 	if err != nil {
 		return nil, err
 	}
@@ -83,9 +83,9 @@ func New() (*App, error) {
 		fmt.Fprintf(os.Stderr, "anneal: harness-lib seed: %v\n", err)
 	}
 	a.Journey = journey.New()
-	a.Bridge.SetTap(a.journeyTap)
+	a.Bus.AddTap(a.journeyTap)
 	a.Review = review.NewManager(&cfg.Review, a.Mem, a.Skills, a.Tie,
-		a.Bridge.Emit,
+		a.Bus.Emit,
 		func() llm.LLM {
 			h := a.Monitor.Current()
 			return model.NewProvider(cfg.Provider, h.Model)
@@ -98,6 +98,10 @@ func New() (*App, error) {
 	a.Runner.SetReview(a.Review)
 	return a, nil
 }
+
+// ReplayState emits the resumed session/mode/todos to whatever UI consumer is
+// attached now (the runner is constructed before the UI exists).
+func (a *App) ReplayState() { a.Runner.ReplayState() }
 
 // journeyTap appends self-improvement events to the journey log.
 func (a *App) journeyTap(v any) {
@@ -150,7 +154,7 @@ func (a *App) ConnectTie() {
 	}
 	_ = a.Tie.Connect() // failures are recorded as degraded state
 	a.Tie.LogState()
-	a.Bridge.Emit(map[string]any{"type": "tie.state", "state": a.Tie.State()})
+	a.Bus.Emit(map[string]any{"type": "tie.state", "state": a.Tie.State()})
 }
 
 // Start starts the health monitor and review scheduler and connects tie/MCP
@@ -254,7 +258,7 @@ func (a *App) ImproveWith(ctx context.Context, kOverride int, modeOverride, resu
 		SessionID:      sid,
 		Task:           task,
 		RefDigest:      digest,
-		Emit:           a.Bridge.Emit,
+		Emit:           a.Bus.Emit,
 		Library:        lib,
 		IndexFn:        indexFn,
 		K:              k,
@@ -287,7 +291,7 @@ func (a *App) onHealth(h model.Health) {
 	}
 	a.lastHealth = doc
 	a.healthMu.Unlock()
-	a.Bridge.Emit(map[string]any{"type": "provider.state", "health": h})
+	a.Bus.Emit(map[string]any{"type": "provider.state", "health": h})
 }
 
 func toJSON(v any) string {

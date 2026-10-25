@@ -293,7 +293,7 @@ func main() {
 	// One ordered consumer: a goroutine per event would reorder text deltas
 	// and could deliver run.finished before message.final/tool.result.
 	events := make(chan any, 1024)
-	a.Bridge.AddTap(func(v any) { events <- v })
+	a.Bus.AddTap(func(v any) { events <- v })
 	go func() {
 		for v := range events {
 			s.handle(v)

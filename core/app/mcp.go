@@ -72,5 +72,5 @@ func (a *App) emitMCPState() {
 	for _, n := range names {
 		out = append(out, srv{Name: n, Connected: status[n], Tools: len(a.MCP.GetToolsByServer(n))})
 	}
-	a.Bridge.Emit(map[string]any{"type": "mcp.state", "servers": out})
+	a.Bus.Emit(map[string]any{"type": "mcp.state", "servers": out})
 }

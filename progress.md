@@ -60,8 +60,15 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
   typed `Runner.Sessions()`, narrow `App.HarnessAPI()`.
 - Tests: paths migration/env precedence, config legacy env alias, tap
   composition/tap-only, shell event rendering with the Fyne test driver.
+- Phase 3 progress: memory/skill staged approval cards in the Go shell, a
+  `settings` dialog editing the full `config.json`, and Ctrl+N/B/D/R/Q
+  shortcuts.
+- Phase 4: `core/events.Bus` is now the UI-agnostic fan-out; `core/uiapi` is
+  only the script adapter. `go list -deps ./cmd/anneal-headless` has no
+  Fyne/fynerisor/risor dependency. The harness pane no longer receives
+  `WithHostWindow` (no script access to close/dialogs/shortcuts).
 - Gates: build, vet, hermetic tests, race, legacy `-check-ui`, pane
-  `-check-ui`; manual launch/screenshot of the hybrid shell.
+  `-check-ui`; manual launch/screenshot of the hybrid shell and legacy replay.
 
 ### 2026-10-25 — full code review + fix pass ([codereview.md](codereview.md))
 - Reviewed every first-party Go file + the Risor UI. Fixed the provider-probe

@@ -18,59 +18,34 @@ import (
 	"time"
 
 	"github.com/deepnoodle-ai/risor/v2/pkg/object"
+	"github.com/uidbz/anneal/core/events"
 	"github.com/uidbz/fynerisor/gui"
 	"github.com/uidbz/fynerisor/gui/guithread"
 	"github.com/uidbz/fynerisor/gui/vmguard"
 )
 
-// Bridge is the object exposed to Risor scripts as the global `agent`.
+// Bridge is the object exposed to Risor scripts as the global `agent`. It is
+// a script adapter over the UI-agnostic events.Bus.
 type Bridge struct {
-	fw *gui.Window
+	bus *events.Bus
+	fw  *gui.Window
 
 	mu       sync.Mutex
 	handler  *object.Closure
 	callFunc object.CallFunc
-	queue    []string    // events queued before handler registration / Ready
-	ready    bool        // true once fw.Execute has created the callback channel
-	taps     []func(any) // observers of every emitted event (journey log, Go UI)
-	tapOnly  bool        // Go UI mode: taps consume events, nothing is buffered
+	queue    []string // events queued before handler registration / Ready
+	ready    bool     // true once fw.Execute has created the callback channel
 }
 
-// SetTap installs the (single) observer invoked on every Emit before delivery.
-func (b *Bridge) SetTap(fn func(any)) {
-	b.mu.Lock()
-	if fn == nil {
-		b.taps = nil
-	} else {
-		b.taps = []func(any){fn}
+// New creates a script bridge over bus; nil is allowed for isolated tests.
+// Call Attach once the fynerisor window exists and Ready after Execute (its
+// callback channel only exists from then on).
+func New(bus *events.Bus) *Bridge {
+	b := &Bridge{bus: bus}
+	if bus != nil {
+		bus.AddTap(b.consume)
 	}
-	b.mu.Unlock()
-}
-
-// AddTap adds an observer without replacing existing taps (e.g. the journey
-// log plus a Go UI consumer).
-func (b *Bridge) AddTap(fn func(any)) {
-	if fn == nil {
-		return
-	}
-	b.mu.Lock()
-	b.taps = append(b.taps, fn)
-	b.mu.Unlock()
-}
-
-// SetTapOnly marks the bridge as consumed by Go code through taps: events are
-// no longer marshaled, queued, or delivered to a script handler.
-func (b *Bridge) SetTapOnly() {
-	b.mu.Lock()
-	b.tapOnly = true
-	b.queue = nil
-	b.mu.Unlock()
-}
-
-// New creates the bridge; call Attach once the fynerisor window exists and
-// Ready after fw.Execute (its callback channel only exists from then on).
-func New() *Bridge {
-	return &Bridge{}
+	return b
 }
 
 // Attach connects the bridge to its fynerisor window (for GUI-thread dispatch).
@@ -136,31 +111,25 @@ func (b *Bridge) Ready() {
 	}
 }
 
-// Emit publishes a core event to the script handler as JSON. Safe from any
-// goroutine. Events emitted before Ready or before a handler is registered
-// are buffered (bounded). Taps always run (outside the lock) in registration
-// order; tap-only bridges never marshal or queue.
+// Emit publishes an event. With a bus, the bus fans it out to every observer
+// (including this bridge); without one it is delivered directly (tests).
 func (b *Bridge) Emit(v any) {
-	b.mu.Lock()
-	taps := append([]func(any){}, b.taps...)
-	tapOnly := b.tapOnly
-	b.mu.Unlock()
-
-	payload := ""
-	if !tapOnly {
-		data, err := json.Marshal(v)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "uiapi: marshal event: %v\n", err)
-			return
-		}
-		payload = string(data)
-	}
-	for _, tap := range taps {
-		tap(v) // never call user code while holding the bridge lock
-	}
-	if tapOnly {
+	if b.bus != nil {
+		b.bus.Emit(v)
 		return
 	}
+	b.consume(v)
+}
+
+// consume is the bus observer for script delivery: marshal to JSON, queue
+// before the handler/Ready, then dispatch on the GUI thread.
+func (b *Bridge) consume(v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "uiapi: marshal event: %v\n", err)
+		return
+	}
+	payload := string(data)
 	b.mu.Lock()
 	if !b.ready || b.handler == nil {
 		if len(b.queue) < 4096 {
@@ -229,6 +198,10 @@ func (b *Bridge) API() map[string]any {
 				return object.Errorf("agent.on: unable to get call function"), nil
 			}
 			b.setOn(cb, callFunc)
+			return object.Nil, nil
+		}),
+		"quit": object.NewBuiltin("agent.quit", func(context.Context, ...object.Object) (object.Object, error) {
+			b.Quit()
 			return object.Nil, nil
 		}),
 	}

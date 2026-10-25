@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/uidbz/anneal/core/config"
-	"github.com/uidbz/anneal/core/uiapi"
+	"github.com/uidbz/anneal/core/events"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -31,7 +31,7 @@ func (f *recapLLM) Generate(ctx context.Context, opts ...llm.Option) (*llm.Respo
 }
 
 func TestPreGenCompactionHook(t *testing.T) {
-	r := &Runner{cfg: &config.Config{}, bridge: uiapi.New()}
+	r := &Runner{cfg: &config.Config{}, bus: events.New()}
 
 	// Build a transcript well over a tiny threshold.
 	var msgs []*llm.Message

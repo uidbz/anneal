@@ -12,7 +12,8 @@ The stable shell is Go/Fyne; scripted `CanvasObject` panes use fynerisor.
                     └──────────┬────────────────────────┬────────────┘
                                │        core/app (wiring)
                     ┌──────────┴────────────────────────────────────┐
-                    │ core/uiapi Bridge (script panes + Go taps)    │
+                    │ core/events.Bus (UI-agnostic fan-out)         │
+                    │ core/uiapi (script adapter: queue/Ready/vmguard)│
                     ├───────────────────────────────────────────────┤
                     │ core/agent  Runner: dive Agent per run        │
                     │   toolkit+meta tools · permissions · hooks    │
@@ -50,12 +51,12 @@ The stable shell is Go/Fyne; scripted `CanvasObject` panes use fynerisor.
   `assets/ui/main.risor` (`ANNEAL_UI_DIR` hot reload) and remains the target
   for the existing e2e drivers during the migration.
 - **Threading rule:** Go never touches Fyne widgets from its own goroutines.
-  The Go shell marks the bridge tap-only (`SetTapOnly`) and installs one
-  `AddTap` consumer; a single goroutine normalizes events and updates widgets
-  through `fyne.Do`. The journey log is another tap, composed rather than
-  replaced. Scripted panes use `uiapi.Bridge` with `Attach(view.Window())`:
-  events are JSON-marshaled and queued onto fynerisor's `functionCalls`
-  channel; pre-handler events are buffered (≤4096) until `Ready()`/`setOn`.
+  `core/events.Bus` is the UI-agnostic fan-out: the journey log, Go shell, and
+  headless sink are taps. The Go shell installs one `AddTap` consumer; a single
+  goroutine normalizes events and updates widgets through `fyne.Do`.
+  `uiapi.Bridge` is the script adapter: it subscribes to the bus, marshals to
+  JSON, and queues onto fynerisor's `functionCalls` channel; pre-handler events
+  are buffered (≤4096) until `Ready()`/`setOn`.
 - **Compile gate:** the embedded harness pane is compiled at boot and by
   `anneal -check-ui`; the legacy full UI is compiled by
   `anneal-legacy -check-ui`. A broken script fails fast instead of producing

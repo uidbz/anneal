@@ -44,9 +44,10 @@ All milestones (M0–M16) are complete. The hybrid UI migration is in progress
 ## Requirements
 
 - Go ≥ 1.27 (`go.mod` pins `go 1.27.2`)
-- Fyne C dependencies for the GUI build (X11/Wayland dev libs, OpenGL) —
-  same as any Fyne app; `anneal-headless` links the same core, so it needs them
-  at build time too, but runs without a display.
+- Fyne C dependencies (X11/Wayland dev libs, OpenGL) for the GUI binaries
+  (`anneal`, `anneal-legacy`) — same as any Fyne app.
+- `anneal-headless` no longer imports Fyne/fynerisor (the event bus is
+  UI-agnostic), so it builds and runs without GUI libraries.
 
 ## Build
 

@@ -74,6 +74,24 @@ func TestShellEventRendering(t *testing.T) {
 	}
 
 	sh.handleEvent(normalizeEvent(map[string]any{
+		"type": "memory.stage",
+		"op":   map[string]any{"id": "mem-0123456789abcdef", "target": "user", "action": "add", "content": "prefers tabs", "source": "agent"},
+	}))
+	sh.handleEvent(normalizeEvent(map[string]any{
+		"type":    "skill.stage",
+		"op":      map[string]any{"id": "skill-0123456789abcdef", "action": "create", "name": "s", "source": "review"},
+		"preview": "new skill s",
+	}))
+	if len(sh.permRows) != 2 {
+		t.Fatalf("stage cards: %d", len(sh.permRows))
+	}
+	sh.handleEvent(normalizeEvent(map[string]any{"type": "memory.resolved", "id": "mem-0123456789abcdef", "approved": true}))
+	sh.handleEvent(normalizeEvent(map[string]any{"type": "skill.resolved", "id": "skill-0123456789abcdef", "approved": false}))
+	if len(sh.permRows) != 0 {
+		t.Fatalf("stage cards not removed: %d", len(sh.permRows))
+	}
+
+	sh.handleEvent(normalizeEvent(map[string]any{
 		"type": "run.finished", "run": 1, "ok": true, "text": "**hello**", "error": "",
 		"usage": map[string]any{"tin": 10, "tout": 5}, "ctx_pct": 7,
 	}))

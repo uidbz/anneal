@@ -16,12 +16,12 @@ import (
 	"github.com/uidbz/anneal/assets"
 	"github.com/uidbz/anneal/core/agent"
 	coreapp "github.com/uidbz/anneal/core/app"
-	"github.com/uidbz/anneal/core/uiapi"
 
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 	"github.com/uidbz/fynerisor/gui"
 )
@@ -103,7 +103,7 @@ type shell struct {
 	todos    *fyne.Container
 	tabs     *container.AppTabs
 	harness  *gui.CanvasObject
-	paneAPI  *uiapi.Bridge
+	paneSrc  string
 	permRows map[string]fyne.CanvasObject
 
 	header   fyne.CanvasObject
@@ -122,6 +122,7 @@ func newShell(a *coreapp.App, app fyne.App, win fyne.Window, paneSrc string) (*s
 		win:      win,
 		permRows: map[string]fyne.CanvasObject{},
 		mode:     a.Runner.Mode(),
+		paneSrc:  paneSrc,
 	}
 	s.build()
 	if err := s.buildHarness(paneSrc); err != nil {
@@ -147,6 +148,7 @@ func (s *shell) build() {
 	})
 	newBtn := widget.NewButton("+ new", func() { s.a.Runner.NewSession() })
 	sessBtn := widget.NewButton("sessions", s.showSessions)
+	settingsBtn := widget.NewButton("settings", s.showSettings)
 
 	s.entry = widget.NewEntry()
 	s.entry.PlaceHolder = "describe a task — Enter to send"
@@ -161,7 +163,7 @@ func (s *shell) build() {
 	stopBtn := widget.NewButton("stop", func() { s.a.Runner.Interrupt() })
 
 	s.header = container.NewVBox(
-		container.NewHBox(s.modeBtn, newBtn, sessBtn, widget.NewSeparator(), s.status),
+		container.NewHBox(s.modeBtn, newBtn, sessBtn, settingsBtn, widget.NewSeparator(), s.status),
 		container.NewHBox(s.usage, s.tie, s.mcp),
 	)
 	s.composer = container.NewBorder(nil, nil, nil,
@@ -170,7 +172,6 @@ func (s *shell) build() {
 
 func (s *shell) buildHarness(src string) error {
 	view := gui.NewCanvasObject(src,
-		gui.WithHostWindow(s.win),
 		gui.WithJSON(),
 		gui.WithStrings(),
 		gui.WithStatusCallback(func(status string) {
@@ -179,11 +180,7 @@ func (s *shell) buildHarness(src string) error {
 			}
 		}))
 	s.harness = view
-	s.paneAPI = uiapi.New()
-	s.paneAPI.Attach(view.Window())
-	api := s.a.HarnessAPI()
-	api["on"] = s.paneAPI.API()["on"]
-	view.Window().RegisterGlobal("agent", api)
+	view.Window().RegisterGlobal("agent", s.a.HarnessAPI())
 	if err := view.CompileScript(); err != nil {
 		return fmt.Errorf("harness pane: %w", err)
 	}
@@ -207,9 +204,8 @@ func (s *shell) wireLayout() {
 // header/composer/root are set by build/wireLayout.
 
 func (s *shell) start(ctx context.Context) {
-	s.a.Bridge.SetTapOnly()
 	events := make(chan any, 1024)
-	s.a.Bridge.AddTap(func(v any) { events <- v })
+	s.a.Bus.AddTap(func(v any) { events <- v })
 	go func() {
 		for v := range events {
 			ev := normalizeEvent(v)
@@ -217,13 +213,12 @@ func (s *shell) start(ctx context.Context) {
 		}
 	}()
 
-	// app.New queued the boot session replay for a script handler; the Go
-	// shell cleared that queue, so replay the current session explicitly.
-	s.a.Runner.OpenSession(s.a.Runner.SessionID())
+	// app.New resumed the session before the Go tap existed.
+	s.a.ReplayState()
 
 	s.harness.Execute()
-	s.paneAPI.Ready()
 	s.a.Start(ctx)
+	s.installShortcuts()
 	fyne.Do(func() { s.win.Canvas().Focus(s.entry) })
 	time.AfterFunc(500*time.Millisecond, func() {
 		// GLFW/Wayland ignores pre-show resize hints on some compositors.
@@ -291,7 +286,7 @@ func (s *shell) slash(line string) {
 			if err != nil {
 				msg["error"] = err.Error()
 			}
-			s.a.Bridge.Emit(msg)
+			s.a.Bus.Emit(msg)
 		}()
 		s.addNotice("index rebuild requested")
 	case "/learn":
@@ -303,7 +298,7 @@ func (s *shell) slash(line string) {
 			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 			defer cancel()
 			if _, err := s.a.Improve(ctx); err != nil {
-				s.a.Bridge.Emit(map[string]any{"type": "improve.error", "error": err.Error()})
+				s.a.Bus.Emit(map[string]any{"type": "improve.error", "error": err.Error()})
 			}
 		}()
 	case "/harness":
@@ -352,6 +347,63 @@ func (s *shell) showText(title, body string) {
 	sc.SetMinSize(fyne.NewSize(640, 420))
 	d := dialog.NewCustom(title, "Close", sc, s.win)
 	d.Show()
+}
+
+func (s *shell) showSettings() {
+	b, err := json.MarshalIndent(s.a.Cfg, "", "  ")
+	if err != nil {
+		s.addNotice("⚠ settings: " + err.Error())
+		return
+	}
+	ed := widget.NewMultiLineEntry()
+	ed.SetText(string(b))
+	ed.Wrapping = fyne.TextWrapOff
+	sc := container.NewVScroll(ed)
+	sc.SetMinSize(fyne.NewSize(720, 480))
+	d := dialog.NewCustomConfirm("Settings — ~/.anneal/config.json", "Save", "Cancel", sc,
+		func(ok bool) {
+			if !ok {
+				return
+			}
+			if err := s.a.SaveConfig(ed.Text); err != nil {
+				s.addNotice("⚠ settings: " + err.Error())
+				return
+			}
+			s.addNotice("✔ settings saved")
+		}, s.win)
+	d.Show()
+}
+
+// installShortcuts wires the same navigation keys as the legacy UI plus a
+// pane reload and quit.
+func (s *shell) installShortcuts() {
+	add := func(key fyne.KeyName, mod fyne.KeyModifier, fn func()) {
+		s.win.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: key, Modifier: mod},
+			func(fyne.Shortcut) { fn() })
+	}
+	add(fyne.KeyN, fyne.KeyModifierControl, func() { s.a.Runner.NewSession() })
+	add(fyne.KeyB, fyne.KeyModifierControl, s.showSessions)
+	add(fyne.KeyD, fyne.KeyModifierControl, func() { s.a.Runner.Interrupt() })
+	add(fyne.KeyR, fyne.KeyModifierControl, s.reloadPane)
+	add(fyne.KeyQ, fyne.KeyModifierControl, func() { s.app.Quit() })
+}
+
+// reloadPane re-reads the pane script from disk (or the embedded copy),
+// recompiles it, and restarts the embedded runtime without touching the shell.
+func (s *shell) reloadPane() {
+	src, err := paneSource(s.a.Cfg.UI.PaneDir)
+	if err != nil {
+		s.addNotice("⚠ pane reload: " + err.Error())
+		return
+	}
+	s.harness.LoadScript(src)
+	if err := s.harness.CompileScript(); err != nil {
+		s.addNotice("⚠ pane reload: " + err.Error())
+		return
+	}
+	s.paneSrc = src
+	s.harness.Execute()
+	s.addNotice("✔ harness pane reloaded")
 }
 
 func (s *shell) addUser(text string) {
@@ -538,11 +590,25 @@ func (s *shell) handleEvent(e map[string]any) {
 	case "perm.request":
 		s.addPerm(e)
 	case "perm.resolved":
-		if row, ok := s.permRows[str(e["id"])]; ok {
-			s.perms.Remove(row)
-			delete(s.permRows, str(e["id"]))
-			s.perms.Refresh()
-		}
+		s.removeCard(str(e["id"]))
+	case "memory.stage":
+		op := obj(e["op"])
+		id := str(op["id"])
+		info := fmt.Sprintf("💾 memory[%s] %s via %s\n%s", str(op["target"]),
+			str(op["action"]), str(op["source"]), memoryOpText(op))
+		s.addApprovalCard(id, info,
+			widget.NewButton("approve", func() { s.a.RespondMemory(id, "approve") }),
+			widget.NewButton("reject", func() { s.a.RespondMemory(id, "reject") }),
+		)
+	case "skill.stage":
+		op := obj(e["op"])
+		id := str(op["id"])
+		info := fmt.Sprintf("🛠 skill[%s] %s via %s\n%s", str(op["action"]),
+			str(op["name"]), str(op["source"]), str(e["preview"]))
+		s.addApprovalCard(id, info,
+			widget.NewButton("approve", func() { s.a.RespondSkill(id, "approve") }),
+			widget.NewButton("reject", func() { s.a.RespondSkill(id, "reject") }),
+		)
 	case "compaction.done":
 		s.addNotice(fmt.Sprintf("🗜 context compacted: %d → %d tokens (%d msgs)",
 			int(num(e["before"])), int(num(e["after"])), int(num(e["msgs"]))))
@@ -592,11 +658,8 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.addNotice("⚠ improve: " + str(e["error"]))
 	case "memory.updated":
 		s.addNotice(fmt.Sprintf("💾 memory %s: %s", str(e["target"]), str(e["action"])))
-	case "memory.stage":
-		s.addNotice("💾 memory write staged — approval cards are Phase 3 of the hybrid UI (use anneal-legacy)")
-	case "skill.stage":
-		s.addNotice("🛠 skill write staged — approval cards are Phase 3 of the hybrid UI (use anneal-legacy)")
 	case "memory.resolved":
+		s.removeCard(str(e["id"]))
 		if str(e["error"]) != "" {
 			s.addNotice("⚠ memory approval: " + str(e["error"]))
 		} else if boolean(e["approved"]) {
@@ -605,11 +668,14 @@ func (s *shell) handleEvent(e map[string]any) {
 	case "skill.applied":
 		s.addNotice(fmt.Sprintf("✔ skill %s: %s", str(e["action"]), str(e["name"])))
 	case "skill.resolved":
+		s.removeCard(str(e["id"]))
 		if str(e["error"]) != "" {
 			s.addNotice("⚠ skill approval: " + str(e["error"]))
 		}
 	case "harness.warning":
 		s.addNotice("⚠ harness: " + str(e["message"]))
+	case "config.changed":
+		s.addNotice("⚙ configuration changed")
 	case "skill.error":
 		s.addNotice("⚠ skill loader: " + str(e["error"]))
 	case "tie.rebuilt":
@@ -660,17 +726,50 @@ func (s *shell) renderTodos(items []any) {
 
 func (s *shell) addPerm(e map[string]any) {
 	id := str(e["id"])
-	info := widget.NewLabel(fmt.Sprintf("🔐 %s — %s\n[%s] %s",
-		str(e["tool"]), str(e["message"]), str(e["grant"]), oneLine(str(e["input"]))))
-	info.Wrapping = fyne.TextWrapWord
-	row := container.NewBorder(nil, nil, nil, container.NewHBox(
+	info := fmt.Sprintf("🔐 %s — %s\n[%s] %s",
+		str(e["tool"]), str(e["message"]), str(e["grant"]), oneLine(str(e["input"])))
+	s.addApprovalCard(id, info,
 		widget.NewButton("allow", func() { s.a.Runner.RespondPerm(id, "allow") }),
 		widget.NewButton("session", func() { s.a.Runner.RespondPerm(id, "session") }),
 		widget.NewButton("deny", func() { s.a.Runner.RespondPerm(id, "deny") }),
-	), info)
+	)
+}
+
+func (s *shell) addApprovalCard(id, info string, buttons ...fyne.CanvasObject) {
+	lbl := widget.NewLabel(info)
+	lbl.Wrapping = fyne.TextWrapWord
+	row := container.NewBorder(nil, nil, nil, container.NewHBox(buttons...), lbl)
 	s.permRows[id] = row
 	s.perms.Add(row)
 	s.perms.Refresh()
+}
+
+func (s *shell) removeCard(id string) {
+	row, ok := s.permRows[id]
+	if !ok {
+		return
+	}
+	s.perms.Remove(row)
+	delete(s.permRows, id)
+	s.perms.Refresh()
+}
+
+func memoryOpText(op map[string]any) string {
+	switch str(op["action"]) {
+	case "add":
+		return "+ " + str(op["content"])
+	case "patch":
+		return shortText(str(op["old"]), 60) + "  →  " + shortText(str(op["new"]), 60)
+	default:
+		return "- " + shortText(str(op["old"]), 60)
+	}
+}
+
+func shortText(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 func modeTitle(mode string) string {

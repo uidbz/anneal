@@ -25,9 +25,12 @@ older all-Risor UI is still available as `anneal-legacy`.
   rebuild the whole window per event.
 - **Approval inbox** (above the transcript): `perm.request` cards with
   **allow** (this call), **session** (same tool/spec for the session), and
-  **deny**.
-- **Header**: plan/build toggle, `+ new`, `sessions`, model health, token/context
-  usage, tie index state, MCP status.
+  **deny**. When `write_approval` is on, staged memory/skill writes appear as
+  cards with an operation preview and **approve/reject**.
+- **Header**: plan/build toggle, `+ new`, `sessions`, `settings`, model health,
+  token/context usage, tie index state, MCP status. `settings` opens the full
+  `config.json` in an editor; saving re-points the health monitor and applies
+  live-capable store settings immediately.
 - **Todo panel** (right): the model's live checklist for multi-step work.
 - **Session picker** (`sessions` or `/sessions`): newest first — click to
   replay/resume.
@@ -57,9 +60,15 @@ older all-Risor UI is still available as `anneal-legacy`.
 
 ### Keyboard
 
-The hybrid shell supports the entry and normal Fyne navigation. Global
-shortcuts (Ctrl+N/B/D/R/Q) are on the Phase 3 list; the legacy UI already has
-Ctrl+N/B/D.
+| shortcut | effect |
+|----------|--------|
+| Ctrl+N | new session |
+| Ctrl+B | session picker |
+| Ctrl+D | stop the current run |
+| Ctrl+R | reload the scripted harness pane |
+| Ctrl+Q | quit |
+
+The legacy UI keeps Ctrl+N/B/D too.
 
 ## Headless (`anneal-headless`)
 

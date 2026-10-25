@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/events"
 	"github.com/uidbz/anneal/core/fsutil"
 	"github.com/uidbz/anneal/core/harness"
 	"github.com/uidbz/anneal/core/memory"
@@ -20,7 +21,6 @@ import (
 	"github.com/uidbz/anneal/core/skills"
 	"github.com/uidbz/anneal/core/textutil"
 	"github.com/uidbz/anneal/core/tieindex"
-	"github.com/uidbz/anneal/core/uiapi"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/experimental/compaction"
@@ -37,7 +37,7 @@ func nowUTC() time.Time { return time.Now().UTC() }
 type Runner struct {
 	cfg     *config.Config
 	monitor *model.Monitor
-	bridge  *uiapi.Bridge
+	bus     *events.Bus
 	cwd     string
 	store   *session.FileStore
 	mgr     *permission.Manager
@@ -182,14 +182,14 @@ func copyTree(src, dst string) error {
 // SetReview attaches the background review manager (nil = no loop).
 func (r *Runner) SetReview(m *review.Manager) { r.review = m }
 
-func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge, cwd string, harn *harness.Store) (*Runner, error) {
+func NewRunner(cfg *config.Config, monitor *model.Monitor, bus *events.Bus, cwd string, harn *harness.Store) (*Runner, error) {
 	if harn == nil {
 		harn = harness.New(paths.Harness())
 	}
 	r := &Runner{
 		cfg:          cfg,
 		monitor:      monitor,
-		bridge:       bridge,
+		bus:          bus,
 		cwd:          cwd,
 		harn:         harn,
 		pendingPerms: make(map[string]chan *dive.DialogOutput),
@@ -198,14 +198,23 @@ func NewRunner(cfg *config.Config, monitor *model.Monitor, bridge *uiapi.Bridge,
 	if err := r.initStore(); err != nil {
 		return nil, err
 	}
-	// Replay the resumed session once the UI handler is attached (queued).
-	blocks := transcriptBlocks(context.Background(), r.sess)
-	bridge.Emit(map[string]any{"type": "session.opened", "id": r.sessID, "title": r.sess.Title(), "blocks": blocks})
-	bridge.Emit(map[string]any{"type": "mode.changed", "mode": r.Mode()})
-	if len(r.todos) > 0 {
-		bridge.Emit(map[string]any{"type": "todo.updated", "items": append([]todoItem{}, r.todos...)})
-	}
 	return r, nil
+}
+
+// ReplayState emits the current session transcript, permission mode, and todos.
+// UI frontends call it after attaching their event consumer: the runner is
+// constructed (and the session resumed) before any tap/script handler exists.
+func (r *Runner) ReplayState() {
+	r.mu.Lock()
+	sess, id := r.sess, r.sessID
+	todos := append([]todoItem{}, r.todos...)
+	r.mu.Unlock()
+	blocks := transcriptBlocks(context.Background(), sess)
+	r.emit(map[string]any{"type": "session.opened", "id": id, "title": sess.Title(), "blocks": blocks})
+	r.emit(map[string]any{"type": "mode.changed", "mode": r.Mode()})
+	if len(todos) > 0 {
+		r.emit(map[string]any{"type": "todo.updated", "items": todos})
+	}
 }
 
 // Send starts a run; at most one run is active.
@@ -220,7 +229,7 @@ func (r *Runner) StartTask(input string) (id int, ok bool) {
 	r.mu.Lock()
 	if r.running {
 		r.mu.Unlock()
-		r.bridge.Emit(map[string]any{"type": "run.busy"})
+		r.bus.Emit(map[string]any{"type": "run.busy"})
 		return 0, false
 	}
 	r.running = true
@@ -278,7 +287,7 @@ func (r *Runner) run(id int, input string) {
 	r.cancel = cancel
 	r.mu.Unlock()
 
-	deltas := newDeltaBatcher(r.bridge, id)
+	deltas := newDeltaBatcher(r.bus, id)
 	defer deltas.close()
 
 	provider := model.NewProvider(r.cfg.Provider, h.Model)
@@ -496,7 +505,7 @@ func (r *Runner) finishRun(id int, ok bool, text, errMsg string, in, outTok, ctx
 		"usage": map[string]any{"tin": in, "tout": outTok}, "ctx_pct": ctxPct})
 }
 
-func (r *Runner) emit(v any) { r.bridge.Emit(v) }
+func (r *Runner) emit(v any) { r.bus.Emit(v) }
 
 func toolResultText(tr *dive.ToolResult) string {
 	var sb strings.Builder
@@ -525,7 +534,7 @@ func clip(s string, max int) string {
 
 // deltaBatcher coalesces text deltas so the script handler sees ≤ ~20/s.
 type deltaBatcher struct {
-	bridge  *uiapi.Bridge
+	bus     *events.Bus
 	run     int
 	mu      sync.Mutex
 	buf     string
@@ -533,8 +542,8 @@ type deltaBatcher struct {
 	pending *time.Timer
 }
 
-func newDeltaBatcher(b *uiapi.Bridge, run int) *deltaBatcher {
-	return &deltaBatcher{bridge: b, run: run}
+func newDeltaBatcher(b *events.Bus, run int) *deltaBatcher {
+	return &deltaBatcher{bus: b, run: run}
 }
 
 const (
@@ -571,7 +580,7 @@ func (d *deltaBatcher) flushLocked() {
 	if d.buf == "" {
 		return
 	}
-	d.bridge.Emit(map[string]any{"type": "text.delta", "run": d.run, "text": d.buf})
+	d.bus.Emit(map[string]any{"type": "text.delta", "run": d.run, "text": d.buf})
 	d.buf = ""
 }
 

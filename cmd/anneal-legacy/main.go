@@ -11,6 +11,7 @@ import (
 	"github.com/uidbz/anneal/assets"
 	"github.com/uidbz/anneal/core/agent"
 	"github.com/uidbz/anneal/core/app"
+	"github.com/uidbz/anneal/core/uiapi"
 
 	"fyne.io/fyne/v2"
 	"github.com/uidbz/fynerisor/gui"
@@ -47,13 +48,18 @@ func main() {
 		return
 	}
 
+	bridge := uiapi.New(a.Bus)
+	api := a.AgentAPI()
+	for name, fn := range bridge.API() {
+		api[name] = fn // on + quit
+	}
 	fw := gui.NewApp("Anneal (legacy)",
 		gui.WithAppName("anneal"),
 		gui.WithJSON(),
 		gui.WithStrings(),
-		gui.WithGlobal("agent", a.AgentAPI()),
+		gui.WithGlobal("agent", api),
 	)
-	a.Bridge.Attach(fw)
+	bridge.Attach(fw)
 
 	src, err := uiSource(a.Cfg.UI.UIDir)
 	if err != nil {
@@ -68,7 +74,8 @@ func main() {
 		return
 	}
 	fw.Execute()
-	a.Bridge.Ready() // core events may flow from here (fynerisor channel exists)
+	bridge.Ready() // core events may flow from here (fynerisor channel exists)
+	a.ReplayState()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

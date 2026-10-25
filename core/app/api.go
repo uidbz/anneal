@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"os"
 	"time"
 )
 
@@ -10,7 +9,7 @@ import (
 // through jsonList so Risor never sees a nil array (dot-access/length on null
 // is a hard script error).
 func (a *App) AgentAPI() map[string]any {
-	api := a.Bridge.API()
+	api := map[string]any{}
 	api["provider"] = func() any { return toJSON(a.Monitor.Current()) }
 	api["config"] = func() any { return toJSON(a.Cfg) }
 	api["probe"] = func() any {
@@ -18,11 +17,9 @@ func (a *App) AgentAPI() map[string]any {
 		return toJSON(a.Monitor.Current())
 	}
 	api["saveConfig"] = func(doc string) any {
-		if err := a.Cfg.Apply([]byte(doc)); err != nil {
+		if err := a.SaveConfig(doc); err != nil {
 			return toJSON(map[string]any{"ok": false, "error": err.Error()})
 		}
-		a.Monitor.SetProvider(a.Cfg.Provider)
-		a.Bridge.Emit(map[string]any{"type": "config.changed"})
 		return toJSON(map[string]any{"ok": true})
 	}
 	api["send"] = func(input string) any {
@@ -74,7 +71,7 @@ func (a *App) AgentAPI() map[string]any {
 			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 			defer cancel()
 			if _, err := a.Improve(ctx); err != nil {
-				a.Bridge.Emit(map[string]any{"type": "improve.error", "error": err.Error()})
+				a.Bus.Emit(map[string]any{"type": "improve.error", "error": err.Error()})
 			}
 		}()
 		return nil
@@ -89,7 +86,7 @@ func (a *App) AgentAPI() map[string]any {
 	api["harnessSave"] = func(name, content string) any {
 		err := a.Harness.SaveFile(name, content)
 		warns := nzs(a.Harness.Validate(a.Cfg.Harness.CharLimit))
-		a.Bridge.Emit(map[string]any{"type": "harness.warn", "warns": warns, "saved": name})
+		a.Bus.Emit(map[string]any{"type": "harness.warn", "warns": warns, "saved": name})
 		return toJSON(map[string]any{"error": errString(err), "warns": warns,
 			"restart_for_rules": true})
 	}
@@ -100,7 +97,7 @@ func (a *App) AgentAPI() map[string]any {
 	api["libPromote"] = func(id string) any {
 		backup, err := a.Libs.Promote(id)
 		warns := nzs(a.Harness.Validate(a.Cfg.Harness.CharLimit))
-		a.Bridge.Emit(map[string]any{"type": "harness.promoted", "entry": id,
+		a.Bus.Emit(map[string]any{"type": "harness.promoted", "entry": id,
 			"backup": backup, "error": errString(err), "warns": warns})
 		a.Journey.Append("harness-promote", map[string]any{"entry": id, "backup": backup})
 		return toJSON(map[string]any{"entry": id, "backup": backup,
@@ -117,36 +114,11 @@ func (a *App) AgentAPI() map[string]any {
 		return jsonList(list)
 	}
 	api["respondSkill"] = func(id, decision string) any {
-		approve := decision == "approve"
-		op, result, err := a.Skills.Resolve(id, approve)
-		out := map[string]any{"type": "skill.resolved", "id": id,
-			"approved": approve, "error": "", "result": result}
-		if op != nil {
-			out["name"] = op.Name
-			out["action"] = op.Action
-		}
-		if err != nil {
-			out["error"] = err.Error()
-		}
-		a.Bridge.Emit(out)
+		a.RespondSkill(id, decision)
 		return nil
 	}
 	api["respondMemory"] = func(id, decision string) any {
-		approve := decision == "approve"
-		op, content, err := a.Mem.Resolve(id, approve)
-		out := map[string]any{"type": "memory.resolved", "id": id,
-			"approved": approve, "error": ""}
-		if op != nil {
-			out["target"] = op.Target
-			out["action"] = op.Action
-		}
-		if err != nil {
-			out["error"] = err.Error()
-		} else if approve {
-			a.Bridge.Emit(map[string]any{"type": "memory.updated",
-				"target": out["target"], "action": out["action"], "content": content})
-		}
-		a.Bridge.Emit(out)
+		a.RespondMemory(id, decision)
 		return nil
 	}
 	api["rebuildIndex"] = func() any {
@@ -156,15 +128,8 @@ func (a *App) AgentAPI() map[string]any {
 			if err != nil {
 				msg["error"] = err.Error()
 			}
-			a.Bridge.Emit(msg)
+			a.Bus.Emit(msg)
 		}()
-		return nil
-	}
-	api["quit"] = func() any {
-		// Failsafe for host-owned windows that ignore Fyne quit; the normal
-		// path returns from ShowAndRun and exits well before this fires.
-		time.AfterFunc(2*time.Second, func() { os.Exit(0) })
-		a.Bridge.Quit()
 		return nil
 	}
 	return api
@@ -175,6 +140,55 @@ func errString(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// SaveConfig applies and persists a full config document, re-points the health
+// monitor, and announces the change. Shared by the script API and the Go shell
+// settings dialog.
+func (a *App) SaveConfig(doc string) error {
+	if err := a.Cfg.Apply([]byte(doc)); err != nil {
+		return err
+	}
+	a.Monitor.SetProvider(a.Cfg.Provider)
+	a.Bus.Emit(map[string]any{"type": "config.changed"})
+	return nil
+}
+
+// RespondSkill resolves one staged skill op (approve/reject) and emits the
+// resolution event.
+func (a *App) RespondSkill(id, decision string) {
+	approve := decision == "approve"
+	op, result, err := a.Skills.Resolve(id, approve)
+	out := map[string]any{"type": "skill.resolved", "id": id,
+		"approved": approve, "error": "", "result": result}
+	if op != nil {
+		out["name"] = op.Name
+		out["action"] = op.Action
+	}
+	if err != nil {
+		out["error"] = err.Error()
+	}
+	a.Bus.Emit(out)
+}
+
+// RespondMemory resolves one staged memory op (approve/reject) and emits the
+// resolution (and update, when applied) events.
+func (a *App) RespondMemory(id, decision string) {
+	approve := decision == "approve"
+	op, content, err := a.Mem.Resolve(id, approve)
+	out := map[string]any{"type": "memory.resolved", "id": id,
+		"approved": approve, "error": ""}
+	if op != nil {
+		out["target"] = op.Target
+		out["action"] = op.Action
+	}
+	if err != nil {
+		out["error"] = err.Error()
+	} else if approve {
+		a.Bus.Emit(map[string]any{"type": "memory.updated",
+			"target": out["target"], "action": out["action"], "content": content})
+	}
+	a.Bus.Emit(out)
 }
 
 // HarnessAPI is the narrow surface exposed to the scripted harness pane. It

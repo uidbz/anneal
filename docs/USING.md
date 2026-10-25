@@ -38,8 +38,9 @@ older all-Risor UI is still available as `anneal-legacy`.
 - **Harness tab**: a fynerisor `CanvasObject` pane. Edit component files
   inline, review guardrail rule counts, browse the improvement library, read
   EXPERIENCE.md, promote with a two-click confirmation, inspect reviewer
-  flags, and start `/improve`. The pane is pull-based; after an action it
-  refreshes itself.
+  flags, and start `/improve`. The pane is pull-based and receives only a
+  filtered harness/improve event feed that updates a notice line; it never
+  gets chat deltas or host-window capabilities. Ctrl+R reloads it.
 - **Legacy UI**: `./bin/anneal-legacy` (same core) for comparison and the
   existing e2e driver scripts.
 

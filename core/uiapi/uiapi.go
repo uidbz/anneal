@@ -27,8 +27,9 @@ import (
 // Bridge is the object exposed to Risor scripts as the global `agent`. It is
 // a script adapter over the UI-agnostic events.Bus.
 type Bridge struct {
-	bus *events.Bus
-	fw  *gui.Window
+	bus    *events.Bus
+	fw     *gui.Window
+	filter func(any) bool
 
 	mu       sync.Mutex
 	handler  *object.Closure
@@ -40,8 +41,13 @@ type Bridge struct {
 // New creates a script bridge over bus; nil is allowed for isolated tests.
 // Call Attach once the fynerisor window exists and Ready after Execute (its
 // callback channel only exists from then on).
-func New(bus *events.Bus) *Bridge {
-	b := &Bridge{bus: bus}
+func New(bus *events.Bus) *Bridge { return NewFiltered(bus, nil) }
+
+// NewFiltered creates a script bridge that only consumes events for which
+// filter returns true (nil = all events). Used by scripted panes so a harness
+// pane never receives chat deltas.
+func NewFiltered(bus *events.Bus, filter func(any) bool) *Bridge {
+	b := &Bridge{bus: bus, filter: filter}
 	if bus != nil {
 		bus.AddTap(b.consume)
 	}
@@ -124,6 +130,9 @@ func (b *Bridge) Emit(v any) {
 // consume is the bus observer for script delivery: marshal to JSON, queue
 // before the handler/Ready, then dispatch on the GUI thread.
 func (b *Bridge) consume(v any) {
+	if b.filter != nil && !b.filter(v) {
+		return
+	}
 	data, err := json.Marshal(v)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "uiapi: marshal event: %v\n", err)

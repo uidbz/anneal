@@ -21,6 +21,7 @@ let short = (s, n) => {
 let msg = ""
 let pendingPromote = ""
 let openExp = ""
+let notice = label("")
 let build = () => {}
 let refresh = () => { build() }
 
@@ -149,8 +150,24 @@ build = () => {
         }
     }
     if (msg != "") { rows = rows + [label(msg)] }
+    rows = rows + [notice]
     window.SetContent(container.NewScroll(container.NewVBox(rows)))
 }
+
+// Narrow live feed from the Go shell (harness/improve lifecycle only). We
+// update a label instead of rebuilding, so unsaved editor text is not lost.
+agent.on((evtJson) => {
+    let e = json.parse(evtJson)
+    let t = e.type
+    if (t == "harness.promoted") { notice.Text = "✔ promoted — restart for rule lines; click refresh" }
+    if (t == "harness.warn") { notice.Text = "⚠ harness files changed — click refresh" }
+    if (t == "harness.warning") { notice.Text = "⚠ " + e.message }
+    if (t == "improve.done") { notice.Text = "🔧 improve finished — click refresh" }
+    if (t == "improve.library") { notice.Text = "🔧 library entry updated — click refresh" }
+    if (t == "improve.error") { notice.Text = "⚠ improve: " + e.error }
+    if (t == "review.flag") { notice.Text = "🪧 reviewer flagged a gap — refresh to see it" }
+    if (t == "config.changed") { notice.Text = "⚙ configuration changed" }
+})
 
 build()
 print("HARNESS-PANE-READY")

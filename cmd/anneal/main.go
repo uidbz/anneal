@@ -16,6 +16,7 @@ import (
 	"github.com/uidbz/anneal/assets"
 	"github.com/uidbz/anneal/core/agent"
 	coreapp "github.com/uidbz/anneal/core/app"
+	"github.com/uidbz/anneal/core/uiapi"
 
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
@@ -110,6 +111,7 @@ type shell struct {
 	todos    *fyne.Container
 	tabs     *container.AppTabs
 	harness  *gui.CanvasObject
+	paneAPI  *uiapi.Bridge
 	paneSrc  string
 	permRows map[string]fyne.CanvasObject
 
@@ -190,11 +192,32 @@ func (s *shell) buildHarness(src string) error {
 			}
 		}))
 	s.harness = view
-	view.Window().RegisterGlobal("agent", s.a.HarnessAPI())
+	s.paneAPI = uiapi.NewFiltered(s.a.Bus, paneEvent)
+	s.paneAPI.Attach(view.Window())
+	api := s.a.HarnessAPI()
+	api["on"] = s.paneAPI.API()["on"]
+	view.Window().RegisterGlobal("agent", api)
 	if err := view.CompileScript(); err != nil {
 		return fmt.Errorf("harness pane: %w", err)
 	}
 	return nil
+}
+
+// paneEvent keeps the scripted pane on a narrow event diet: harness/improve
+// lifecycle only, never chat deltas or permission traffic.
+func paneEvent(v any) bool {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return false
+	}
+	switch m["type"] {
+	case "harness.warn", "harness.warning", "harness.promoted",
+		"improve.done", "improve.library", "improve.error",
+		"review.flag", "config.changed":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *shell) wireLayout() {
@@ -228,6 +251,7 @@ func (s *shell) start(ctx context.Context) {
 	s.a.ReplayState()
 
 	s.harness.Execute()
+	s.paneAPI.Ready()
 	s.a.Start(ctx)
 	s.installShortcuts()
 	fyne.Do(func() { s.win.Canvas().Focus(s.entry) })
@@ -414,6 +438,7 @@ func (s *shell) reloadPane() {
 	}
 	s.paneSrc = src
 	s.harness.Execute()
+	s.paneAPI.Ready()
 	s.addNotice("✔ harness pane reloaded")
 }
 

@@ -61,6 +61,25 @@ func TestTranscriptWindowAndEarlier(t *testing.T) {
 	}
 }
 
+func TestTranscriptBoundsThousandBlocks(t *testing.T) {
+	sh := newTestShell(t)
+	sh.maxVisible = 300
+	for i := 0; i < 1000; i++ {
+		sh.addNotice(fmt.Sprintf("notice %d", i))
+	}
+	if len(sh.visible) != 300 || len(sh.hidden) != 700 {
+		t.Fatalf("window: visible=%d hidden=%d", len(sh.visible), len(sh.hidden))
+	}
+	if got := len(sh.chatBox.Objects); got != 300 {
+		t.Fatalf("layout objects: %d", got)
+	}
+	// Restoring one chunk must not re-render the whole history at once.
+	sh.showEarlier()
+	if len(sh.visible) != 600 || len(sh.hidden) != 400 {
+		t.Fatalf("restore: visible=%d hidden=%d", len(sh.visible), len(sh.hidden))
+	}
+}
+
 func TestShellEventRendering(t *testing.T) {
 	sh := newTestShell(t)
 

@@ -42,6 +42,19 @@ func TestEventHelpers(t *testing.T) {
 	}
 }
 
+func TestPaneEventFilter(t *testing.T) {
+	for _, typ := range []string{"improve.done", "harness.promoted", "review.flag", "config.changed"} {
+		if !paneEvent(map[string]any{"type": typ}) {
+			t.Errorf("%s filtered out", typ)
+		}
+	}
+	for _, typ := range []string{"text.delta", "tool.start", "perm.request", "todo.updated", "memory.stage"} {
+		if paneEvent(map[string]any{"type": typ}) {
+			t.Errorf("%s reached the pane", typ)
+		}
+	}
+}
+
 func TestEmbeddedPaneSource(t *testing.T) {
 	t.Setenv("ANNEAL_PANE_DIR", "")
 	t.Setenv("ANNEAL_UI_DIR", "")
@@ -51,7 +64,8 @@ func TestEmbeddedPaneSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(src, "HARNESS-PANE-READY") || !strings.Contains(src, "agent.harnessInfo") {
+	if !strings.Contains(src, "HARNESS-PANE-READY") || !strings.Contains(src, "agent.harnessInfo") ||
+		!strings.Contains(src, "agent.on") {
 		t.Fatalf("unexpected embedded pane: %.120q", src)
 	}
 }

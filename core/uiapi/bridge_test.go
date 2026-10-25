@@ -30,6 +30,21 @@ func TestReadyKeepsQueueUntilHandler(t *testing.T) {
 	}
 }
 
+func TestFilteredBridge(t *testing.T) {
+	b := NewFiltered(nil, func(v any) bool {
+		m, _ := v.(map[string]any)
+		return m != nil && m["type"] == "wanted"
+	})
+	b.Emit(map[string]any{"type": "ignored"})
+	b.Emit(map[string]any{"type": "wanted"})
+	b.mu.Lock()
+	queued := len(b.queue)
+	b.mu.Unlock()
+	if queued != 1 {
+		t.Fatalf("filtered queue: %d", queued)
+	}
+}
+
 func TestQuitWithoutWindowIsNoop(t *testing.T) {
 	newBridge().Quit() // must not panic before Attach
 }

@@ -78,6 +78,9 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Phase 2 first step: transcript renders at most 300 blocks and restores older
   blocks on demand, so long sessions don't re-layout every historical widget
   per event.
+- Phase 5: pane has no host-window capability; Ctrl+R reloads it; a filtered
+  `agent.on` feed (harness/improve lifecycle only) updates a notice label
+  without rebuilding or losing unsaved editor text.
 - Gates: build, vet, hermetic tests, race, legacy `-check-ui`, pane
   `-check-ui`; manual launch/screenshot of the hybrid shell and legacy replay.
 

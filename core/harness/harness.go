@@ -1,5 +1,5 @@
-// Package harness mounts fyagent's editable harness components as files
-// under ~/.fyagent/harness (Harness²-style, arXiv 2610.14224). Components
+// Package harness mounts Anneal's editable harness components as files
+// under ~/.anneal/harness (Harness²-style, arXiv 2610.14224). Components
 // are re-read per run; missing/empty components mean "pure base harness".
 //
 //	<root>/system.md         appended to the system prompt (persona/workstyle)
@@ -7,7 +7,7 @@
 //	                         ("deny: Bash(rm -rf *)", "ask: Write(...)",
 //	                         "allow: Bash(go test *)") enforced as permission
 //	                         rules at Runner creation (restart to apply)
-//	<root>/tool-guidance.md  appended context on how to use fyagent's tools
+//	<root>/tool-guidance.md  appended context on how to use Anneal's tools
 //	<root>/subagents/*.md    dive subagent FileLoader format (description /
 //	                         tools / disallowed-tools frontmatter + prompt
 //	                         body); file definitions override built-ins
@@ -42,7 +42,7 @@ func (s *Store) Root() string         { return s.root }
 func (s *Store) subagentsDir() string { return filepath.Join(s.root, "subagents") }
 func (s *Store) scriptsDir() string   { return filepath.Join(s.root, "scripts") }
 
-const readme = `# fyagent harness components
+const readme = `# Anneal harness components
 
 Editable files mounted into every run (Harness²-style recursive harnessing).
 Empty or missing = unchanged base behavior.
@@ -53,7 +53,7 @@ Empty or missing = unchanged base behavior.
                      ask: Write(**/*.env)
                      allow: Bash(go test *)
                    are machine-enforced permission rules (applied at
-                   startup; restart fyagent after changing them)
+                   startup; restart anneal after changing them)
 - tool-guidance.md extra per-tool usage notes for the model
 - subagents/       one .md per subagent: YAML frontmatter with
                      description: when to use me
@@ -66,7 +66,7 @@ Empty or missing = unchanged base behavior.
 Keep each injected component under the configured char limit
 (config.json harness.char_limit, default 6000); longer content truncates.
 Agent-authored harness edits arrive through the improvement library's
-promote flow (~/.fyagent/harness-lib), never automatically.
+promote flow (~/.anneal/harness-lib), never automatically.
 `
 
 // Seed creates the component tree and README stub; never clobbers.

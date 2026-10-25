@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"fyagent/core/config"
-	"fyagent/core/paths"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/paths"
 )
 
 func testStore(t *testing.T) *Store {
-	t.Setenv("FYAGENT_HOME", t.TempDir())
+	t.Setenv("ANNEAL_HOME", t.TempDir())
 	return NewStore(&config.Skills{Enabled: true})
 }
 

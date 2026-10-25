@@ -1,4 +1,4 @@
-// Package improve implements fyagent's task-level recursion: the contrastive
+// Package improve implements anneal's task-level recursion: the contrastive
 // Propose–Probe–Compose step from Harness² (arXiv 2610.14224, §2.2) at k=1.
 // It refines the CURRENT task's harness without ground truth: the finished
 // session is the reference execution; two scoped editors propose candidate
@@ -18,14 +18,14 @@ import (
 	"strings"
 	"time"
 
-	"fyagent/core/agent"
-	"fyagent/core/config"
-	"fyagent/core/fsutil"
-	"fyagent/core/harness"
-	"fyagent/core/harnesslib"
-	"fyagent/core/paths"
-	"fyagent/core/probe"
-	"fyagent/core/textutil"
+	"github.com/uidbz/anneal/core/agent"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/fsutil"
+	"github.com/uidbz/anneal/core/harness"
+	"github.com/uidbz/anneal/core/harnesslib"
+	"github.com/uidbz/anneal/core/paths"
+	"github.com/uidbz/anneal/core/probe"
+	"github.com/uidbz/anneal/core/textutil"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"

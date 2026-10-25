@@ -15,8 +15,8 @@ import (
 	"sort"
 	"strings"
 
-	"fyagent/core/config"
-	"fyagent/core/paths"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/paths"
 
 	"github.com/deepnoodle-ai/dive"
 )
@@ -113,8 +113,8 @@ func isSystemPath(p string) bool {
 }
 
 // jailDeniedPath reports whether a path arg is forbidden; msg explains. The
-// sandbox is checked first: improvement probes live under the fyagent state
-// directory (~/.fyagent/improvements/...), so the state-dir denial must not
+// sandbox is checked first: improvement probes live under the anneal state
+// directory (~/.anneal/improvements/...), so the state-dir denial must not
 // swallow the workspace itself.
 func (s *Sandbox) jailDeniedPath(raw string, writeTool bool) (string, bool) {
 	p, ok := absPath(raw)
@@ -129,7 +129,7 @@ func (s *Sandbox) jailDeniedPath(raw string, writeTool bool) (string, bool) {
 		return "", false
 	}
 	if inside(p, paths.Root()) {
-		return "fyagent state is off-limits to probes", true
+		return "Anneal state is off-limits to probes", true
 	}
 	if inside(p, s.Src) && p != s.Src {
 		return "the original project is off-limits; use the sandbox copy", true
@@ -139,7 +139,7 @@ func (s *Sandbox) jailDeniedPath(raw string, writeTool bool) (string, bool) {
 }
 
 // jailBash checks the bash tool: working_directory inside the sandbox, and
-// no absolute-path tokens touching the original project or fyagent state.
+// no absolute-path tokens touching the original project or anneal state.
 func (s *Sandbox) jailBash(input map[string]any) (string, bool) {
 	wd, _ := input["working_directory"].(string)
 	wdAbs, ok := absPath(wd)
@@ -177,12 +177,12 @@ func (s *Sandbox) jailBash(input map[string]any) (string, bool) {
 			return fmt.Sprintf("command touches protected path %q", p), true
 		}
 		// other absolute paths (neither sandbox, system, nor protected): allow —
-		// they cannot corrupt the original project or fyagent state
+		// they cannot corrupt the original project or anneal state
 	}
 	return "", false
 }
 
-// pathKeys are the known file-path arguments of fyagent's toolkit tools.
+// pathKeys are the known file-path arguments of Anneal's toolkit tools.
 var pathKeys = []string{"file_path", "path", "notebook_path", "directory"}
 
 var writeTools = map[string]bool{"Write": true, "Edit": true, "MultiEdit": true, "TextEditor": true}

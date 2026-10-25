@@ -1,4 +1,4 @@
-// fyagent M7 e2e: after a run with a memorable instruction, the background
+// anneal M7 e2e: after a run with a memorable instruction, the background
 // reviewer fires while idle; verify review.start/done events + journey log.
 require(["v0.9", "@json", "@strings"])
 

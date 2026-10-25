@@ -2,10 +2,10 @@
 # m14 live gate: k-step sequential recursion against live Strata.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
-HOME_TEST="${FYAGENT_HOME:-/tmp/opencode/fyagent-home}"
-ENDPOINT="${FYAGENT_ENDPOINT:-http://127.0.0.1:8081/v1/chat/completions}"
+HOME_TEST="${ANNEAL_HOME:-/tmp/opencode/anneal-home}"
+ENDPOINT="${ANNEAL_ENDPOINT:-http://127.0.0.1:8081/v1/chat/completions}"
 DEMO=/tmp/opencode/demo
-BIN="$REPO/bin/fyagent-headless"
+BIN="$REPO/bin/anneal-headless"
 [ -x "$BIN" ] || { echo "build first: make build"; exit 1; }
 
 TASK='Call the mcp__demo__echo tool with the text "check recursion", then add func Neg(a int) int in /tmp/opencode/demo/neg.go plus a table-driven neg_test.go in the same style as add.go. The package must build and its tests pass when you are done.'
@@ -16,7 +16,7 @@ echo "M14: === one task, improve -k 2 (sequential)"
 attempt=0
 until [ $attempt -ge 2 ]; do
   attempt=$((attempt+1))
-  (cd "$DEMO" && FYAGENT_HOME="$HOME_TEST" FYAGENT_ENDPOINT="$ENDPOINT" \
+  (cd "$DEMO" && ANNEAL_HOME="$HOME_TEST" ANNEAL_ENDPOINT="$ENDPOINT" \
     timeout 70m "$BIN" -yolo -improve -k 2 -p "$TASK") > /tmp/m14-run.log 2>&1 || true
   [ -n "$(ls -d "$HOME_TEST"/improvements/*/ 2>/dev/null)" ] && break
   if [ $attempt -lt 2 ]; then

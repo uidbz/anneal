@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"fyagent/core/config"
-	"fyagent/core/model"
-	"fyagent/core/textutil"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/model"
+	"github.com/uidbz/anneal/core/textutil"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -153,7 +153,7 @@ func Run(ctx context.Context, opts Options) (*Record, error) {
 
 // probeTools builds the toolkit once. With a sandbox, every file tool is
 // workspace-jailed and the custom jail hook is added as defense-in-depth
-// (protects src + fyagent state even if a tool is ever swapped in without
+// (protects src + anneal state even if a tool is ever swapped in without
 // WorkspaceDir). Without one, the tools are unrestricted (used by tests).
 func probeTools(sb *Sandbox) ([]dive.Tool, dive.Hooks) {
 	if sb == nil {

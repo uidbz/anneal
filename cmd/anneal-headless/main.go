@@ -1,8 +1,8 @@
-// fyagent-headless: the fyagent core without a GUI. Same config, sessions,
+// anneal-headless: the anneal core without a GUI. Same config, sessions,
 // tie index, skills/memory/review and MCP — driven from a terminal.
 //
-//	fyagent-headless -p "fix the failing test"     # one-shot
-//	fyagent-headless -i                            # REPL
+//	anneal-headless -p "fix the failing test"     # one-shot
+//	anneal-headless -i                            # REPL
 //
 // Output is human-readable text; -json emits the raw event stream (JSONL) —
 // every event the GUI receives, machine-readable.
@@ -21,9 +21,9 @@ import (
 	"syscall"
 	"time"
 
-	"fyagent/core/agent"
-	"fyagent/core/app"
-	"fyagent/core/improve"
+	"github.com/uidbz/anneal/core/agent"
+	"github.com/uidbz/anneal/core/app"
+	"github.com/uidbz/anneal/core/improve"
 )
 
 type runResult struct {
@@ -268,13 +268,13 @@ func main() {
 	flag.Parse()
 
 	if *prompt == "" && !*interactive {
-		fmt.Fprintln(os.Stderr, `fyagent-headless: give -p "task" or -i (REPL); -h for flags`)
+		fmt.Fprintln(os.Stderr, `anneal-headless: give -p "task" or -i (REPL); -h for flags`)
 		os.Exit(2)
 	}
 
 	a, err := app.New()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "fyagent-headless:", err)
+		fmt.Fprintln(os.Stderr, "anneal-headless:", err)
 		os.Exit(1)
 	}
 
@@ -293,7 +293,7 @@ func main() {
 	// One ordered consumer: a goroutine per event would reorder text deltas
 	// and could deliver run.finished before message.final/tool.result.
 	events := make(chan any, 1024)
-	a.Bridge.SetTap(func(v any) { events <- v })
+	a.Bridge.AddTap(func(v any) { events <- v })
 	go func() {
 		for v := range events {
 			s.handle(v)
@@ -328,7 +328,7 @@ func main() {
 	runTask := func(task string) int {
 		id, ok := a.Runner.StartTask(task)
 		if !ok {
-			fmt.Fprintln(os.Stderr, "fyagent-headless: a run is already active")
+			fmt.Fprintln(os.Stderr, "anneal-headless: a run is already active")
 			return 1
 		}
 		s.setAwait(id)
@@ -340,7 +340,7 @@ func main() {
 				select {
 				case <-s.learn:
 				case <-time.After(3 * time.Minute):
-					fmt.Fprintln(os.Stderr, "fyagent-headless: review pass timed out")
+					fmt.Fprintln(os.Stderr, "anneal-headless: review pass timed out")
 				}
 			}
 			code := 0
@@ -353,7 +353,7 @@ func main() {
 				defer icancel()
 				ires, ierr := a.ImproveWith(ictx, *improveK, *improveMode, *improveResume)
 				if ierr != nil {
-					fmt.Fprintf(os.Stderr, "fyagent-headless: improve: %v\n", ierr)
+					fmt.Fprintf(os.Stderr, "anneal-headless: improve: %v\n", ierr)
 				} else {
 					printImprove(ires)
 				}
@@ -374,7 +374,7 @@ func main() {
 		code = runTask(*prompt)
 	} else {
 		sc := bufio.NewScanner(os.Stdin)
-		fmt.Fprintln(os.Stderr, `fyagent-headless REPL — type a task (Ctrl-D to quit, /new /interrupt supported)`)
+		fmt.Fprintln(os.Stderr, `anneal-headless REPL — type a task (Ctrl-D to quit, /new /interrupt supported)`)
 		for {
 			fmt.Print("> ")
 			if !sc.Scan() {
@@ -406,7 +406,7 @@ func main() {
 						if backup != "" {
 							msg += " (previous files backed up at " + backup + ")"
 						}
-						fmt.Fprintf(os.Stderr, "harness %s: %s — restart fyagent to re-read guardrail RULES\n", fields[2], msg)
+						fmt.Fprintf(os.Stderr, "harness %s: %s — restart anneal to re-read guardrail RULES\n", fields[2], msg)
 					}
 				case len(fields) >= 2 && fields[1] == "list":
 					ls := a.Libs.List()
@@ -433,7 +433,7 @@ func main() {
 				ires, ierr := a.ImproveWith(ictx, *improveK, *improveMode, *improveResume)
 				icancel()
 				if ierr != nil {
-					fmt.Fprintf(os.Stderr, "fyagent-headless: improve: %v\n", ierr)
+					fmt.Fprintf(os.Stderr, "anneal-headless: improve: %v\n", ierr)
 				} else {
 					printImprove(ires)
 				}

@@ -1,9 +1,9 @@
-# fynerisor feature gaps (fyagent perspective)
+# fynerisor feature gaps (anneal perspective)
 
-Living tracker of fynerisor capabilities missing for fyagent. When a gap is hit,
+Living tracker of fynerisor capabilities missing for anneal. When a gap is hit,
 add it here and file an issue at <https://github.com/uidbz/fynerisor/issues>.
 Fixes may also be implemented directly (issue first) — the local checkout lives
-at `/go/src/github.com/uidbz/fynerisor`, and fyagent `go.mod` `replace`s
+at `/go/src/github.com/uidbz/fynerisor`, and anneal `go.mod` `replace`s
 fynerisor to it until the next release.
 
 | # | Gap | Needed for | Status |
@@ -12,14 +12,14 @@ fynerisor to it until the next release.
 | 2 | `Markdown` text immutable after creation — no `SetText` / writable `.Text` | chat transcript, streaming views | **fixed on fynerisor main** (45e3eca, issue #3) |
 | 3 | Containers lacked `Append`/`Remove`/`Refresh`; Border no slot setters; Scroll no SetContent | dynamic views without full `SetContent` rebuilds | **fixed on fynerisor main** (dc84d6b, issue #4) |
 | 4 | `tie.connect`: namespace/collection options silently overridden by config-file `[Collections.*]`/`DefaultCollection` (also hijacks the connect URL) | M4 session_search against local tie | **fixed on fynerisor main** (1c0e93f, issue #5) |
-| 5 | No synchronous script compile-check — `LoadScript` is fire-and-forget, errors only surface async via stderr from `Execute()` | CI gate for UI scripts (`fyagent -check-ui`) | **fixed on fynerisor main** (0b826e9, issue #6) — `Window.CompileScript()` |
+| 5 | No synchronous script compile-check — `LoadScript` is fire-and-forget, errors only surface async via stderr from `Execute()` | CI gate for UI scripts (`anneal -check-ui`) | **fixed on fynerisor main** (0b826e9, issue #6) — `Window.CompileScript()` |
+| 6 | No way to embed a scripted view inside an existing Go/Fyne layout | hybrid UI: Go shell + scripted harness pane | **fixed on fynerisor main** (b2b1478) — `gui.NewCanvasObject` + `WithHostWindow`; used by `cmd/anneal` |
 
-## Workarounds currently in use (fyagent)
+## Workarounds currently in use (Anneal)
 
-- Transcript = streaming tail in a writable `Label`; finalized blocks are
-  immutable `Markdown`; layout recomposed on structural changes.
-  Upstream now enables cheaper patterns (Append/Remove on containers,
-  Markdown.SetText) — adopt when convenient, e.g. M4+ UI work.
+- Hybrid shell: Go/Fyne owns the transcript and window; the harness pane uses
+  `gui.NewCanvasObject` and a narrow, pull-based `agent` API. The legacy
+  all-Risor UI still uses the recompose pattern.
 - `agent.quit()` Go bridge (still fine; `app.Quit()` now also works for
   gui.NewApp apps).
 

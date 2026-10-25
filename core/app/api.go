@@ -177,6 +177,24 @@ func errString(err error) string {
 	return err.Error()
 }
 
+// HarnessAPI is the narrow surface exposed to the scripted harness pane. It
+// deliberately excludes quit, sessions, permissions, and config mutation.
+func (a *App) HarnessAPI() map[string]any {
+	all := a.AgentAPI()
+	keys := []string{
+		"harnessInfo", "harnessFiles", "harnessGet", "harnessSave",
+		"harnessLibList", "libExperience", "libPromote",
+		"flagPeek", "improveStart", "journey",
+	}
+	out := make(map[string]any, len(keys))
+	for _, k := range keys {
+		if v, ok := all[k]; ok {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // jsonList marshals a list endpoint, normalizing nil to [] (Risor scripts
 // index/length the result and null is an error there).
 func jsonList[T any](v []T) string {

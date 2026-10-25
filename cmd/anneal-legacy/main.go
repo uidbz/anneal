@@ -8,9 +8,9 @@ import (
 	"os"
 	"time"
 
-	"fyagent/assets"
-	"fyagent/core/agent"
-	"fyagent/core/app"
+	"github.com/uidbz/anneal/assets"
+	"github.com/uidbz/anneal/core/agent"
+	"github.com/uidbz/anneal/core/app"
 
 	"fyne.io/fyne/v2"
 	"github.com/uidbz/fynerisor/gui"
@@ -25,30 +25,30 @@ func main() {
 
 	a, err := app.New()
 	if err != nil {
-		log.Fatalf("fyagent: %v", err)
+		log.Fatalf("anneal: %v", err)
 	}
 
 	if *checkHarness {
-		fmt.Println("fyagent:", agent.FormatHarnessInfo(a.Runner.HarnessInfo()))
+		fmt.Println("anneal:", agent.FormatHarnessInfo(a.Runner.HarnessInfo()))
 		return
 	}
 
 	if *rebuild {
 		if err := a.Tie.Connect(); err != nil {
-			log.Fatalf("fyagent: tie connect: %v", err)
+			log.Fatalf("anneal: tie connect: %v", err)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		n, err := a.Runner.RebuildIndex(ctx)
 		if err != nil {
-			log.Fatalf("fyagent: rebuild: %v", err)
+			log.Fatalf("anneal: rebuild: %v", err)
 		}
-		fmt.Printf("fyagent: re-indexed %d sessions\n", n)
+		fmt.Printf("anneal: re-indexed %d sessions\n", n)
 		return
 	}
 
-	fw := gui.NewApp("fyagent",
-		gui.WithAppName("fyagent"),
+	fw := gui.NewApp("Anneal (legacy)",
+		gui.WithAppName("anneal"),
 		gui.WithJSON(),
 		gui.WithStrings(),
 		gui.WithGlobal("agent", a.AgentAPI()),
@@ -57,14 +57,14 @@ func main() {
 
 	src, err := uiSource(a.Cfg.UI.UIDir)
 	if err != nil {
-		log.Fatalf("fyagent: UI missing: %v", err)
+		log.Fatalf("anneal: UI missing: %v", err)
 	}
 	fw.LoadScript(src)
 	if err := fw.CompileScript(); err != nil {
-		log.Fatalf("fyagent: UI compile: %v", err)
+		log.Fatalf("anneal: UI compile: %v", err)
 	}
 	if *checkUI {
-		fmt.Println("fyagent: UI compiles")
+		fmt.Println("anneal: UI compiles")
 		return
 	}
 	fw.Execute()
@@ -87,7 +87,10 @@ func main() {
 // back to the embedded copy.
 func uiSource(dir string) (string, error) {
 	if dir == "" {
-		dir = os.Getenv("FYAGENT_UI_DIR")
+		dir = os.Getenv("ANNEAL_UI_DIR")
+	}
+	if dir == "" {
+		dir = os.Getenv("FYAGENT_UI_DIR") // deprecated alias
 	}
 	if dir != "" {
 		if b, err := os.ReadFile(dir + "/main.risor"); err == nil {

@@ -12,8 +12,8 @@ import (
 	"fmt"
 	"strings"
 
-	"fyagent/core/memory"
-	"fyagent/core/skills"
+	"github.com/uidbz/anneal/core/memory"
+	"github.com/uidbz/anneal/core/skills"
 
 	"github.com/deepnoodle-ai/dive"
 )

@@ -1,5 +1,5 @@
 // Package assets embeds the Risor UI scripts (and later bundled skills)
-// so the fyagent binary is self-contained. FYAGENT_UI_DIR overrides at
+// so the anneal binary is self-contained. ANNEAL_UI_DIR overrides at
 // runtime for live UI development.
 package assets
 

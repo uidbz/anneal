@@ -4,10 +4,10 @@
 # step's Propose/Compose context. Asserts on step.json/library artifacts.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
-HOME_TEST="${FYAGENT_HOME:-/tmp/opencode/fyagent-home}"
-ENDPOINT="${FYAGENT_ENDPOINT:-http://127.0.0.1:8081/v1/chat/completions}"
+HOME_TEST="${ANNEAL_HOME:-/tmp/opencode/anneal-home}"
+ENDPOINT="${ANNEAL_ENDPOINT:-http://127.0.0.1:8081/v1/chat/completions}"
 DEMO=/tmp/opencode/demo
-BIN="$REPO/bin/fyagent-headless"
+BIN="$REPO/bin/anneal-headless"
 [ -x "$BIN" ] || { echo "build first: make build"; exit 1; }
 
 run1_task='Add func Sub(a, b int) int in /tmp/opencode/demo/sub.go plus a table-driven sub_test.go in the same style as add.go. The package must build and its tests pass when you are done.'
@@ -17,7 +17,7 @@ rm -rf "$HOME_TEST/harness-lib" "$HOME_TEST/improvements" "$HOME_TEST/overlays"
 rm -f "$DEMO"/sub.go "$DEMO"/sub_test.go "$DEMO"/mul.go "$DEMO"/mul_test.go
 
 run() {
-  (cd "$DEMO" && FYAGENT_HOME="$HOME_TEST" FYAGENT_ENDPOINT="$ENDPOINT" \
+  (cd "$DEMO" && ANNEAL_HOME="$HOME_TEST" ANNEAL_ENDPOINT="$ENDPOINT" \
     timeout 28m "$BIN" -yolo -improve -p "$1")
 }
 
@@ -53,7 +53,7 @@ echo "M13: library persists across runs ($n2 entries)"
 # fixture clean); backup must capture the previous global file.
 echo "M13: === promote round-trip"
 printf '/harness promote %s\n/quit\n' "$(basename "$ENTRY")" | \
-  (cd "$DEMO" && FYAGENT_HOME="$HOME_TEST" FYAGENT_ENDPOINT="$ENDPOINT" "$BIN" -i) >/tmp/m13-promote.log 2>&1 || true
+  (cd "$DEMO" && ANNEAL_HOME="$HOME_TEST" ANNEAL_ENDPOINT="$ENDPOINT" "$BIN" -i) >/tmp/m13-promote.log 2>&1 || true
 grep -q "promoted into the global harness" /tmp/m13-promote.log || { echo "M13 FAIL: promote did not run"; tail -8 /tmp/m13-promote.log; exit 1; }
 grep -q "backed up" /tmp/m13-promote.log || { echo "M13 FAIL: no backup note"; exit 1; }
 ls "$HOME_TEST/harness"/*.md >/dev/null 2>&1 || { echo "M13 FAIL: global harness empty after promote"; exit 1; }

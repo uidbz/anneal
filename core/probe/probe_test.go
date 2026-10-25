@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"fyagent/core/config"
+	"github.com/uidbz/anneal/core/config"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -60,7 +60,7 @@ func jailCheck(t *testing.T, s *Sandbox, tool string, input map[string]any) erro
 }
 
 func TestJailTable(t *testing.T) {
-	t.Setenv("FYAGENT_HOME", t.TempDir())
+	t.Setenv("ANNEAL_HOME", t.TempDir())
 	src := t.TempDir()
 	s, err := Prepare(src, filepath.Join(t.TempDir(), "sb"))
 	if err != nil {
@@ -77,7 +77,7 @@ func TestJailTable(t *testing.T) {
 		{"write inside", "Write", map[string]any{"file_path": s.WS + "/a.txt", "content": "x"}, false},
 		{"write outside", "Write", map[string]any{"file_path": outside, "content": "x"}, true},
 		{"write relative", "Edit", map[string]any{"file_path": "a.txt"}, true},
-		{"write into fyagent state", "Write", map[string]any{"file_path": filepath.Join(os.Getenv("FYAGENT_HOME"), "config.json"), "content": "x"}, true},
+		{"write into anneal state", "Write", map[string]any{"file_path": filepath.Join(os.Getenv("ANNEAL_HOME"), "config.json"), "content": "x"}, true},
 		{"read inside", "Read", map[string]any{"file_path": s.WS + "/main.go"}, false},
 		{"read original project", "Read", map[string]any{"file_path": filepath.Join(src, "main.go")}, true},
 		{"read system", "Read", map[string]any{"file_path": "/usr/bin/env"}, false},
@@ -86,7 +86,7 @@ func TestJailTable(t *testing.T) {
 		{"bash wd outside", "Bash", map[string]any{"command": "ls", "working_directory": "/"}, true},
 		{"bash rm original", "Bash", map[string]any{"command": "rm -rf " + src, "working_directory": s.WS}, true},
 		{"bash glob original", "Bash", map[string]any{"command": "cat " + src + "/*.go", "working_directory": s.WS}, true},
-		{"bash touch state", "Bash", map[string]any{"command": "echo x > " + filepath.Join(os.Getenv("FYAGENT_HOME"), "evil"), "working_directory": s.WS}, true},
+		{"bash touch state", "Bash", map[string]any{"command": "echo x > " + filepath.Join(os.Getenv("ANNEAL_HOME"), "evil"), "working_directory": s.WS}, true},
 		{"bash system bin", "Bash", map[string]any{"command": "/usr/bin/env go vet", "working_directory": s.WS}, false},
 		{"bash write sandbox abs", "Bash", map[string]any{"command": "echo hi > " + s.WS + "/out.txt", "working_directory": s.WS}, false},
 	}
@@ -103,10 +103,10 @@ func TestJailTable(t *testing.T) {
 
 func TestJailAllowsSandboxInsideStateDir(t *testing.T) {
 	// Production layout: /improve creates its sandboxes under
-	// ~/.fyagent/improvements/<run>/..., which is inside the fyagent state
+	// ~/.anneal/improvements/<run>/..., which is inside the anneal state
 	// directory. The workspace exemption must win over the state-dir denial.
 	home := t.TempDir()
-	t.Setenv("FYAGENT_HOME", home)
+	t.Setenv("ANNEAL_HOME", home)
 	src := t.TempDir()
 	os.WriteFile(filepath.Join(src, "main.go"), []byte("package main"), 0o644)
 	s, err := Prepare(src, filepath.Join(home, "improvements", "run1", "probes", "invariant"))
@@ -137,7 +137,7 @@ func TestJailAllowsSandboxInsideStateDir(t *testing.T) {
 }
 
 func TestJailDeniesParentTraversal(t *testing.T) {
-	t.Setenv("FYAGENT_HOME", t.TempDir())
+	t.Setenv("ANNEAL_HOME", t.TempDir())
 	src := t.TempDir()
 	s, err := Prepare(src, filepath.Join(t.TempDir(), "sb"))
 	if err != nil {
@@ -203,7 +203,7 @@ func toolCallResp(id, name string, input map[string]any) *llm.Response {
 }
 
 func TestRunRecordsAndJails(t *testing.T) {
-	t.Setenv("FYAGENT_HOME", t.TempDir())
+	t.Setenv("ANNEAL_HOME", t.TempDir())
 	src := t.TempDir()
 	os.WriteFile(filepath.Join(src, "main.go"), []byte("package main"), 0o644)
 	s, err := Prepare(src, filepath.Join(t.TempDir(), "sb"))

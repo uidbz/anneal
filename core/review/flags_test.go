@@ -7,9 +7,9 @@ import (
 	"sync"
 	"testing"
 
-	"fyagent/core/config"
-	"fyagent/core/memory"
-	"fyagent/core/skills"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/memory"
+	"github.com/uidbz/anneal/core/skills"
 
 	"github.com/deepnoodle-ai/dive/llm"
 )
@@ -63,7 +63,7 @@ func TestFlagStoreRelease(t *testing.T) {
 }
 
 func TestReviewerHarnessFlag(t *testing.T) {
-	t.Setenv("FYAGENT_HOME", t.TempDir())
+	t.Setenv("ANNEAL_HOME", t.TempDir())
 	mem := memory.NewStore(&config.Memory{Enabled: true, MemoryCharLimit: 500, UserCharLimit: 500})
 	sk := skills.NewStore(&config.Skills{Enabled: true})
 

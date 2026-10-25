@@ -1,6 +1,8 @@
-# fyagent configuration
+# Anneal configuration
 
-State lives under `~/.fyagent/` (override with `FYAGENT_HOME`):
+State lives under `~/.anneal/` (override with `ANNEAL_HOME`). On first run
+after the rename, an existing `~/.fyagent` directory is renamed to `~/.anneal`
+if the new directory does not exist.
 
 | path | what |
 |------|------|
@@ -17,10 +19,11 @@ State lives under `~/.fyagent/` (override with `FYAGENT_HOME`):
 
 | var | effect |
 |-----|--------|
-| `FYAGENT_HOME` | state directory root |
-| `FYAGENT_ENDPOINT` | provider endpoint URL |
-| `FYAGENT_MODEL` | model id (`auto` = first from `/v1/models`) |
-| `FYAGENT_UI_DIR` | load `main.risor` from this dir instead of the embedded UI (hot-reload during development) |
+| `ANNEAL_HOME` | state directory root (`FYAGENT_HOME` deprecated alias) |
+| `ANNEAL_ENDPOINT` | provider endpoint URL (`FYAGENT_ENDPOINT` deprecated) |
+| `ANNEAL_MODEL` | model id (`auto` = first from `/v1/models`; `FYAGENT_MODEL` deprecated) |
+| `ANNEAL_UI_DIR` | legacy full UI override (`main.risor`; hot reload; `FYAGENT_UI_DIR` deprecated) |
+| `ANNEAL_PANE_DIR` | scripted-pane override (`harness.risor`; hot reload) |
 
 ## `provider`
 
@@ -41,6 +44,7 @@ Edit this section in `config.json` (there is no built-in settings tab yet;
 UI scripts can call `agent.config()` / `agent.saveConfig(doc)`). Stores that
 keep a live config pointer (memory, skills, review) re-read changed limits and
 `write_approval` immediately; edited guardrail rule lines still need a restart.
+
 ## `agent` — permissions & toolkit
 
 | key | default | meaning |
@@ -82,7 +86,7 @@ Two hooks: mid-turn (dive `MidTurnCompactionHook`) and pre-generation
 Writes are validated: dup-guard, unique-substring patch/remove, final-size
 check, prompt-injection scanner (instruction-override/role-forgery patterns are
 rejected — memory is re-injected into every future session). The snapshot is
-injected once per session as a `<system-reminder name="fyagent-memory">` block
+injected once per session as a `<system-reminder name="anneal-memory">` block
 (frozen; compaction-safe).
 
 ## `skills`
@@ -91,7 +95,7 @@ injected once per session as a `<system-reminder name="fyagent-memory">` block
 |-----|---------|---------|
 | `enabled` | true | `skill_manage` tool + dive skill loader (`Skill` tool, catalog reminder) |
 | `write_approval` | false | stage create/patch/write_file/remove instead of applying |
-| `extra_dirs` | — | additional skill roots scanned besides `~/.fyagent/skills`, `./.fyagent/skills`, and project `.claude/.agents/.dive` compat dirs |
+| `extra_dirs` | — | additional skill roots scanned besides `~/.anneal/skills`, `./.anneal/skills`, and project `.claude/.agents/.dive` compat dirs |
 
 ## `review` — background self-improvement
 
@@ -112,7 +116,7 @@ ledger**, never model prose.
 
 **Review→improve bridge (M16):** when the reviewer spots a recurring
 *work-style* deficiency (unverified "done", repeated failing calls, etc.)
-it calls `harness_flag`, which queues the gap in `~/.fyagent/harness-queue.json`.
+it calls `harness_flag`, which queues the gap in `~/.anneal/harness-queue.json`.
 The reviewer cannot edit harness files — flagging is its only output here.
 The next `/improve` consumes up to 6 pending flags as hints for its
 editors/composer (framed as claims to CHECK; probe evidence still decides).
@@ -123,14 +127,14 @@ The GUI harness panel and headless `/harness` list pending flags.
 | key | default | meaning |
 |-----|---------|---------|
 | `enabled` | true | registers `session_search`, indexes runs |
-| `collection` | `fyagent` | tie collection holding the index (rebuildable) |
+| `collection` | `anneal` | tie collection holding the index (rebuildable); existing configs keep their old value |
 | `config_name` | `""` | tie client config name (`client.LoadConfig`); `""` = default |
 
 The server URL/credentials come from the **tie client config**
 (`~/.config/tie/config.toml`). Note: always pass the collection explicitly —
 a config-file `DefaultCollection` can otherwise hijack queries (fynerisor
 issue #5 was exactly this trap). The index only uses relations every tie
-server reverse-indexes (`tag` + `tie-type`); rebuild with `fyagent
+server reverse-indexes (`tag` + `tie-type`); rebuild with `anneal
 -rebuild-index` or `/index`.
 
 ## `mcp`
@@ -147,22 +151,22 @@ non-allowlisted tool. State is shown in the header (`mcp: 1/1 up, N tools`).
 
 | key | default | meaning |
 |-----|---------|---------|
-| `enabled` | true | mount `~/.fyagent/harness/` components into every run |
+| `enabled` | true | mount `~/.anneal/harness/` components into every run |
 | `char_limit` | 6000 | per-component cap on injected prompt text |
 
-Components are plain files (see `~/.fyagent/harness/README.md`):
+Components are plain files (see `~/.anneal/harness/README.md`):
 `system.md`, `guardrails.md` (prose + `allow:/ask:/deny:` rule lines —
 same syntax as `agent.allow/ask/deny`, applied at startup, restart to
 re-read), `tool-guidance.md`, `subagents/*.md` (dive FileLoader format;
 override built-ins), `scripts/` (manifest surfaced to the model).
-Check with `fyagent -check-harness` or `/harness`.
+Check with `anneal -check-harness` or `/harness`.
 
 ## `improve` — recursive harness improvement (M12–M13)
 
 | key | default | meaning |
 |-----|---------|---------|
 | `enabled` | true | `/improve`, `-improve`, headless `/improve` |
-| `library` | true | reflection + `~/.fyagent/harness-lib/` improvement library |
+| `library` | true | reflection + `~/.anneal/harness-lib/` improvement library |
 | `k` | 1 | recursion depth (iterations under `improvements/<run>/iter<i>/`) |
 | `mode` | `sequential` | `sequential` chains each probed successor into the next iteration; `parallel` runs k independent steps and an anonymized selector picks the winner |
 | `total_wall_s` | 0 | whole-step wall budget (0 = unbounded) |
@@ -170,20 +174,22 @@ Check with `fyagent -check-harness` or `/harness`.
 
 One step = Propose (invariant + domain editors) → Probe (sandboxed replay +
 behavioral contrast) → Compose (evidence-tied successor + `decisions.md`).
-Successors apply as **session overlays** (`~/.fyagent/overlays/<session>/`);
+Successors apply as **session overlays** (`~/.anneal/overlays/<session>/`);
 evidence-supported steps also store a library entry
 (`harness-lib/<id>/{harness/,EXPERIENCE.md,meta.json}`). Library entries are
 re-drafted from by later steps (never auto-inherited) and become global
 only via explicit `/harness promote <id>` (headless REPL; backups under
-`harness-lib/promote-backup/`). Records: `~/.fyagent/improvements/<run>/`.
+`harness-lib/promote-backup/`). Records: `~/.anneal/improvements/<run>/`.
 
 ## `ui`
 
 | key | default | meaning |
 |-----|---------|---------|
-| `ui_dir` | `""` | load UI script from this directory (dev hot-reload); `FYAGENT_UI_DIR` env does the same |
+| `ui_dir` | `""` | legacy full-UI script directory (`main.risor`); `ANNEAL_UI_DIR` env does the same |
+| `pane_dir` | `""` | scripted-pane directory (`harness.risor`); `ANNEAL_PANE_DIR` env does the same |
 
 ## Live-DB test opt-ins
 
-Go tests stay hermetic unless opted in: `FYAGENT_LIVE_TIE=1 go test
+Go tests stay hermetic unless opted in: `ANNEAL_LIVE_TIE=1 go test
 ./core/tieindex` exercises the real triplestore (and cleans up after itself).
+`FYAGENT_LIVE_TIE`/`FYAGENT_LIVE_PROBE` remain as deprecated aliases.

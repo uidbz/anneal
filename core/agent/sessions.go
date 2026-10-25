@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"time"
 
-	"fyagent/core/paths"
+	"github.com/uidbz/anneal/core/paths"
 
 	"github.com/deepnoodle-ai/dive/llm"
 	"github.com/deepnoodle-ai/dive/session"
 )
 
-// Sessions are dive JSONL files under ~/.fyagent/sessions (FileStore).
+// Sessions are dive JSONL files under ~/.anneal/sessions (FileStore).
 // The store is the conversation truth; the runner holds the open one.
 
 func newSessionID() string {
@@ -69,22 +69,35 @@ func (r *Runner) restoreTodos(sess *session.Session) {
 	}
 }
 
-// SessionsJSON lists sessions (newest first) for the sidebar.
-func (r *Runner) SessionsJSON() string {
+// SessionInfo is one row for a session picker.
+type SessionInfo struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Updated string `json:"updated"`
+	Events  int    `json:"events"`
+}
+
+// Sessions lists sessions (newest first) for UI code.
+func (r *Runner) Sessions() []SessionInfo {
 	res, err := r.store.List(context.Background(), nil)
 	if err != nil {
-		return "[]"
+		return []SessionInfo{}
 	}
-	out := make([]map[string]any, 0, len(res.Sessions))
+	out := make([]SessionInfo, 0, len(res.Sessions))
 	for _, s := range res.Sessions {
-		out = append(out, map[string]any{
-			"id":      s.ID,
-			"title":   s.Title,
-			"updated": s.UpdatedAt.Format("2006-01-02 15:04"),
-			"events":  s.EventCount,
+		out = append(out, SessionInfo{
+			ID:      s.ID,
+			Title:   s.Title,
+			Updated: s.UpdatedAt.Format("2006-01-02 15:04"),
+			Events:  s.EventCount,
 		})
 	}
-	b, err := json.Marshal(out)
+	return out
+}
+
+// SessionsJSON lists sessions as a JSON array (Risor/legacy UI).
+func (r *Runner) SessionsJSON() string {
+	b, err := json.Marshal(r.Sessions())
 	if err != nil {
 		return "[]"
 	}

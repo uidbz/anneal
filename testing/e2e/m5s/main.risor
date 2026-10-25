@@ -1,4 +1,4 @@
-// fyagent M5 staged-write e2e: memory.add must stage (not apply), the driver
+// anneal M5 staged-write e2e: memory.add must stage (not apply), the driver
 // then approves via respondMemory, and the file must change only after.
 require(["v0.9", "@json", "@strings"])
 

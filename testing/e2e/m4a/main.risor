@@ -1,4 +1,4 @@
-// fyagent M4 e2e driver A: run a distinctive task so the session gets
+// anneal M4 e2e driver A: run a distinctive task so the session gets
 // indexed into tie; quit on finish.
 require(["v0.9", "@json", "@strings"])
 

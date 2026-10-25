@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"fyagent/core/config"
-	"fyagent/core/memory"
-	"fyagent/core/skills"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/memory"
+	"github.com/uidbz/anneal/core/skills"
 )
 
 func TestMemoryToolApplyAndStage(t *testing.T) {
-	t.Setenv("FYAGENT_HOME", t.TempDir())
+	t.Setenv("ANNEAL_HOME", t.TempDir())
 	cfg := &config.Memory{Enabled: true, MemoryCharLimit: 300, UserCharLimit: 120}
 	store := memory.NewStore(cfg)
 
@@ -55,7 +55,7 @@ func TestMemoryToolApplyAndStage(t *testing.T) {
 }
 
 func TestSkillToolLifecycle(t *testing.T) {
-	t.Setenv("FYAGENT_HOME", t.TempDir())
+	t.Setenv("ANNEAL_HOME", t.TempDir())
 	store := skills.NewStore(&config.Skills{Enabled: true})
 
 	var appliedActions []string

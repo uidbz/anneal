@@ -5,10 +5,10 @@
 # valid, and the /harness REPL surface shows the section.)
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
-HOME_TEST="${FYAGENT_HOME:-/tmp/opencode/fyagent-home}"
-ENDPOINT="${FYAGENT_ENDPOINT:-http://127.0.0.1:8081/v1/chat/completions}"
+HOME_TEST="${ANNEAL_HOME:-/tmp/opencode/anneal-home}"
+ENDPOINT="${ANNEAL_ENDPOINT:-http://127.0.0.1:8081/v1/chat/completions}"
 DEMO=/tmp/opencode/demo
-BIN="$REPO/bin/fyagent-headless"
+BIN="$REPO/bin/anneal-headless"
 [ -x "$BIN" ] || { echo "build first: make build"; exit 1; }
 
 rm -f "$HOME_TEST/harness-queue.json"
@@ -17,7 +17,7 @@ rm -f "$DEMO"/neg.go "$DEMO"/neg_test.go
 TASK='Add func Neg(a int) int in /tmp/opencode/demo/neg.go plus a table-driven neg_test.go in the same style as add.go. The package must build and its tests pass when you are done.'
 
 echo "M16: === task + learning pass"
-(cd "$DEMO" && FYAGENT_HOME="$HOME_TEST" FYAGENT_ENDPOINT="$ENDPOINT" \
+(cd "$DEMO" && ANNEAL_HOME="$HOME_TEST" ANNEAL_ENDPOINT="$ENDPOINT" \
   timeout 15m "$BIN" -yolo -learn -p "$TASK") > /tmp/m16-run.log 2>&1 || true
 grep -E "review|🪧" /tmp/m16-run.log | tail -4 || true
 
@@ -31,7 +31,7 @@ else
 fi
 
 echo "M16: === /harness REPL surface"
-printf '/harness\n/quit\n' | (cd "$DEMO" && FYAGENT_HOME="$HOME_TEST" FYAGENT_ENDPOINT="$ENDPOINT" \
+printf '/harness\n/quit\n' | (cd "$DEMO" && ANNEAL_HOME="$HOME_TEST" ANNEAL_ENDPOINT="$ENDPOINT" \
   "$BIN" -i) > /tmp/m16-repl.log 2>&1 || true
 grep -E "components:|rules:" /tmp/m16-repl.log | head -2
 [ "$FLAGS" != "0" ] && grep -E "reviewer flags" /tmp/m16-repl.log && \

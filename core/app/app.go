@@ -1,4 +1,4 @@
-// Package app wires the fyagent core together: config, model monitor, and
+// Package app wires the anneal core together: config, model monitor, and
 // the UI bridge. Both the GUI and the headless CLI build on it.
 package app
 
@@ -10,19 +10,19 @@ import (
 	"sync"
 	"time"
 
-	"fyagent/core/agent"
-	"fyagent/core/config"
-	"fyagent/core/harness"
-	"fyagent/core/harnesslib"
-	"fyagent/core/improve"
-	"fyagent/core/journey"
-	"fyagent/core/memory"
-	"fyagent/core/model"
-	"fyagent/core/paths"
-	"fyagent/core/review"
-	"fyagent/core/skills"
-	"fyagent/core/tieindex"
-	"fyagent/core/uiapi"
+	"github.com/uidbz/anneal/core/agent"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/harness"
+	"github.com/uidbz/anneal/core/harnesslib"
+	"github.com/uidbz/anneal/core/improve"
+	"github.com/uidbz/anneal/core/journey"
+	"github.com/uidbz/anneal/core/memory"
+	"github.com/uidbz/anneal/core/model"
+	"github.com/uidbz/anneal/core/paths"
+	"github.com/uidbz/anneal/core/review"
+	"github.com/uidbz/anneal/core/skills"
+	"github.com/uidbz/anneal/core/tieindex"
+	"github.com/uidbz/anneal/core/uiapi"
 
 	"github.com/deepnoodle-ai/dive/experimental/mcp"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -63,10 +63,10 @@ func New() (*App, error) {
 	a.Monitor = model.NewMonitor(cfg.Provider, a.onHealth)
 	a.Harness = harness.New(paths.Harness())
 	if err := a.Harness.Seed(); err != nil {
-		fmt.Fprintf(os.Stderr, "fyagent: harness seed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "anneal: harness seed: %v\n", err)
 	}
 	for _, w := range a.Harness.Validate(cfg.Harness.CharLimit) {
-		fmt.Fprintf(os.Stderr, "fyagent: harness: %s\n", w)
+		fmt.Fprintf(os.Stderr, "anneal: harness: %s\n", w)
 	}
 	a.Runner, err = agent.NewRunner(cfg, a.Monitor, a.Bridge, wd, a.Harness)
 	if err != nil {
@@ -80,7 +80,7 @@ func New() (*App, error) {
 	a.Runner.SetSkills(a.Skills)
 	a.Libs = harnesslib.New(paths.HarnessLib())
 	if err := a.Libs.Seed(); err != nil {
-		fmt.Fprintf(os.Stderr, "fyagent: harness-lib seed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "anneal: harness-lib seed: %v\n", err)
 	}
 	a.Journey = journey.New()
 	a.Bridge.SetTap(a.journeyTap)
@@ -272,7 +272,7 @@ func (a *App) ImproveWith(ctx context.Context, kOverride int, modeOverride, resu
 	}
 	if res.Successor != "" {
 		if oerr := a.Runner.SetSessionOverlay(res.Successor); oerr != nil {
-			fmt.Fprintf(os.Stderr, "fyagent: overlay install: %v\n", oerr)
+			fmt.Fprintf(os.Stderr, "anneal: overlay install: %v\n", oerr)
 		}
 	}
 	return res, nil

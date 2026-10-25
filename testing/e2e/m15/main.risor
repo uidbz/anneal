@@ -1,4 +1,4 @@
-// fyagent M15 GUI smoke: harness-panel bridge APIs round-trip headlessly.
+// anneal M15 GUI smoke: harness-panel bridge APIs round-trip headlessly.
 // Drives exactly what the harness tab calls; never promotes (that mutates
 // the global harness — covered by the m13 gate).
 require(["v0.9", "@json", "@strings"])

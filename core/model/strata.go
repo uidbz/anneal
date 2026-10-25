@@ -3,7 +3,7 @@
 package model
 
 import (
-	"fyagent/core/config"
+	"github.com/uidbz/anneal/core/config"
 
 	"github.com/deepnoodle-ai/dive/providers/openaicompletions"
 )

@@ -2,7 +2,7 @@
 // recursion): one entry per evidence-supported improvement step, holding
 // the adopted harness components plus EXPERIENCE.md (situation, lessons,
 // evidence). Entries are RE-DRAFTED FROM by future Propose/Compose steps —
-// never inherited wholesale. The global ~/.fyagent/harness only changes
+// never inherited wholesale. The global ~/.anneal/harness only changes
 // through an explicit promote.
 package harnesslib
 
@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"fyagent/core/paths"
-	"fyagent/core/textutil"
+	"github.com/uidbz/anneal/core/paths"
+	"github.com/uidbz/anneal/core/textutil"
 )
 
 type Store struct {
@@ -51,7 +51,7 @@ func (s *Store) Seed() error {
 	}
 	idx := filepath.Join(s.root, "INDEX.md")
 	if _, err := os.Stat(idx); err != nil {
-		return os.WriteFile(idx, []byte("# fyagent harness improvement library\n\nOne entry per evidence-supported step; see README in any entry dir.\n"), 0o644)
+		return os.WriteFile(idx, []byte("# Anneal harness improvement library\n\nOne entry per evidence-supported step; see README in any entry dir.\n"), 0o644)
 	}
 	return nil
 }
@@ -123,7 +123,7 @@ func (s *Store) CreateEntry(successorDir, task, sessionID, runID, harnessHash, e
 
 func (s *Store) rebuildIndex() error {
 	var sb strings.Builder
-	sb.WriteString("# fyagent harness improvement library\n\nnewest first; read an entry's EXPERIENCE.md before reusing its components\n\n")
+	sb.WriteString("# Anneal harness improvement library\n\nnewest first; read an entry's EXPERIENCE.md before reusing its components\n\n")
 	for _, info := range s.List() {
 		fmt.Fprintf(&sb, "- %s — %s (components: %s)\n", info.ID, info.Situation, info.Components)
 	}

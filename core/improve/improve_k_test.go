@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"fyagent/core/config"
-	"fyagent/core/probe"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/probe"
 
 	"github.com/deepnoodle-ai/dive/llm"
 )
@@ -54,7 +54,7 @@ go feature task; verify-before-done deficiency
 
 func TestStepK2Sequential(t *testing.T) {
 	cfg, h, src, lib := fixture(t)
-	imp := filepath.Join(os.Getenv("FYAGENT_HOME"), "improvements", "k2")
+	imp := filepath.Join(os.Getenv("ANNEAL_HOME"), "improvements", "k2")
 	s1 := iterScripts(filepath.Join(imp, "iter1", "candidates", "invariant"),
 		filepath.Join(imp, "iter1", "compose"), "base rule\nRULE-ONE always re-read", "system.md: adopt — quoted verify", 0)
 	s2 := iterScripts(filepath.Join(imp, "iter2", "candidates", "invariant"),
@@ -115,7 +115,7 @@ func TestStepK2Sequential(t *testing.T) {
 func TestStepK2Resume(t *testing.T) {
 	// completes via resume only: run 1 fresh, run 2 resumed (zero scripts)
 	cfg, h, src, lib := fixture(t)
-	imp := filepath.Join(os.Getenv("FYAGENT_HOME"), "improvements", "kr")
+	imp := filepath.Join(os.Getenv("ANNEAL_HOME"), "improvements", "kr")
 	s1 := iterScripts(filepath.Join(imp, "iter1", "candidates", "invariant"),
 		filepath.Join(imp, "iter1", "compose"), "base rule\nRULE-A", "adopt A", 0)
 	s2 := iterScripts(filepath.Join(imp, "iter2", "candidates", "invariant"),
@@ -156,7 +156,7 @@ func TestStepK2Resume(t *testing.T) {
 
 func TestParallelSelect(t *testing.T) {
 	cfg, h, src, lib := fixture(t)
-	imp := filepath.Join(os.Getenv("FYAGENT_HOME"), "improvements", "kp")
+	imp := filepath.Join(os.Getenv("ANNEAL_HOME"), "improvements", "kp")
 	s1 := iterScripts(filepath.Join(imp, "iter1", "candidates", "invariant"),
 		filepath.Join(imp, "iter1", "compose"), "base rule\nRULE-1", "adopt 1", 0)
 	s2 := iterScripts(filepath.Join(imp, "iter2", "candidates", "invariant"),
@@ -230,7 +230,7 @@ func TestReviewerHintsSeedPrompts(t *testing.T) {
 
 func TestTokenBudgetStopsChain(t *testing.T) {
 	cfg, h, src, lib := fixture(t)
-	imp := filepath.Join(os.Getenv("FYAGENT_HOME"), "improvements", "kb")
+	imp := filepath.Join(os.Getenv("ANNEAL_HOME"), "improvements", "kb")
 	s1 := iterScripts(filepath.Join(imp, "iter1", "candidates", "invariant"),
 		filepath.Join(imp, "iter1", "compose"), "base rule\nRULE-X", "adopt X", 5000)
 	q := &queueLLM{scripts: s1} // deliberately no iter-2 scripts

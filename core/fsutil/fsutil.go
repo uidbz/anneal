@@ -1,4 +1,4 @@
-// Package fsutil holds small filesystem helpers shared by fyagent packages.
+// Package fsutil holds small filesystem helpers shared by anneal packages.
 package fsutil
 
 import (

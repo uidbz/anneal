@@ -1,4 +1,4 @@
-// Tiny stdio MCP server for fyagent's MCP e2e gate: one echo tool.
+// Tiny stdio MCP server for anneal's MCP e2e gate: one echo tool.
 package main
 
 import (
@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	s := server.NewMCPServer("fyagent-demo", "0.1.0")
+	s := server.NewMCPServer("anneal-demo", "0.1.0")
 	tool := mcp.NewTool("echo",
 		mcp.WithDescription("Echo text back, uppercased."),
 		mcp.WithString("text", mcp.Required(), mcp.Description("text to echo")),

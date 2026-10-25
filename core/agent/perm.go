@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"fyagent/core/config"
-	"fyagent/core/harness"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/harness"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/permission"
@@ -22,7 +22,7 @@ type uiDialog struct {
 
 func (d *uiDialog) Show(ctx context.Context, in *dive.DialogInput) (*dive.DialogOutput, error) {
 	if !in.Confirm {
-		// fyagent's permission flow is yes/no only; anything else is denied.
+		// anneal's permission flow is yes/no only; anything else is denied.
 		return &dive.DialogOutput{Canceled: true}, nil
 	}
 	tool := ""
@@ -123,7 +123,7 @@ func (r *Runner) SetMode(mode string) {
 // Mode returns the active permission mode.
 func (r *Runner) Mode() string { return string(r.mgr.Mode()) }
 
-// permConfig translates fyagent config + harness guardrail rules into a
+// permConfig translates anneal config + harness guardrail rules into a
 // dive permission.Config. Rule strings look like "Bash" or "Bash(go test *)".
 // Harness rules are read once at Runner creation; restart to apply edits.
 func permConfig(cfg *config.Config, harn *harness.Store) *permission.Config {

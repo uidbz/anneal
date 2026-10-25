@@ -1,5 +1,5 @@
 // Package journey keeps a persistent timeline of self-improvement events
-// (memory and skill writes, background reviews) under ~/.fyagent/journey.jsonl.
+// (memory and skill writes, background reviews) under ~/.anneal/journey.jsonl.
 package journey
 
 import (
@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"fyagent/core/paths"
+	"github.com/uidbz/anneal/core/paths"
 )
 
 // Entry is one timeline row (kind + free-form fields).

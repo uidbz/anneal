@@ -4,9 +4,9 @@ import (
 	"context"
 	"path/filepath"
 
-	"fyagent/core/paths"
-	"fyagent/core/skills"
-	"fyagent/core/toolset"
+	"github.com/uidbz/anneal/core/paths"
+	"github.com/uidbz/anneal/core/skills"
+	"github.com/uidbz/anneal/core/toolset"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -17,7 +17,7 @@ import (
 )
 
 // skillManageTool lets the agent author and refine skills (SKILL.md dirs
-// under ~/.fyagent/skills, discovered by the dive skill loader next run).
+// under ~/.anneal/skills, discovered by the dive skill loader next run).
 func (r *Runner) skillManageTool() dive.Tool {
 	return toolset.SkillTool(r.skills, "agent", toolset.SkillCallbacks{
 		Stage: func(op, staged *skills.Op) {
@@ -30,13 +30,18 @@ func (r *Runner) skillManageTool() dive.Tool {
 	})
 }
 
-// skillLoader builds the dive skill loader for one run: fyagent-managed
-// skills, project skills (./.fyagent/skills + .claude/.agents read-compat).
+// skillLoader builds the dive skill loader for one run: anneal-managed
+// skills, project skills (./.anneal/skills + .claude/.agents read-compat).
 func (r *Runner) skillLoader() *skill.Loader {
 	if !r.cfg.Skills.Enabled {
 		return nil
 	}
-	extra := []string{paths.Skills(), filepath.Join(r.cwd, ".fyagent", "skills")}
+	extra := []string{
+		paths.Skills(),
+		filepath.Join(r.cwd, ".anneal", "skills"),
+		// Read-only compatibility with the pre-rename project layout.
+		filepath.Join(r.cwd, ".fyagent", "skills"),
+	}
 	extra = append(extra, r.cfg.Skills.ExtraDirs...)
 	loader, err := skill.Load(context.Background(), skill.LoaderOptions{
 		ProjectDir:      r.cwd,
@@ -50,10 +55,10 @@ func (r *Runner) skillLoader() *skill.Loader {
 }
 
 // agentTool wires dive's subagent spawner with a factory that inherits
-// fyagent's permission hooks (the default factory would spawn unguarded
+// anneal's permission hooks (the default factory would spawn unguarded
 // agents) and a bounded iteration limit.
 func (r *Runner) agentTool(provider llm.LLM, tools []dive.Tool) dive.Tool {
-	// explore/plan are research roles: keep them read-only w.r.t. fyagent's
+	// explore/plan are research roles: keep them read-only w.r.t. anneal's
 	// own state too (no memory/skill writes).
 	readOnly := func(def *subagent.Definition) *subagent.Definition {
 		d := *def

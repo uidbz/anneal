@@ -1,4 +1,9 @@
-# fyagent — plan
+# Anneal — original plan (historical)
+
+> **Historical document.** This is the original all-Risor design, kept for
+> context. The project is now **Anneal** (formerly fyagent), and the UI is
+> migrating to a Go/Fyne shell with embedded fynerisor `CanvasObject` panes.
+> See [ARCHITECTURE.md](ARCHITECTURE.md) and [progress.md](../progress.md).
 
 A self-improving, opencode-style desktop coding agent in Go.
 
@@ -10,7 +15,7 @@ A self-improving, opencode-style desktop coding agent in Go.
 
 ## 0. Decisions (locked)
 
-1. Name: **fyagent** (module `fyagent`, binary `fyagent`, state in `~/.fyagent/`).
+1. Name: **anneal** (module `anneal`, binary `anneal`, state in `~/.anneal/`).
 2. Session search / episodic memory uses **tie**, not SQLite.
 3. The **whole GUI is Risor** (`ui/*.risor`); if a component is missing, it is added to fynerisor, not hardcoded in Go.
 4. **MCP and the headless CLI ship in the first delivery.**
@@ -20,7 +25,7 @@ A self-improving, opencode-style desktop coding agent in Go.
 - Go 1.27.2; CGO/Fyne toolchain works (fynerisor builds here).
 - Strata serve live: `GET /v1/models` → `qwen3.8-flash-next-iq3_s`, `n_ctx: 262144`, port 8081 on this box.
 - Port 8080 is occupied by `pwplay-server` → endpoint is always configurable; health probe distinguishes *unreachable* vs *wrong service* (404 on `/v1/models`).
-- tie: user config at `~/.config/tie/config.toml`; triplestore at `http://storage:1161` (reachable), filehosts at `:1162`. fyagent uses its own collection (`[Collections.fyagent]` or `--tie-collection`).
+- tie: user config at `~/.config/tie/config.toml`; triplestore at `http://storage:1161` (reachable), filehosts at `:1162`. anneal uses its own collection (`[Collections.anneal]` or `--tie-collection`).
 - dive `providers/openaicompletions` supports `WithEndpoint`, `WithModel`, `WithAPIKey`, `WithStreamTimeouts(firstEvent, idle)`, `WithMaxRetries`, Generate + Stream, reasoning params — exactly what Strata needs.
 - tie queries match **exact association values** (tag algebra); the server reverse-indexes *all* relations when unconfigured (`nil reverseRelations ⇒ index everything`) ⇒ word-token AND search works (unless the server pins `ReverseRelations`).
 - dive extras used: `permission.Manager` (modes default/plan/acceptEdits/bypassPermissions/dontAsk), `skill.Loader` (SKILL.md dirs, agentskills-compatible), `session.FileStore` (JSONL, turns), `subagent` pkg (explore/plan prompts), `experimental/{compaction,mcp,todo}`.
@@ -29,7 +34,7 @@ A self-improving, opencode-style desktop coding agent in Go.
 ## 2. Architecture
 
 ```
-fyagent (single Go binary, CGO for Fyne)
+anneal (single Go binary, CGO for Fyne)
 ├─ GUI shell (fynerisor)  ◄──bridge──  ui/*.risor  (go:embed, disk-overridable)
 │      ▲ events (window.Do)  /  calls (non-blocking)
 ├─ core (pure Go): SessionMgr RunMgr PermissionBridge MemoryStore
@@ -45,9 +50,9 @@ All intelligence/state lives in Go; the Risor layer is presentation + interactio
 ## 3. Repository layout
 
 ```
-fyagent/
-├── cmd/fyagent/main.go            # GUI entry
-├── cmd/fyagent-headless/main.go   # same core, flag CLI, no Fyne
+anneal/
+├── cmd/anneal/main.go            # GUI entry
+├── cmd/anneal-headless/main.go   # same core, flag CLI, no Fyne
 ├── core/
 │   ├── config/        config schema, env overrides, atomic save
 │   ├── model/         strata provider factory + HealthMonitor (/health,/v1/models)
@@ -59,7 +64,7 @@ fyagent/
 │   ├── review/        background self-improvement fork (defer-until-idle queue)
 │   ├── permission/    permission.Manager + dive.Dialog → GUI approval bridge
 │   ├── uiapi/         the `agent` global exposed to Risor + event marshaling
-│   └── paths/         ~/.fyagent resolution
+│   └── paths/         ~/.anneal resolution
 ├── ui/                main/chat/sessions/approvals/skills/memory/settings .risor
 ├── skills/            bundled starter skills (SKILL.md dirs)
 ├── subagents/         subagent .md definitions
@@ -70,20 +75,20 @@ fyagent/
 State (per user):
 
 ```
-~/.fyagent/
+~/.anneal/
 ├── config.json
 ├── sessions/<id>.jsonl        # dive session.FileStore — conversation truth
 ├── memories/MEMORY.md USER.md
 ├── skills/…                   # agent-authored (create_dir); skills-archive/<date>/ for deletes
 ├── pending/{skills,memory}/<id>.json   # staged writes (write_approval)
-├── usage.jsonl  logs/fyagent.log
+├── usage.jsonl  logs/anneal.log
 ```
 
-Project-level: `./.fyagent/skills/`, read-compat `./.claude/skills/`, `./.agents/skills/`, context file `./AGENTS.md`.
+Project-level: `./.anneal/skills/`, read-compat `./.claude/skills/`, `./.agents/skills/`, context file `./AGENTS.md`.
 
 ## 4. tie episodic index (`core/tieindex`)
 
-Conversation truth stays in dive JSONL; tie is the searchable index and can be rebuilt from disk (`fyagent index rebuild`). Collection `fyagent` in the user's tie triplestore.
+Conversation truth stays in dive JSONL; tie is the searchable index and can be rebuilt from disk (`anneal index rebuild`). Collection `anneal` in the user's tie triplestore.
 
 Schema (all values exact-match triples; search = reverse-association AND algebra):
 
@@ -106,7 +111,7 @@ Schema (all values exact-match triples; search = reverse-association AND algebra
 
 ## 5. opencode-parity features
 
-| opencode | fyagent | M |
+| opencode | anneal | M |
 |---|---|---|
 | sessions list/resume/fork | FileStore + sidebar + tie titles | M3 |
 | plan/build modes + approvals | permission.ModePlan + approval inbox | M3 |
@@ -116,13 +121,13 @@ Schema (all values exact-match triples; search = reverse-association AND algebra
 | compaction | experimental/compaction @82% ctx | M4 |
 | keybinds, slash cmds | window.AddShortcut, `/skill` routing | M2/M6 |
 | status bar | tok in/out, tok/s, ctx% | M2 |
-| config | ~/.fyagent/config.json | M1 |
-| headless CLI | cmd/fyagent-headless | M9 |
+| config | ~/.anneal/config.json | M1 |
+| headless CLI | cmd/anneal-headless | M9 |
 
 ## 6. Self-improvement (Hermes loop)
 
 - **memory tool**: MEMORY.md (2200 ch) + USER.md (1375 ch); ops add/patch/remove (unique-substring match), batch checked on final size; frozen snapshot at session start via model-only `ContextReminder`; dup-guard; injection scanner; `write_approval` staging.
-- **skill_manage**: create/patch/write_file/remove→archive/list/view in `~/.fyagent/skills`; SKILL.md standard (dive loader scans it); staging + GUI diff.
+- **skill_manage**: create/patch/write_file/remove→archive/list/view in `~/.anneal/skills`; SKILL.md standard (dive loader scans it); staging + GUI diff.
 - **session_search**: tie-backed (§4).
 - **background review**: PostGeneration enqueues; runs only when idle (no run + Strata quiet ≥45 s, coalescing, max-age fallback, re-queue on preemption); reviewer = small dive agent (memory + skill_manage + read-only), digest replay, iteration cap 6, input-token cap; notifications emitted from the **tool ledger** (never from model prose — guards against small models claiming saves they didn't make); `learnNow()` manual trigger.
 - **journey**: timeline of skill_events + memory_events in the GUI.
@@ -138,7 +143,7 @@ Schema (all values exact-match triples; search = reverse-association AND algebra
 
 ## 8. Security
 
-permission.Manager rules/modes first; path policy (project + ~/.fyagent; deny `.ssh`, `.aws`, secrets); bash guard (danger patterns, no writes to ~/.fyagent); store writes injection-scanned; skills deletions archive; MCP tools ask-by-default; API keys env-only, never logged.
+permission.Manager rules/modes first; path policy (project + ~/.anneal; deny `.ssh`, `.aws`, secrets); bash guard (danger patterns, no writes to ~/.anneal); store writes injection-scanned; skills deletions archive; MCP tools ask-by-default; API keys env-only, never logged.
 
 ## 9. Milestones (M0–M9)
 
@@ -151,7 +156,7 @@ permission.Manager rules/modes first; path policy (project + ~/.fyagent; deny `.
 - **M6** skills consumption + skill_manage + subagents + slash cmds. ✔ gate: "save what we did" → loads next session.
 - **M7** background review + journey + notifications. ✔ gate: idle-time consolidation observable.
 - **M8** MCP + polish (logs, toggles, sparklines).
-- **M9** headless CLI (`fyagent-headless -p "…"`).
+- **M9** headless CLI (`anneal-headless -p "…"`).
 
 ≈7–9 focused days; M0–M5 ≈ 4.
 
@@ -188,13 +193,13 @@ subagents as editable files), not the model. Two coupled loops:
   contrasts → a composer selectively merges edits, decisions tied to
   observations.
 - **Harnessing-level recursion** — an **improvement library**
-  (`~/.fyagent/harness-lib/<entry>/ = harness/ snapshot + EXPERIENCE.md +
+  (`~/.anneal/harness-lib/<entry>/ = harness/ snapshot + EXPERIENCE.md +
   meta.json`) written only when probe evidence supports the lesson. Every
   task starts from the common ℋ₀ again; library entries are *re-drafted
   from*, never blindly inherited. (Paper ablations: library −3.1, editor
   scoping −2.9, composition −1.6 — all three are kept.)
 
-Why: fyagent's M7 review loop is the "ReasoningBank" baseline in the paper
+Why: anneal's M7 review loop is the "ReasoningBank" baseline in the paper
 (lessons → memory only), which plateaus or regresses. Evidence-driven
 harness edits beat it consistently. Same-model editing is validated by the
 paper (executor == editor improves every tested model), so local Strata
@@ -208,13 +213,13 @@ Locked decisions (user, 2026-10-25):
 2. **Successor harnesses never touch the global harness automatically.**
    Task successions live in `sessions/<id>/harness-overlay/` (session
    scope); only library entries accumulate automatically, and promoting one
-   into `~/.fyagent/harness/` is an explicit, approval-gated user action
+   into `~/.anneal/harness/` is an explicit, approval-gated user action
    (`/harness promote`). This keeps the paper's no-inheritance property and
    the existing staging philosophy.
 
 Milestones:
 
-- **M10 harness component layer** ✔ — `~/.fyagent/harness/` file-mounted
+- **M10 harness component layer** ✔ — `~/.anneal/harness/` file-mounted
   components (`system.md`, `guardrails.md` prose + `deny:/ask:/allow:` rule
   lines enforced via dive permission rules, `tool-guidance.md`,
   `subagents/*.md` via dive's subagent FileLoader, `scripts/` manifest);
@@ -223,11 +228,11 @@ Milestones:
   heavy-dir exclusions, dive-native WorkspaceDir jail + defense-in-depth
   PreToolUse hook, matched model config recorded), execution records
   `e=(τ,y)`, step records `ξ` under
-  `~/.fyagent/improvements/<runid>/`.
+  `~/.anneal/improvements/<runid>/`.
 - **M12 one contrastive step (k=1)** ✔ — `core/improve`: invariant+domain
   editors (edit right jailed to a scratch harness copy), probe+contrast
   notes, evidence-tied composition, session overlay apply;
-  `fyagent-headless -improve`, GUI `/improve`. Ledger truth, never prose.
+  `anneal-headless -improve`, GUI `/improve`. Ledger truth, never prose.
 - **M13 improvement library** ✔ — `core/harnesslib` + reflector
   (EXPERIENCE.md only with evidence), index fetched into Propose/Compose
   prompts; tie-index EXPERIENCE bodies (`tag` + Reverse, reuse tieindex);

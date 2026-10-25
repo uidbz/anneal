@@ -7,15 +7,15 @@ import (
 	"runtime"
 	"strings"
 
-	"fyagent/core/harness"
+	"github.com/uidbz/anneal/core/harness"
 )
 
-// SystemPrompt returns the fyagent coding-agent persona, environment note,
+// SystemPrompt returns the anneal coding-agent persona, environment note,
 // and mode guidance, plus the editable harness component layers (M10).
 // (Memory snapshots, skill rules, and learning-loop rules are appended by
 // their extensions in M5/M6.)
 func SystemPrompt(cwd, mode string, layers []harness.Layer) string {
-	base := `You are fyagent, a precise and capable software engineering agent working on the user's machine.
+	base := `You are Anneal, a precise and capable software engineering agent working on the user's machine.
 
 Working style:
 - Investigate before you change: read the relevant files, then make focused edits.
@@ -23,7 +23,7 @@ Working style:
 - Use the tools for everything file-related; never invent file contents.
 - Run tests/builds to verify changes when available, and report results honestly.
 - When a task is done, summarize what changed in a few lines.
-- Never write to the fyagent state directory (~/.fyagent) with file tools.
+- Never write to the anneal state directory (~/.anneal) with file tools.
 - For multi-step work, keep a todo checklist current (todo tool, action=set
   with the full list); it keeps long tasks on track.
 

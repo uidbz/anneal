@@ -1,4 +1,4 @@
-// fyagent UI — M3: sessions, permission approval inbox, plan/build modes,
+// Anneal legacy UI — M3: sessions, permission approval inbox, plan/build modes,
 // todo panel, plus M2 chat (transcript, streaming, tool cards, usage).
 // Risor v2 constraints (see fynerisor skill): no for/while, no map/filter,
 // no ternary, if (cond) needs parens, missing map keys error on dot-access,
@@ -392,7 +392,7 @@ buildHarness = () => {
         label("harness — " + h.root + en),
         label("components:" + cs),
         label("guardrail rules: allow=" + sprintf("%d", len(r.allow)) + "  ask=" + sprintf("%d", len(r.ask)) + "  deny=" + sprintf("%d", len(r.deny))),
-        label("prose edits apply next run; edit guardrails.md rule lines then RESTART fyagent")
+        label("prose edits apply next run; edit guardrails.md rule lines then RESTART Anneal")
     ]
     rows = rows + harnessFileRows(files, 0, [])
     if (h.warnings != []) {
@@ -736,5 +736,5 @@ window.AddShortcut("Ctrl+B", () => { toggleSessions() })
 window.AddShortcut("Ctrl+D", () => { agent.interrupt() })
 compose()
 window.Resize(980, 680)
-window.SetStatus("fyagent")
+window.SetStatus("Anneal")
 print("BOOT-DONE")

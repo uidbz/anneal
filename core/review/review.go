@@ -1,4 +1,4 @@
-// Package review implements fyagent's background self-improvement loop
+// Package review implements Anneal's background self-improvement loop
 // (Hermes-style): finished sessions are queued for a review that runs only
 // while the user is idle; a small bounded reviewer agent (read-only tools +
 // memory + skill_manage + session_search) mines transcript digests for
@@ -13,11 +13,11 @@ import (
 	"sync"
 	"time"
 
-	"fyagent/core/config"
-	"fyagent/core/memory"
-	"fyagent/core/skills"
-	"fyagent/core/tieindex"
-	"fyagent/core/toolset"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/memory"
+	"github.com/uidbz/anneal/core/skills"
+	"github.com/uidbz/anneal/core/tieindex"
+	"github.com/uidbz/anneal/core/toolset"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -249,7 +249,7 @@ func (m *Manager) runOnce(ctx context.Context) {
 	tools := m.reviewerTools(&ledger, sessions)
 	var rev *dive.Agent
 	rev, agentErr = dive.NewAgent(dive.AgentOptions{
-		Name:               "fyagent-review",
+		Name:               "anneal-review",
 		SystemPrompt:       reviewerPrompt,
 		Model:              m.Model(),
 		Tools:              tools,
@@ -285,7 +285,7 @@ func (m *Manager) finishRun() {
 	m.mu.Unlock()
 }
 
-const reviewerPrompt = `You are fyagent's background self-improvement reviewer. You are given digest(s) of recent conversation transcripts (user messages, assistant replies, tool calls).
+const reviewerPrompt = `You are Anneal's background self-improvement reviewer. You are given digest(s) of recent conversation transcripts (user messages, assistant replies, tool calls).
 
 Your job: mine them for things worth remembering, and save them:
 - Corrections the user made, conventions they stated, environment/project facts learned, user preferences -> memory tool (target 'memory' or 'user'). Keep each entry one short line.

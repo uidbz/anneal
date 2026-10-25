@@ -1,24 +1,28 @@
 # e2e gates
 
-Risor **driver scripts** that drive the real `fyagent` binary against live
+Risor **driver scripts** that drive the real Anneal binary against live
 infrastructure (Strata + optionally tie/MCP) and assert on the event stream.
-They replace the GUI script (`FYAGENT_UI_DIR`), so no clicking is needed —
-each prints `=== … OK/FAIL` markers and quits itself.
+They replace the legacy GUI script (`ANNEAL_UI_DIR`), so no clicking is
+needed — each prints `=== … OK/FAIL` markers and quits itself.
+
+During the hybrid UI migration the drivers target **`anneal-legacy`** (the
+original all-Risor UI). The new hybrid shell has its own event-rendering tests
+and will get scripted-pane drivers in Phase 5.
 
 ## Prerequisites
 
 - Strata (or any OpenAI Chat-Completions server) running, default
   `http://127.0.0.1:8081/v1/chat/completions`.
-- A scratch state dir: `FYAGENT_HOME=/tmp/opencode/fyagent-home` (any dir).
+- A scratch state dir: `ANNEAL_HOME=/tmp/opencode/anneal-home` (any dir).
 - A demo project dir to operate in (the tasks assume `/tmp/opencode/demo`
   with a tiny Go module containing `add.go` with a failing test — create it
   once if you want the M3/M8-style tasks to make sense).
-- tie triplestore reachable for `m4a`/`m4b`/`m7` (collection `fyagent`).
+- tie triplestore reachable for `m4a`/`m4b`/`m7` (collection `anneal`).
 - Build the MCP demo server for `m8`:
 
 ```sh
 cd testing/e2e/mcp-demo && go build -o mcpdemo .
-# then add to $FYAGENT_HOME/config.json:
+# then add to $ANNEAL_HOME/config.json:
 #   "mcp": {"enabled": true,
 #           "servers": {"demo": {"command": "<abs-path>/testing/e2e/mcp-demo/mcpdemo"}}}
 ```
@@ -27,10 +31,10 @@ cd testing/e2e/mcp-demo && go build -o mcpdemo .
 
 ```sh
 cd /tmp/opencode/demo            # or any cwd the tasks expect
-FYAGENT_HOME=/tmp/opencode/fyagent-home \
-FYAGENT_UI_DIR=<repo>/testing/e2e/<driver> \
-FYAGENT_ENDPOINT=http://127.0.0.1:8081/v1/chat/completions \
-timeout 300 <repo>/bin/fyagent
+ANNEAL_HOME=/tmp/opencode/anneal-home \
+ANNEAL_UI_DIR=<repo>/testing/e2e/<driver> \
+ANNEAL_ENDPOINT=http://127.0.0.1:8081/v1/chat/completions \
+timeout 300 <repo>/bin/anneal-legacy
 ```
 
 ## Gates
@@ -53,4 +57,4 @@ Notes:
 - For `m7`, set `review.idle_settle_s` to a few seconds in the scratch config
   to keep the gate fast.
 - The headless binary has its own gates (see `docs/USING.md` §headless); the
-  simplest is `fyagent-headless -p "…" -learn`.
+  simplest is `anneal-headless -p "…" -learn`.

@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"fyagent/core/memory"
-	"fyagent/core/toolset"
+	"github.com/uidbz/anneal/core/memory"
+	"github.com/uidbz/anneal/core/toolset"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
@@ -34,14 +34,15 @@ func (r *Runner) memoryReminderHook() dive.PreGenerationHook {
 		if r.mem == nil || !r.cfg.Memory.Enabled {
 			return nil
 		}
-		if hasReminder(hctx.Messages, "fyagent-memory") {
+		if hasReminder(hctx.Messages, "anneal-memory") ||
+			hasReminder(hctx.Messages, "fyagent-memory") { // pre-rename sessions
 			return nil
 		}
 		snap := r.mem.Snapshot()
 		if snap == "" {
 			return nil
 		}
-		hctx.Messages = dive.SetSystemReminder(hctx.Messages, "fyagent-memory", snap)
+		hctx.Messages = dive.SetSystemReminder(hctx.Messages, "anneal-memory", snap)
 		return nil
 	}
 }

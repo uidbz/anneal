@@ -1,4 +1,4 @@
-// fyagent M6 e2e: skill_manage create -> Skill tool use next session ->
+// anneal M6 e2e: skill_manage create -> Skill tool use next session ->
 // subagent (Agent tool, explore) file lookup.
 require(["v0.9", "@json", "@strings"])
 

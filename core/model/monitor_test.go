@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"fyagent/core/config"
+	"github.com/uidbz/anneal/core/config"
 )
 
 func testProvider(endpoint string) config.Provider {

@@ -6,9 +6,9 @@ import (
 )
 
 func TestLoadCreatesDefaultsAndHonorsEnv(t *testing.T) {
-	t.Setenv("FYAGENT_HOME", t.TempDir())
-	t.Setenv("FYAGENT_ENDPOINT", "http://example.invalid/v1/chat/completions")
-	t.Setenv("FYAGENT_MODEL", "m-env")
+	t.Setenv("ANNEAL_HOME", t.TempDir())
+	t.Setenv("ANNEAL_ENDPOINT", "http://example.invalid/v1/chat/completions")
+	t.Setenv("ANNEAL_MODEL", "m-env")
 
 	cfg, err := Load()
 	if err != nil {
@@ -32,8 +32,35 @@ func TestLoadCreatesDefaultsAndHonorsEnv(t *testing.T) {
 
 // Regression: Apply used to unmarshal into a zero Config, so a partial
 // document silently wiped allow rules / compaction / tie settings.
+func TestLoadLegacyEnvFallbackAndPrecedence(t *testing.T) {
+	t.Setenv("ANNEAL_HOME", t.TempDir())
+	t.Setenv("ANNEAL_ENDPOINT", "")
+	t.Setenv("ANNEAL_MODEL", "")
+	t.Setenv("FYAGENT_ENDPOINT", "http://legacy.invalid/v1/chat/completions")
+	t.Setenv("FYAGENT_MODEL", "legacy-model")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Provider.Endpoint != "http://legacy.invalid/v1/chat/completions" || cfg.Provider.Model != "legacy-model" {
+		t.Fatalf("legacy env fallback: %+v", cfg.Provider)
+	}
+
+	// The new names win when both are set.
+	t.Setenv("ANNEAL_ENDPOINT", "http://new.invalid/v1/chat/completions")
+	t.Setenv("ANNEAL_MODEL", "new-model")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Provider.Endpoint != "http://new.invalid/v1/chat/completions" || cfg.Provider.Model != "new-model" {
+		t.Fatalf("new env precedence: %+v", cfg.Provider)
+	}
+}
+
 func TestApplyKeepsDefaultsForOmittedKeys(t *testing.T) {
-	t.Setenv("FYAGENT_HOME", t.TempDir())
+	t.Setenv("ANNEAL_HOME", t.TempDir())
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)

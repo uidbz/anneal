@@ -1,4 +1,4 @@
-// fyagent M8 e2e: MCP server connects at boot; the model calls the
+// anneal M8 e2e: MCP server connects at boot; the model calls the
 // qualified demo_echo tool and must report its raw output.
 require(["v0.9", "@json", "@strings"])
 

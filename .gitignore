@@ -1,8 +1,10 @@
 bin/
-/fyagent
-/fyagent-headless
+/anneal
+/anneal-headless
 *.test
 *.log
 .DS_Store
 coverage.out
 vendor/
+/fyagent
+/fyagent-headless

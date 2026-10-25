@@ -1,4 +1,4 @@
-// Package agent composes and runs the dive agent for fyagent.
+// Package agent composes and runs the dive agent for anneal.
 package agent
 
 import (
@@ -10,17 +10,17 @@ import (
 	"sync"
 	"time"
 
-	"fyagent/core/config"
-	"fyagent/core/fsutil"
-	"fyagent/core/harness"
-	"fyagent/core/memory"
-	"fyagent/core/model"
-	"fyagent/core/paths"
-	"fyagent/core/review"
-	"fyagent/core/skills"
-	"fyagent/core/textutil"
-	"fyagent/core/tieindex"
-	"fyagent/core/uiapi"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/fsutil"
+	"github.com/uidbz/anneal/core/harness"
+	"github.com/uidbz/anneal/core/memory"
+	"github.com/uidbz/anneal/core/model"
+	"github.com/uidbz/anneal/core/paths"
+	"github.com/uidbz/anneal/core/review"
+	"github.com/uidbz/anneal/core/skills"
+	"github.com/uidbz/anneal/core/textutil"
+	"github.com/uidbz/anneal/core/tieindex"
+	"github.com/uidbz/anneal/core/uiapi"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/experimental/compaction"
@@ -342,7 +342,7 @@ func (r *Runner) run(id int, input string) {
 	}
 
 	ag, err := dive.NewAgent(dive.AgentOptions{
-		Name:               "fyagent",
+		Name:               "anneal",
 		SystemPrompt:       prompt,
 		Model:              provider,
 		Tools:              tools,

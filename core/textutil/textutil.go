@@ -1,4 +1,4 @@
-// Package textutil holds small text helpers shared by fyagent packages.
+// Package textutil holds small text helpers shared by anneal packages.
 package textutil
 
 // Clip truncates s to at most n bytes and appends an ellipsis. n <= 0 means

@@ -1,5 +1,5 @@
 // MCP integration: dive's experimental/mcp Manager owns the server
-// connections (stdio or streamable HTTP); fyagent connects them at startup,
+// connections (stdio or streamable HTTP); anneal connects them at startup,
 // publishes their tools to the runner, and reports state to the UI.
 
 package app
@@ -9,7 +9,7 @@ import (
 	"log"
 	"sort"
 
-	"fyagent/core/config"
+	"github.com/uidbz/anneal/core/config"
 
 	"github.com/deepnoodle-ai/dive/experimental/mcp"
 )

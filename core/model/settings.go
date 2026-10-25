@@ -3,13 +3,13 @@ package model
 import (
 	"strings"
 
-	"fyagent/core/config"
+	"github.com/uidbz/anneal/core/config"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
 )
 
-// Settings maps the provider section of fyagent's config onto dive model
+// Settings maps the provider section of anneal's config onto dive model
 // settings. Centralized so the main runner, probes, and any future agent
 // construct the exact same request options (and so reasoning_effort actually
 // reaches the provider).

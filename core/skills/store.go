@@ -1,7 +1,7 @@
-// Package skills manages fyagent-authored skills: SKILL.md directories under
-// ~/.fyagent/skills (agentskills-compatible, discovered by the dive skill
+// Package skills manages anneal-authored skills: SKILL.md directories under
+// ~/.anneal/skills (agentskills-compatible, discovered by the dive skill
 // loader), with create/patch/write_file/remove ops and optional write-approval
-// staging under ~/.fyagent/pending/skills.
+// staging under ~/.anneal/pending/skills.
 package skills
 
 import (
@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"fyagent/core/config"
-	"fyagent/core/paths"
-	"fyagent/core/textutil"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/paths"
+	"github.com/uidbz/anneal/core/textutil"
 
 	"github.com/deepnoodle-ai/dive/skill"
 )

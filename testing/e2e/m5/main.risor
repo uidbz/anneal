@@ -1,4 +1,4 @@
-// fyagent M5 e2e driver: memory tool (direct + staged approve) and
+// anneal M5 e2e driver: memory tool (direct + staged approve) and
 // cross-session snapshot recall. Mode is chosen by the config file
 // (memory.write_approval) set by the test harness between phases.
 require(["v0.9", "@json", "@strings"])

@@ -15,10 +15,10 @@ make live-m10-test          # from the repo root (Strata must be up)
 Manual equivalent:
 
 ```sh
-cp -r testing/e2e/m10/harness /tmp/opencode/fyagent-home/
+cp -r testing/e2e/m10/harness /tmp/opencode/anneal-home/
 cd /tmp/opencode/demo
-FYAGENT_HOME=/tmp/opencode/fyagent-home FYAGENT_ENDPOINT=http://127.0.0.1:8081/v1/chat/completions \
-  ../../src/fynerisor-agent/bin/fyagent-headless -json -yolo -p 'Delegate with the Agent tool (subagent type "summarizer"): summarize what go.mod declares in one line.'
+ANNEAL_HOME=/tmp/opencode/anneal-home ANNEAL_ENDPOINT=http://127.0.0.1:8081/v1/chat/completions \
+  <repo>/bin/anneal-headless -json -yolo -p 'Delegate with the Agent tool (subagent type "summarizer"): summarize what go.mod declares in one line.'
 ```
 
 Gate assertions are made on the JSON event stream (`tool.start` names,

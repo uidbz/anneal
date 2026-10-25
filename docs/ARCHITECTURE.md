@@ -1,57 +1,72 @@
-# fyagent architecture
+# Anneal architecture
+
+Anneal was renamed from `fyagent`; the hybrid UI migration is in progress.
+The stable shell is Go/Fyne; scripted `CanvasObject` panes use fynerisor.
 
 ```
-                    ┌──────────────────────────────────────────────┐
-                    │  cmd/fyagent (GUI)        cmd/fyagent-headless│
-                    │   fynerisor window        terminal sink       │
-                    │   + assets/ui/main.risor  (-p/-i/-json)       │
-                    └──────────┬───────────────────────┬───────────┘
-                               │        core/app (wiring)          
-                    ┌──────────┴───────────────────────────────────┐
-                    │ core/uiapi Bridge  (Go ⇄ Risor event bridge) │
-                    ├──────────────────────────────────────────────┤
-                    │ core/agent  Runner: dive Agent per run       │
-                    │   toolkit+meta tools · permissions · hooks   │
-                    │   compaction · digests · transcripts         │
-                    ├──────────┬──────────┬──────────┬─────────────┤
-                    │ core/    │ core/    │ core/    │ core/review │
-                    │ memory   │ skills   │ tieindex │ (idle       │
-                    │ (bounded │ (SKILL.md│ (tie     │  reviewer)  │
-                    │  stores) │  store)  │  search) │             │
-                    ├──────────┴──────────┴──────────┴─────────────┤
-                    │ core/model (Strata provider + HealthMonitor) │
-                    │ core/config · core/paths · core/journey      │
-                    │ core/harness · harnesslib · improve · probe    │
-                    └──────────────────────────────────────────────┘
+                    ┌────────────────────────────────────────────────┐
+                    │ cmd/anneal (hybrid)      cmd/anneal-headless   │
+                    │  Go/Fyne shell            terminal sink        │
+                    │  + harness.risor pane     (-p/-i/-json)        │
+                    │ cmd/anneal-legacy (all-Risor fallback/e2e)     │
+                    └──────────┬────────────────────────┬────────────┘
+                               │        core/app (wiring)
+                    ┌──────────┴────────────────────────────────────┐
+                    │ core/uiapi Bridge (script panes + Go taps)    │
+                    ├───────────────────────────────────────────────┤
+                    │ core/agent  Runner: dive Agent per run        │
+                    │   toolkit+meta tools · permissions · hooks    │
+                    │   compaction · digests · transcripts          │
+                    ├──────────┬──────────┬──────────┬──────────────┤
+                    │ core/    │ core/    │ core/    │ core/review  │
+                    │ memory   │ skills   │ tieindex │ (idle        │
+                    │ (bounded │ (SKILL.md│ (tie     │  reviewer)   │
+                    │  stores) │  store)  │  search) │              │
+                    ├──────────┴──────────┴──────────┴──────────────┤
+                    │ core/model (Strata provider + HealthMonitor)  │
+                    │ core/config · paths · journey · fsutil        │
+                    │ harness · harnesslib · improve · probe · tools│
+                    └───────────────────────────────────────────────┘
               truth: dive FileStore JSONL   index: tie (rebuildable)
 ```
 
 ## Runtime model
 
-- **One foreground run at a time.** `Runner.Send` starts a goroutine
-  (`run()`); a second send gets a `run.busy` event. Each run builds a fresh
-  dive `Agent` (tools, hooks, skill extension) against the shared session.
+- **One foreground run at a time.** `Runner.Send`/`StartTask` starts a
+  goroutine (`run()`); a second send gets a `run.busy` event. Each run builds
+  a fresh dive `Agent` (tools, hooks, skill extension) against the shared
+  session.
 - **Conversation truth = dive `session.FileStore`** JSONL under
-  `~/.fyagent/sessions`. tie is only a *rebuildable search index* over it
-  (collection `fyagent`). Session title = first task; todos live in session
-  metadata (`store.Put` rewrites the header — message appends never do).
-- **The GUI is a Risor script** (`assets/ui/main.risor`, embedded;
-  `FYAGENT_UI_DIR` overrides for hot reload). Everything user-visible is
-  driven by events; everything user-initiated is an `agent.*` call.
+  `~/.anneal/sessions`. tie is only a *rebuildable search index* over it
+  (collection `anneal` for new installs; existing configs keep their value).
+  Session title = first task; todos live in session metadata (`store.Put`
+  rewrites the header — message appends never do).
+- **Hybrid UI.** `cmd/anneal` owns the window in Go/Fyne. The transcript,
+  composer, permission inbox, sessions, todos, and status are native widgets.
+  The harness editor/library is a fynerisor `CanvasObject`
+  (`assets/ui/harness.risor`) embedded in a tab; it receives a restricted
+  `agent` API (pull/actions only) and never controls the host window content.
+- **Legacy UI.** `cmd/anneal-legacy` still runs the original all-Risor
+  `assets/ui/main.risor` (`ANNEAL_UI_DIR` hot reload) and remains the target
+  for the existing e2e drivers during the migration.
 - **Threading rule:** Go never touches Fyne widgets from its own goroutines.
-  All Go→UI communication goes through `uiapi.Bridge`, which marshals the
-  event to JSON and queues it onto fynerisor's `functionCalls` channel
-  (guithread-safe). Events emitted before the script registers its handler
-  are buffered (≤4096) and flushed at `Ready()`. `Bridge.SetTap` installs a
-  Go-side observer (journey log; headless sink).
-- **Compile gate:** `fw.CompileScript()` (fynerisor ≥ main, issue #6) runs at
-  every boot and in `fyagent -check-ui`; a broken UI script fails fast with a
-  line number instead of a black window.
+  The Go shell marks the bridge tap-only (`SetTapOnly`) and installs one
+  `AddTap` consumer; a single goroutine normalizes events and updates widgets
+  through `fyne.Do`. The journey log is another tap, composed rather than
+  replaced. Scripted panes use `uiapi.Bridge` with `Attach(view.Window())`:
+  events are JSON-marshaled and queued onto fynerisor's `functionCalls`
+  channel; pre-handler events are buffered (≤4096) until `Ready()`/`setOn`.
+- **Compile gate:** the embedded harness pane is compiled at boot and by
+  `anneal -check-ui`; the legacy full UI is compiled by
+  `anneal-legacy -check-ui`. A broken script fails fast instead of producing
+  an empty pane/window.
 
-## Events (Go → Risor, JSON)
+## Events (Go → UI)
 
-Every payload carries **all keys** (empty slices marshal as `[]`, never
-`null`) because Risor dot-access on missing keys is a hard error.
+Every payload maps to a JSON object on the script boundary and carries **all
+keys** (empty slices marshal as `[]`, never `null`) because Risor dot-access
+on missing keys is a hard error. The Go shell consumes the same values as maps
+(normalized through JSON once) and uses safe accessors.
 
 | event | when |
 |-------|------|
@@ -77,7 +92,7 @@ Every payload carries **all keys** (empty slices marshal as `[]`, never
 ## Permissions
 
 `permission.Manager` (dive) with rules from config + `HookFromManager` on
-PreToolUse. Prompts route through fyagent's `dive.Dialog` implementation:
+PreToolUse. Prompts route through anneal's `dive.Dialog` implementation:
 emit `perm.request`, block on a channel until `respondPerm` (or interrupt ⇒
 deny). Plan-mode enforcement lives in the dialog (ask rules evaluate before
 the mode gate — non-read-only tools are denied, not prompted). Subagents are
@@ -118,7 +133,7 @@ a transport error reports `unreachable` without touching a nil response.
 - **MCP tool input** — dive hands tool input as plain `[]byte`; the mcp-go
   adapter used to miss it (base64 default branch, broke every MCP call).
   Fixed **upstream** (dive #309, shipped in `experimental/mcp v1.33.0`);
-  fyagent pins mcp **v1.42.0**, so the input-normalization wrapper was
+  anneal pins mcp **v1.42.0**, so the input-normalization wrapper was
   removed. The `qualifiedTool` rename wrapper stays: the Manager still
   registers unqualified tool names (`mcp__<server>__<tool>` collisions with
   built-ins are real — an unqualified `echo` misled the model). My issue
@@ -129,16 +144,21 @@ a transport error reports `unreachable` without touching a nil response.
   own without explicit permission.
 - **fynerisor issues #2–#6** (all fixed on `main`, unreleased): `app.Quit`,
   `Markdown.SetText`, container `Append/Remove/Refresh`, `tie.connect`
-  collection hijack, `CompileScript`. fyagent `go.mod` `replace`s fynerisor
-  to the local checkout until v0.9.1. Tracker: `docs/FYNERISOR-GAPS.md`.
+  collection hijack, `CompileScript`. **`NewCanvasObject`** (`b2b1478`) adds
+  the embedding API used by the hybrid harness pane: a script renders inside a
+  `fyne.CanvasObject` while the host owns the window; `WithHostWindow` opts
+  into dialogs/shortcuts/close. anneal `go.mod` `replace`s fynerisor to the
+  local checkout until a release ships these. Tracker:
+  `docs/FYNERISOR-GAPS.md`.
 - **tie query dialect**: value search requires `Reverse: true` and only
   whitelisted relations are reverse-indexed — hence the `tag` schema choice.
 
 ## Testing strategy
 
 - Hermetic Go unit tests (scripted LLMs for compaction/reviewer, temp
-  FYAGENT_HOME for stores) — `make test`.
+  ANNEAL_HOME for stores) — `make test`.
+- Go shell event-rendering tests with `fyne.io/fyne/v2/test` (no display).
 - Live-infrastructure tests opt-in (`make live-tie-test`).
-- Risor driver scripts exercising the real binary end-to-end —
-  `testing/e2e/README.md`.
-- `make ci` = vet + test + check-ui.
+- Legacy Risor driver scripts exercising the real binary end-to-end —
+  `testing/e2e/README.md` (targets `anneal-legacy`).
+- `make ci` = vet + test + legacy `-check-ui` + pane `-check-ui`.

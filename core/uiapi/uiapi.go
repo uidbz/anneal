@@ -1,4 +1,4 @@
-// Package uiapi exposes the fyagent core to Risor UI scripts.
+// Package uiapi exposes the anneal core to Risor UI scripts.
 //
 // The bridge is deliberately narrow and JSON-shaped: script calls into core
 // are fire-and-forget (never block the Risor VM or the GUI thread), and every
@@ -30,15 +30,40 @@ type Bridge struct {
 	mu       sync.Mutex
 	handler  *object.Closure
 	callFunc object.CallFunc
-	queue    []string  // events queued before handler registration / Ready
-	ready    bool      // true once fw.Execute has created the callback channel
-	tap      func(any) // optional observer of every emitted event (journey log)
+	queue    []string    // events queued before handler registration / Ready
+	ready    bool        // true once fw.Execute has created the callback channel
+	taps     []func(any) // observers of every emitted event (journey log, Go UI)
+	tapOnly  bool        // Go UI mode: taps consume events, nothing is buffered
 }
 
-// SetTap installs an observer invoked on every Emit (before delivery).
+// SetTap installs the (single) observer invoked on every Emit before delivery.
 func (b *Bridge) SetTap(fn func(any)) {
 	b.mu.Lock()
-	b.tap = fn
+	if fn == nil {
+		b.taps = nil
+	} else {
+		b.taps = []func(any){fn}
+	}
+	b.mu.Unlock()
+}
+
+// AddTap adds an observer without replacing existing taps (e.g. the journey
+// log plus a Go UI consumer).
+func (b *Bridge) AddTap(fn func(any)) {
+	if fn == nil {
+		return
+	}
+	b.mu.Lock()
+	b.taps = append(b.taps, fn)
+	b.mu.Unlock()
+}
+
+// SetTapOnly marks the bridge as consumed by Go code through taps: events are
+// no longer marshaled, queued, or delivered to a script handler.
+func (b *Bridge) SetTapOnly() {
+	b.mu.Lock()
+	b.tapOnly = true
+	b.queue = nil
 	b.mu.Unlock()
 }
 
@@ -55,8 +80,8 @@ func (b *Bridge) Attach(fw *gui.Window) {
 	b.mu.Unlock()
 }
 
-// Quit asks the attached Fyne window/app to exit on the GUI thread. No-op
-// (returning false) when the bridge is not attached.
+// Quit asks the attached Fyne window/app to exit on the GUI thread. It is a
+// no-op when the bridge has no window (e.g. the Go shell or tests).
 func (b *Bridge) Quit() {
 	b.mu.Lock()
 	fw := b.fw
@@ -113,29 +138,39 @@ func (b *Bridge) Ready() {
 
 // Emit publishes a core event to the script handler as JSON. Safe from any
 // goroutine. Events emitted before Ready or before a handler is registered
-// are buffered (bounded).
+// are buffered (bounded). Taps always run (outside the lock) in registration
+// order; tap-only bridges never marshal or queue.
 func (b *Bridge) Emit(v any) {
-	data, err := json.Marshal(v)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "uiapi: marshal event: %v\n", err)
-		return
-	}
 	b.mu.Lock()
-	tap := b.tap
+	taps := append([]func(any){}, b.taps...)
+	tapOnly := b.tapOnly
 	b.mu.Unlock()
-	if tap != nil {
+
+	payload := ""
+	if !tapOnly {
+		data, err := json.Marshal(v)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "uiapi: marshal event: %v\n", err)
+			return
+		}
+		payload = string(data)
+	}
+	for _, tap := range taps {
 		tap(v) // never call user code while holding the bridge lock
+	}
+	if tapOnly {
+		return
 	}
 	b.mu.Lock()
 	if !b.ready || b.handler == nil {
 		if len(b.queue) < 4096 {
-			b.queue = append(b.queue, string(data))
+			b.queue = append(b.queue, payload)
 		}
 		b.mu.Unlock()
 		return
 	}
 	b.mu.Unlock()
-	b.dispatch(string(data))
+	b.dispatch(payload)
 }
 
 // dispatch runs the handler on the GUI thread; a panicking or erroring script

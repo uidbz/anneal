@@ -8,21 +8,21 @@ import "fmt"
 
 const componentRules = `You work in a directory holding the editable harness component files
 (this run they are already copied for you):
-- system.md        workstyle rules appended to fyagent's system prompt
+- system.md        workstyle rules appended to Anneal's system prompt
 - guardrails.md    behavioral guardrails; lines "deny: Tool(spec)", "ask: ...",
                    "allow: ..." are machine-enforced permission rules
-- tool-guidance.md extra instructions on using fyagent's tools well
+- tool-guidance.md extra instructions on using Anneal's tools well
 - subagents/<name>.md subagent definitions (frontmatter: description,
   model, tools; the key is the file name)
 Do NOT invent other files (there is no scripts.md component).
 Edit them with the file tools using their ABSOLUTE paths (the task text
 tells you the directory, e.g. Write file_path="<dir>/system.md"). Keep
 every file under 3500 characters.
-Never store secrets or task play-by-play. Never reference fyagent's own
+Never store secrets or task play-by-play. Never reference Anneal's own
 state directory paths.`
 
 func editorSystem(kind string) string {
-	role := `You are fyagent's INVARIANT harness editor.
+	role := `You are Anneal's INVARIANT harness editor.
 Improve the harness for AGENTIC deficiencies that recur across any task:
 - planning: work started without a checklist; "done" declared unverified
 - verification: produced files never re-opened; tests/builds not re-run
@@ -30,7 +30,7 @@ Improve the harness for AGENTIC deficiencies that recur across any task:
 - delegation: research bundled into the main thread
 Read the reference execution FIRST and list observed deficiencies, quoting
 the exact line that shows each. Then edit the component files so a future
-fyagent run avoids them.
+Anneal run avoids them.
 Rules:
 - ` + componentRules + `
 - NO task-specific facts: no file names, values, or domain details from
@@ -39,7 +39,7 @@ Rules:
 When done, reply with 3 short lines: what you changed and which observed
 deficiency each change targets.`
 	if kind == "domain" {
-		role = `You are fyagent's DOMAIN harness editor.
+		role = `You are Anneal's DOMAIN harness editor.
 Improve the harness for THIS task's domain: the procedures, constraints,
 formats, and verification steps the reference execution did not know.
 Read the reference execution FIRST and list, with quotes, the domain
@@ -97,7 +97,7 @@ Write a CONTRAST NOTE (max 25 lines):
 No scores, no praise.`, clip(task, 800), refDigest, kind, clip(diff, 3000), probeDigest)
 }
 
-const composerSystem = `You are fyagent's harness COMPOSER. You get the reference execution, both
+const composerSystem = `You are Anneal's harness COMPOSER. You get the reference execution, both
 candidate harness change sets, and their contrast notes. Compose the
 SUCCESSOR harness in your working directory (a copy of the current harness
 is already there — edit it in place).

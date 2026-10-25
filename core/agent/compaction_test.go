@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"fyagent/core/config"
-	"fyagent/core/uiapi"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/uiapi"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"

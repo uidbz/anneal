@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"fyagent/core/paths"
+	"github.com/uidbz/anneal/core/paths"
 )
 
 func newStore(t *testing.T) *Store {
@@ -79,7 +79,7 @@ func TestCreateListContext(t *testing.T) {
 }
 
 func TestPromoteWithoutReplacementHasNoBackup(t *testing.T) {
-	t.Setenv("FYAGENT_HOME", t.TempDir())
+	t.Setenv("ANNEAL_HOME", t.TempDir())
 	s := newStore(t)
 	d := filepath.Join(t.TempDir(), "compose")
 	os.MkdirAll(d, 0o755)
@@ -102,7 +102,7 @@ func TestPromoteWithoutReplacementHasNoBackup(t *testing.T) {
 
 func TestPromoteBacksUp(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("FYAGENT_HOME", home)
+	t.Setenv("ANNEAL_HOME", home)
 	s := newStore(t)
 	os.MkdirAll(paths.Harness(), 0o755)
 	os.WriteFile(filepath.Join(paths.Harness(), "system.md"), []byte("old global"), 0o644)

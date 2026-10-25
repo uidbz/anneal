@@ -1,4 +1,4 @@
-// fyagent M3 e2e driver: permissions (session grant), todo tool, plan-mode
+// anneal M3 e2e driver: permissions (session grant), todo tool, plan-mode
 // auto-deny, sessions list. Headless: no widgets, events + agent.quit only.
 require(["v0.9", "@json", "@strings"])
 

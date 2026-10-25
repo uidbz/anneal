@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"fyagent/core/config"
+	"github.com/uidbz/anneal/core/config"
 )
 
 func testStore(t *testing.T) *Store {
-	t.Setenv("FYAGENT_HOME", t.TempDir())
+	t.Setenv("ANNEAL_HOME", t.TempDir())
 	return NewStore(&config.Memory{Enabled: true, MemoryCharLimit: 100, UserCharLimit: 50})
 }
 

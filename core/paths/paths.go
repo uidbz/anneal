@@ -1,4 +1,4 @@
-// Package paths resolves fyagent's per-user state under ~/.fyagent.
+// Package paths resolves anneal's per-user state under ~/.anneal.
 package paths
 
 import (
@@ -6,16 +6,31 @@ import (
 	"path/filepath"
 )
 
-// Root returns the fyagent state directory (override with FYAGENT_HOME).
+// Root returns the anneal state directory (override with ANNEAL_HOME).
+// FYAGENT_HOME is accepted as a deprecated alias for one release. On first
+// run after the rename, an existing ~/.fyagent directory is renamed to
+// ~/.anneal so sessions, memory, skills, harnesses, and logs move together.
 func Root() string {
+	if h := os.Getenv("ANNEAL_HOME"); h != "" {
+		return h
+	}
 	if h := os.Getenv("FYAGENT_HOME"); h != "" {
 		return h
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".fyagent"
+		return ".anneal"
 	}
-	return filepath.Join(home, ".fyagent")
+	newDir := filepath.Join(home, ".anneal")
+	oldDir := filepath.Join(home, ".fyagent")
+	if _, err := os.Stat(newDir); os.IsNotExist(err) {
+		if _, err := os.Stat(oldDir); err == nil {
+			if os.Rename(oldDir, newDir) != nil {
+				return oldDir // keep the old location if the rename fails
+			}
+		}
+	}
+	return newDir
 }
 
 func Config() string        { return filepath.Join(Root(), "config.json") }

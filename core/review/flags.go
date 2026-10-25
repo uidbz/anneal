@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"fyagent/core/fsutil"
+	"github.com/uidbz/anneal/core/fsutil"
 )
 
 // Flag is one reviewer-observed harness deficiency: a work-style gap

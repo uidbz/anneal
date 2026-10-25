@@ -1,6 +1,6 @@
-// Package tieindex maintains tie-backed word-token indexes over fyagent's
+// Package tieindex maintains tie-backed word-token indexes over anneal's
 // dive JSONL sessions. Conversation truth stays in the FileStore; tie is a
-// rebuildable search index (collection "fyagent" by default).
+// rebuildable search index (collection "anneal" by default).
 //
 // Schema (exact-match triples; search = reverse-association AND algebra):
 //
@@ -35,7 +35,7 @@ import (
 	"time"
 	"unicode"
 
-	"fyagent/core/config"
+	"github.com/uidbz/anneal/core/config"
 
 	"github.com/uidbz/tie/client"
 )
@@ -52,7 +52,7 @@ type Indexer struct {
 }
 
 // New builds an indexer. Connection is lazy: a tie outage never blocks
-// fyagent; Search/IndexSession report the degraded state instead.
+// anneal; Search/IndexSession report the degraded state instead.
 func New(cfg config.Tie) *Indexer {
 	return &Indexer{cfg: cfg, collection: cfg.Collection, indexed: map[string]int{}}
 }

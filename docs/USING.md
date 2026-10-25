@@ -1,4 +1,4 @@
-# Using fyagent
+# Using Anneal
 
 ## First run
 
@@ -7,29 +7,37 @@
 2. (Optional) start the tie triplestore and make sure `~/.config/tie/config.toml`
    points at it — session search + cross-session recall need it; everything
    else runs without it.
-3. `./bin/fyagent` — the header shows model health (`● online` etc.) and the
-   index line (`index: fyagent`, `index: offline`).
+3. `./bin/anneal` — the header shows model health, the tie index state, and
+   MCP server status.
 
-Config resolution: `~/.fyagent/config.json` (created with defaults on first
+Config resolution: `~/.anneal/config.json` (created with defaults on first
 run) → env overrides (see `docs/CONFIG.md`). Provider settings are edited in
 that file; the bridge also exposes `agent.config()` / `agent.saveConfig(doc)`
 for scripted settings UIs (there is no built-in settings tab yet).
 
-## GUI tour
+## GUI tour (hybrid shell)
 
-- **Transcript** (center): your messages, streaming assistant text, tool
-  calls with previews, notices (✔/⚠/🧠). Long sessions scroll.
-- **Approval inbox** (top): appears for `perm.request` — tool + input
-  preview; buttons **allow** (this call), **session** (same tool/spec for the
-  session), **deny**. Staged memory/skill writes show as cards with a diff
-  preview and **approve/reject**.
-- **Right column**: token/context usage (`ctx %`), tie index status, MCP
-  server status.
-- **Todo panel**: the model's live checklist for multi-step work.
-- **Sidebar** (`sessions` or `/sessions`): all sessions, newest first — click
-  to replay/resume. `+ new` starts a fresh session.
-- **Mode button**: toggles plan (📋, read-only: mutating tools are denied) /
-  build (🛠).
+The default `anneal` binary is a plain Fyne shell with one scripted pane. The
+older all-Risor UI is still available as `anneal-legacy`.
+
+- **Transcript** (center): user/assistant blocks, streaming tail, tool calls
+  with previews, notices (✔/⚠/🧠). It appends incrementally; it does not
+  rebuild the whole window per event.
+- **Approval inbox** (above the transcript): `perm.request` cards with
+  **allow** (this call), **session** (same tool/spec for the session), and
+  **deny**.
+- **Header**: plan/build toggle, `+ new`, `sessions`, model health, token/context
+  usage, tie index state, MCP status.
+- **Todo panel** (right): the model's live checklist for multi-step work.
+- **Session picker** (`sessions` or `/sessions`): newest first — click to
+  replay/resume.
+- **Harness tab**: a fynerisor `CanvasObject` pane. Edit component files
+  inline, review guardrail rule counts, browse the improvement library, read
+  EXPERIENCE.md, promote with a two-click confirmation, inspect reviewer
+  flags, and start `/improve`. The pane is pull-based; after an action it
+  refreshes itself.
+- **Legacy UI**: `./bin/anneal-legacy` (same core) for comparison and the
+  existing e2e driver scripts.
 
 ### Slash commands (entry box)
 
@@ -40,30 +48,33 @@ for scripted settings UIs (there is no built-in settings tab yet).
 | `/plan`, `/build` | permission mode |
 | `/skills` | list installed skills |
 | `/memory` | show MEMORY.md / USER.md with usage vs caps |
-| `/index` | rebuild the session search index |
 | `/journey` | self-improvement timeline |
+| `/index` | rebuild the session search index |
 | `/learn` | queue a background-review pass now (runs when idle) |
 | `/improve` | one contrastive harness-improvement step for the last task |
-| `/harness` | open the harness panel (components, guardrail rules, improvement library) |
+| `/harness` | switch to the harness tab |
 | `/quit` | exit |
 
-Shortcuts: **Ctrl+N** new session · **Ctrl+B** sessions sidebar ·
-**Ctrl+D** stop the current run.
+### Keyboard
 
-## Headless (`fyagent-headless`)
+The hybrid shell supports the entry and normal Fyne navigation. Global
+shortcuts (Ctrl+N/B/D/R/Q) are on the Phase 3 list; the legacy UI already has
+Ctrl+N/B/D.
+
+## Headless (`anneal-headless`)
 
 Same core — same sessions, memory/skills/review, tie index, MCP.
 
 ```sh
-fyagent-headless -p "fix the flaky test in ./internal/x"   # one-shot, exit 0/1
-fyagent-headless -i                                       # REPL
-fyagent-headless -json -p "…"                             # JSONL event stream
-fyagent-headless --session 20261025-… -p "continue"       # resume a session
-fyagent-headless -p "…" -learn                            # review pass after
+anneal-headless -p "fix the flaky test in ./internal/x"   # one-shot, exit 0/1
+anneal-headless -i                                       # REPL
+anneal-headless -json -p "…"                             # JSONL event stream
+anneal-headless --session 20261025-… -p "continue"       # resume a session
+anneal-headless -p "…" -learn                            # review pass after
 ```
 
 | flag | meaning |
-|------|---------|
+|------|--------|
 | `-p TASK` | one-shot task |
 | `-i` | REPL (`/new`, `/interrupt`, `/improve`, `/harness [list|promote <id>]`, `/quit`) |
 | `-k N` | improve recursion depth with `-improve` (default from config) |
@@ -81,7 +92,7 @@ SIGINT interrupts a running task; a second SIGINT exits.
 CI-ish example:
 
 ```sh
-cd repo && fyagent-headless -allow Read,Glob,Grep,Bash -json -p "run tests" \
+cd repo && anneal-headless -allow Read,Glob,Grep,Bash -json -p "run tests" \
   | jq -r 'select(.type=="run.finished") | .text'
 ```
 
@@ -99,33 +110,32 @@ cd repo && fyagent-headless -allow Read,Glob,Grep,Bash -json -p "run tests" \
   if `index: offline` at boot.
 - **Background review** runs automatically after you stop working
   (idle ≥ `review.idle_settle_s`); watch 🧠 lines, check `/journey`, force a
-  pass with `/learn`. Approve/deny what it wants to save via the inbox cards
-  (when `write_approval` is on).
+  pass with `/learn`.
 - **Harness improvement** (`/improve`, or `-improve` in headless): after a
   task, two scoped editors propose harness edits, each candidate is replayed
   in a sandbox and behaviorally contrasted, and a composer merges only the
   evidence-supported changes. The successor applies to **this session only**
   (overlay); nothing global changes. Evidence-backed steps land in the
-  improvement library (`/harness list` in the headless REPL); making one
-  permanent is your explicit call: `/harness promote <id>` (with backups).
-  Full records: `~/.fyagent/improvements/`. The background reviewer feeds
-  the loop too: recurring work-style deficiencies it observes get queued
-  via `harness_flag` (`~/.fyagent/harness-queue.json`) and the next
-  `/improve` consumes them as hints — evidence still decides.
-- **Harness panel** (GUI): the "harness" toolbar button (or `/harness`)
-  opens a view over `~/.fyagent/harness/`: each component file is editable
-  inline (saves take effect next run — except guardrail `deny:/ask:/allow:`
-  rule lines, which need a restart), and the improvement library lists
-  every entry with its EXPERIENCE.md and a two-click **promote** button
-  (replaced files are backed up under `harness-lib/promote-backup/`).
+  improvement library (Harness tab); making one permanent is your explicit
+  call: two-click **promote** in the pane, or `/harness promote <id>` in the
+  headless REPL (with backups). Full records: `~/.anneal/improvements/`.
+  The background reviewer feeds the loop too: recurring work-style
+  deficiencies it observes get queued via `harness_flag`
+  (`~/.anneal/harness-queue.json`) and the next `/improve` consumes them as
+  hints — evidence still decides.
+- **Harness pane**: edits to prose components take effect next run; guardrail
+  `deny:/ask:/allow:` rule lines need a restart.
 
-## Scripting the GUI (UI hacking)
+## Scripting the UI
 
-`FYAGENT_UI_DIR=/path/to/ui ./bin/fyagent` loads `/path/to/ui/main.risor`
-instead of the embedded copy — edit–restart, no rebuild. The script sees one
-global, `agent` (the bridge API: `send`, `on`, `respondPerm`, `sessions`,
-`setMode`, …) and all fynerisor widget bindings (`widget`, `container`,
-`window`, …). Compile-check any candidate with `fyagent -check-ui` (uses
-`FYAGENT_UI_DIR` too). Language gotchas (no `for`, `} else {` hugging, all
-event keys always present, etc.) are listed in `docs/PLAN.md` §7 and the
-fynerisor skill notes.
+- **Panes (new):** `ANNEAL_PANE_DIR=/path/to/panes ./bin/anneal` loads
+  `harness.risor` from that directory instead of the embedded copy. Compile
+  with `anneal -check-ui`. A pane receives a restricted `agent` global
+  (harness/library/flags/improve only) and is hosted by
+  `gui.NewCanvasObject`.
+- **Legacy full UI:** `ANNEAL_UI_DIR=/path/to/ui ./bin/anneal-legacy` loads
+  `main.risor` instead of the embedded copy; compile with
+  `anneal-legacy -check-ui`. It sees the full `agent` bridge API.
+
+Language gotchas (no `for`, `} else {` hugging, all event keys always present,
+etc.) are listed in `docs/PLAN.md` §7 and the fynerisor skill notes.

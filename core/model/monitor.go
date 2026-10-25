@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"fyagent/core/config"
+	"github.com/uidbz/anneal/core/config"
 )
 
 // Health states for the model endpoint.

@@ -1,4 +1,4 @@
-module fyagent
+module github.com/uidbz/anneal
 
 go 1.27.2
 

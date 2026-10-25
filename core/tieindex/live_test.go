@@ -6,20 +6,20 @@ import (
 	"testing"
 	"time"
 
-	"fyagent/core/config"
+	"github.com/uidbz/anneal/core/config"
 )
 
-// Live-server test: only runs when FYAGENT_LIVE_TIE=1 and the configured
-// triplestore answers. Run with: FYAGENT_LIVE_TIE=1 go test ./core/tieindex
+// Live-server test: only runs when ANNEAL_LIVE_TIE=1 and the configured
+// triplestore answers. Run with: ANNEAL_LIVE_TIE=1 go test ./core/tieindex
 func TestLiveRoundtrip(t *testing.T) {
-	if os.Getenv("FYAGENT_LIVE_TIE") != "1" {
-		t.Skip("set FYAGENT_LIVE_TIE=1 to test against the real triplestore")
+	if os.Getenv("ANNEAL_LIVE_TIE") != "1" && os.Getenv("FYAGENT_LIVE_TIE") != "1" {
+		t.Skip("set ANNEAL_LIVE_TIE=1 to test against the real triplestore")
 	}
-	x := New(config.Tie{Enabled: true, Collection: "fyagent", ConfigName: ""})
+	x := New(config.Tie{Enabled: true, Collection: "anneal", ConfigName: ""})
 	if err := x.Connect(); err != nil {
 		t.Skipf("tie not reachable: %v", err)
 	}
-	sid := "fyagent-test-xyz"
+	sid := "anneal-test-xyz"
 	x.indexed[sid] = 999 // force full re-index of the test session
 	sd := SessionData{
 		ID: sid, Title: "gtest", Project: "/tmp", Model: "m", Updated: time.Now(),
@@ -87,13 +87,13 @@ func cleanupIndex(t *testing.T, x *Indexer, sid string, sd SessionData) {
 }
 
 // purgeLegacyTestRows removes rows left by earlier exploratory runs so the
-// fyagent collection only holds real sessions.
+// anneal collection only holds real sessions.
 func purgeLegacyTestRows(t *testing.T, x *Indexer) {
 	tc, err := x.client()
 	if err != nil {
 		return
 	}
-	for _, sid := range []string{"fyagent-dbg-1", "fyagent-test-xyz"} {
+	for _, sid := range []string{"anneal-dbg-1", "anneal-test-xyz"} {
 		row, err := tc.GetContext(context.Background(), sid)
 		if err != nil {
 			continue

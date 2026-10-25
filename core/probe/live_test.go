@@ -10,18 +10,18 @@ import (
 	"testing"
 	"time"
 
-	"fyagent/core/config"
-	"fyagent/core/model"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/model"
 
 	"github.com/deepnoodle-ai/dive/llm"
 )
 
 // TestLiveReplay replays a real mutation task against live Strata in a
 // sandbox, proving the probe plumbing end-to-end (record written, sandbox
-// mutated, original untouched). Opt-in: FYAGENT_LIVE_PROBE=1.
+// mutated, original untouched). Opt-in: ANNEAL_LIVE_PROBE=1.
 func TestLiveReplay(t *testing.T) {
-	if os.Getenv("FYAGENT_LIVE_PROBE") != "1" {
-		t.Skip("set FYAGENT_LIVE_PROBE=1 to run against live Strata")
+	if os.Getenv("ANNEAL_LIVE_PROBE") != "1" && os.Getenv("FYAGENT_LIVE_PROBE") != "1" {
+		t.Skip("set ANNEAL_LIVE_PROBE=1 to run against live Strata")
 	}
 	cfg, err := config.Load()
 	if err != nil {

@@ -1,4 +1,4 @@
-// fyagent M4 e2e driver B: fresh session, cross-launch recall via the
+// anneal M4 e2e driver B: fresh session, cross-launch recall via the
 // session_search tool; expects the markhor snippet from an earlier process.
 require(["v0.9", "@json", "@strings"])
 

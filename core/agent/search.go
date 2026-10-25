@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"fyagent/core/tieindex"
+	"github.com/uidbz/anneal/core/tieindex"
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"

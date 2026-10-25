@@ -1,4 +1,4 @@
-// Package config defines fyagent's configuration (~/.fyagent/config.json),
+// Package config defines anneal's configuration (~/.anneal/config.json),
 // with defaults, env overrides, and atomic saves.
 package config
 
@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"fyagent/core/fsutil"
-	"fyagent/core/paths"
+	"github.com/uidbz/anneal/core/fsutil"
+	"github.com/uidbz/anneal/core/paths"
 )
 
 type Provider struct {
@@ -85,7 +85,8 @@ type MCP struct {
 }
 
 type UI struct {
-	UIDir string `json:"ui_dir"` // overrides embedded UI scripts
+	UIDir   string `json:"ui_dir"`   // overrides embedded legacy UI scripts
+	PaneDir string `json:"pane_dir"` // overrides embedded scripted-pane scripts
 }
 
 // Harness toggles the editable harness components (M10).
@@ -146,7 +147,7 @@ func Default() *Config {
 		Memory:     Memory{Enabled: true, MemoryCharLimit: 2200, UserCharLimit: 1375, WriteApproval: false},
 		Skills:     Skills{Enabled: true, WriteApproval: false, ExtraDirs: nil},
 		Review:     Review{Enabled: true, DeferUntilIdle: true, IdleSettleS: 45, MaxAgeS: 1800, MaxInputTokens: 48000, Notify: true},
-		Tie:        Tie{Enabled: true, Collection: "fyagent", ConfigName: ""},
+		Tie:        Tie{Enabled: true, Collection: "anneal", ConfigName: ""},
 		MCP:        MCP{Enabled: true, Servers: map[string]MCPServer{}},
 		Harness:    Harness{Enabled: true, CharLimit: 6000},
 		Improve:    Improve{Enabled: true, Library: true, K: 1, Mode: "sequential"},
@@ -155,7 +156,7 @@ func Default() *Config {
 }
 
 // Load reads the config file (writing defaults on first run) and applies
-// env overrides FYAGENT_ENDPOINT / FYAGENT_MODEL.
+// env overrides ANNEAL_ENDPOINT / ANNEAL_MODEL.
 func Load() (*Config, error) {
 	cfg := Default()
 	cfg.path = paths.Config()
@@ -177,17 +178,31 @@ func Load() (*Config, error) {
 		}
 	}
 
-	if v := os.Getenv("FYAGENT_ENDPOINT"); v != "" {
+	if v := envFirst("ANNEAL_ENDPOINT", "FYAGENT_ENDPOINT"); v != "" {
 		cfg.Provider.Endpoint = v
 	}
-	if v := os.Getenv("FYAGENT_MODEL"); v != "" {
+	if v := envFirst("ANNEAL_MODEL", "FYAGENT_MODEL"); v != "" {
 		cfg.Provider.Model = v
 	}
-	if v := os.Getenv("FYAGENT_UI_DIR"); v != "" {
+	if v := envFirst("ANNEAL_UI_DIR", "FYAGENT_UI_DIR"); v != "" {
 		cfg.UI.UIDir = v
+	}
+	if v := envFirst("ANNEAL_PANE_DIR", "FYAGENT_PANE_DIR"); v != "" {
+		cfg.UI.PaneDir = v
 	}
 	cfg.normalize()
 	return cfg, nil
+}
+
+// envFirst returns the first non-empty env value (new name first, deprecated
+// alias second).
+func envFirst(names ...string) string {
+	for _, n := range names {
+		if v := os.Getenv(n); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // Apply parses a full-config JSON document (from the settings UI) and

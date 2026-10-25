@@ -9,10 +9,10 @@ import (
 	"sync"
 	"testing"
 
-	"fyagent/core/config"
-	"fyagent/core/harness"
-	"fyagent/core/harnesslib"
-	"fyagent/core/probe"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/harness"
+	"github.com/uidbz/anneal/core/harnesslib"
+	"github.com/uidbz/anneal/core/probe"
 
 	"github.com/deepnoodle-ai/dive/llm"
 )
@@ -69,14 +69,14 @@ func respText(text string) *llm.Response {
 
 func fixture(t *testing.T) (*config.Config, *harness.Store, string, *harnesslib.Store) {
 	t.Helper()
-	t.Setenv("FYAGENT_HOME", t.TempDir())
+	t.Setenv("ANNEAL_HOME", t.TempDir())
 	cfg := config.Default()
-	h := harness.New(filepath.Join(os.Getenv("FYAGENT_HOME"), "harness"))
+	h := harness.New(filepath.Join(os.Getenv("ANNEAL_HOME"), "harness"))
 	if err := h.Seed(); err != nil {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(h.Root(), "system.md"), []byte("base rule"), 0o644)
-	lib := harnesslib.New(filepath.Join(os.Getenv("FYAGENT_HOME"), "harness-lib"))
+	lib := harnesslib.New(filepath.Join(os.Getenv("ANNEAL_HOME"), "harness-lib"))
 	if err := lib.Seed(); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestStepNoEditsBails(t *testing.T) {
 
 func TestStepFullFlow(t *testing.T) {
 	cfg, h, src, lib := fixture(t)
-	imp := filepath.Join(os.Getenv("FYAGENT_HOME"), "improvements", "t1")
+	imp := filepath.Join(os.Getenv("ANNEAL_HOME"), "improvements", "t1")
 	candDir := filepath.Join(imp, "candidates", "invariant")
 	composeDir := filepath.Join(imp, "compose")
 	q := &queueLLM{scripts: []*scriptedLLM{
@@ -267,14 +267,14 @@ small Go feature addition; unverified-done deficiency
 	if len(ls) != 1 || !strings.Contains(ls[0].Situation, "unverified") {
 		t.Fatalf("lib list: %+v", ls)
 	}
-	idxB, err := os.ReadFile(filepath.Join(os.Getenv("FYAGENT_HOME"), "harness-lib", "INDEX.md"))
+	idxB, err := os.ReadFile(filepath.Join(os.Getenv("ANNEAL_HOME"), "harness-lib", "INDEX.md"))
 	if err != nil || !strings.Contains(string(idxB), res.LibraryEntry) {
 		t.Fatalf("index: %s", idxB)
 	}
 	if ctxs := lib.Context("edit main.go verify files", 2, 2000); !strings.Contains(ctxs, "verify rule") {
 		t.Fatalf("lib context: %q", ctxs)
 	}
-	snap := filepath.Join(os.Getenv("FYAGENT_HOME"), "harness-lib", res.LibraryEntry, "harness", "system.md")
+	snap := filepath.Join(os.Getenv("ANNEAL_HOME"), "harness-lib", res.LibraryEntry, "harness", "system.md")
 	if b, err := os.ReadFile(snap); err != nil || !strings.Contains(string(b), "re-read") {
 		t.Fatalf("entry snapshot: %v", err)
 	}

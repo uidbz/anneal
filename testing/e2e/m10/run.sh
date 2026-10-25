@@ -3,10 +3,10 @@
 # Asserts on the JSON event stream, never on model prose.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
-HOME_TEST="${FYAGENT_HOME:-/tmp/opencode/fyagent-home}"
-ENDPOINT="${FYAGENT_ENDPOINT:-http://127.0.0.1:8081/v1/chat/completions}"
+HOME_TEST="${ANNEAL_HOME:-/tmp/opencode/anneal-home}"
+ENDPOINT="${ANNEAL_ENDPOINT:-http://127.0.0.1:8081/v1/chat/completions}"
 DEMO=/tmp/opencode/demo
-BIN="$REPO/bin/fyagent-headless"
+BIN="$REPO/bin/anneal-headless"
 [ -x "$BIN" ] || { echo "build first: make build"; exit 1; }
 
 rm -rf "$HOME_TEST/harness"
@@ -14,7 +14,7 @@ cp -r "$REPO/testing/e2e/m10/harness" "$HOME_TEST/harness"
 mkdir -p "$DEMO/junkdir"
 
 run() {
-  (cd "$DEMO" && FYAGENT_HOME="$HOME_TEST" FYAGENT_ENDPOINT="$ENDPOINT" \
+  (cd "$DEMO" && ANNEAL_HOME="$HOME_TEST" ANNEAL_ENDPOINT="$ENDPOINT" \
     timeout 240 "$BIN" -json -yolo -p "$1")
 }
 

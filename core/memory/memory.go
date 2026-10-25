@@ -1,7 +1,7 @@
-// Package memory implements fyagent's bounded long-term memory: two small
+// Package memory implements anneal's bounded long-term memory: two small
 // markdown stores (MEMORY.md for project/world facts, USER.md for user
 // preferences), size-capped and injection-scanned, with optional write-approval
-// staging under ~/.fyagent/pending/memory.
+// staging under ~/.anneal/pending/memory.
 package memory
 
 import (
@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"fyagent/core/config"
-	"fyagent/core/fsutil"
-	"fyagent/core/paths"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/fsutil"
+	"github.com/uidbz/anneal/core/paths"
 )
 
 // Actions for Op.

@@ -41,6 +41,7 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - 2026-10-24 — name `anneal`; tie instead of SQLite; whole GUI in Risor; MCP + headless in first delivery (user).
 - 2026-10-24 — dive JSONL FileStore stays conversation truth; tie is the rebuildable search index (collection `anneal`). Word-token triples give exact-match AND search (tie has no FTS).
 - 2026-10-24 — git: local repo, conventional commits per milestone/sub-step.
+- 2026-10-26 — fynerisor dependency: replace-directive removed; go.mod pins the published pseudo-version `v0.9.1-0.20261026124728-058fa5aa952a` (= `origin/main` of fynerisor at 058fa5a, the last commit before the upstream `vmguard`→`vmexec` refactor). Reproducible on any machine without the `/go/src` container path; bump when anneal migrates to `vmexec`.
 
 ## Upstream TODO (fynerisor)
 
@@ -48,6 +49,15 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - [ ] (nice) constants exposure for `fyne.TextWrap*` instead of raw ints
 
 ## Notes (newest first)
+
+### 2026-10-26 — `script` tool: sandboxed Risor data-glue for the agent
+- New `core/script`: agent-authored Risor v2 runs headless on fynerisor's GUI-free `core` runtime — fresh VM per call, static `AnalyzeRequirements` module gate before anything executes, 30s ctx timeout (the VM honors `ctx.Done()`), result JSON-capped and `print()` output capped at 8 KiB.
+- Capability set: `json`, `csv`, `strings`, `filepath`, `time` + host-injected `fs` (read/write/list/exists/remove) and `import()`/`app` deliberately disabled. **No exec/os/http** in v1: external commands stay on the Bash permission gate (fynerisor `exec` policy-hook is the phase-2 path).
+- `fs` confinement enforced inside the VM: read roots = project + `~/.anneal`; write roots = project + `~/.anneal/scratch`; symlink-resolved containment; secret dot-dirs (`.ssh/.aws/.gnupg/.azure/.kube/.docker`, `~/.config/gh`) denied regardless. Denials are Go errors from builtins → the VM raises them, so a denied call cannot be swallowed as a value (fynerisor's `object.Errorf`-as-value style returns the error object *as data*; Risor v2 does not abort on it).
+- Tool wiring: `core/agent/script.go` (`dive.FuncTool "script"`), gated by `agent.script` (default true), ask-by-default in `agent.ask` (no ReadOnlyHint → plan mode denies, dontAsk denies unless `-allow script`); subagents inherit it. The background reviewer keeps its narrower toolset for now.
+- Dependency note: the `/go/src` replace died with this change (path exists only in the build container); pinned to the fynerisor `origin/main` pseudo-version instead (see Decisions). `anneal-headless` still builds with zero Fyne deps (`go list -deps` count 0).
+- Tests: `core/script` (module gate, parse-error no-side-effect, timeout kill, fs roots/deny-list/symlink-escape, output caps, print capture) + `core/agent/script_test.go` smoke. All hermetic; full `go test ./...` green.
+- Next: exec policy-hook upstream (then `Script(exec)` grants), optional `anneal` global module (sessions/tie as scriptable objects), maybe reviewer gets the tool.
 
 ### 2026-10-25 — rename to **Anneal** + hybrid UI Phase 1
 - Name decision: **Anneal** (heat/cool cycles harden metal; maps to

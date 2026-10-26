@@ -31,6 +31,7 @@ type Agent struct {
 	Deny               []string `json:"deny"`
 	ToolIterationLimit int      `json:"tool_iteration_limit"`
 	Subagents          bool     `json:"subagents"`
+	Script             bool     `json:"script"` // Risor data-glue script tool
 }
 
 type Compaction struct {
@@ -138,10 +139,11 @@ func Default() *Config {
 		Agent: Agent{
 			PermissionMode:     "default",
 			Allow:              []string{"Read", "Glob", "Grep", "ListDirectory", "todo", "session_search", "memory", "skill_manage", "Skill"},
-			Ask:                []string{"Bash", "Write", "Edit", "WebFetch"},
+			Ask:                []string{"Bash", "Write", "Edit", "WebFetch", "script"},
 			Deny:               nil,
 			ToolIterationLimit: 80,
 			Subagents:          true,
+			Script:             true,
 		},
 		Compaction: Compaction{Enabled: true, ThresholdPct: 82, KeepRecentTurns: 4},
 		Memory:     Memory{Enabled: true, MemoryCharLimit: 2200, UserCharLimit: 1375, WriteApproval: false},

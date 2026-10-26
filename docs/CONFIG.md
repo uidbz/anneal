@@ -51,10 +51,11 @@ keep a live config pointer (memory, skills, review) re-read changed limits and
 |-----|---------|---------|
 | `permission_mode` | `default` | `default` \| `plan` \| `acceptEdits` \| `bypassPermissions` \| `dontAsk` |
 | `allow` | `Read Glob Grep ListDirectory todo session_search memory skill_manage Skill` | never prompt |
-| `ask` | `Bash Write Edit WebFetch` | prompt the user (GUI inbox card / headless policy) |
+| `ask` | `Bash Write Edit WebFetch script` | prompt the user (GUI inbox card / headless policy) |
 | `deny` | — | auto-deny |
 | `tool_iteration_limit` | 80 | max tool rounds per run |
 | `subagents` | true | register the `Agent` tool (general-purpose / explore / plan) |
+| `script` | true | register the `script` tool (sandboxed Risor data-glue runner, see below) |
 
 Rule strings support specifiers: `"Bash(go test *)"`. Gotcha: **ask rules run
 before dive's mode gate**, so plan mode is enforced in the approval dialog
@@ -62,6 +63,22 @@ before dive's mode gate**, so plan mode is enforced in the approval dialog
 (`memory`, `skill_manage`, `Skill`, `session_search`) are read-only hints —
 their real gate is `write_approval` staging; `Agent` keeps prompting (spawning
 costs compute).
+
+### `script` — sandboxed Risor data-glue tool
+
+The `script` tool runs agent-authored Risor v2 in-process on fynerisor's
+headless `core` runtime (fresh VM per call, 30s cap). It is glue for data
+work — JSON/CSV/string reshaping, computing over files — not a command
+runner: **no exec, no os module, no network, no import()**. Modules
+available: `json`, `csv`, `strings`, `filepath`, `time`, and the
+host-provided `fs` (`fs.read`, `fs.write`, `fs.list`, `fs.exists`,
+`fs.remove`). The `fs` sandbox resolves symlinks before containment
+checks: reads reach the project dir and `~/.anneal` (session logs,
+harness files); writes reach the project dir and `~/.anneal/scratch`
+only; secret dot-dirs (`.ssh`, `.aws`, …) are denied regardless. The
+last script expression is returned as JSON; `print()` output is capped
+at 8 KiB. Plan mode denies the tool (it can write); `dontAsk` headless
+runs need an explicit `-allow script`.
 
 ## `compaction`
 

@@ -320,6 +320,9 @@ func (r *Runner) run(id int, input string) {
 	if r.skills != nil && r.cfg.Skills.Enabled {
 		tools = append(tools, r.skillManageTool())
 	}
+	if r.cfg.Agent.Script {
+		tools = append(tools, r.scriptTool())
+	}
 	skillExt := r.skillLoader()
 	var exts []dive.Extension
 	if skillExt != nil {

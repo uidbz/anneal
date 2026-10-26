@@ -42,14 +42,16 @@ active follow-ups (see [progress.md](progress.md)).
 | Subagents | `Agent` tool (general-purpose/explore/plan) inheriting permission hooks |
 | Headless | `anneal-headless -p … / -i / -json` with permission policy flags |
 | Scripted panes | `CanvasObject`-embedded Risor (harness editor now; more panes later) |
+| Script tool | sandboxed Risor v2 data glue for the agent (fynerisor headless `core`; confined fs, no exec/net) |
 
 ## Requirements
 
 - Go ≥ 1.27 (`go.mod` pins `go 1.27.2`)
 - Fyne C dependencies (X11/Wayland dev libs, OpenGL) for `anneal` — same as any
   Fyne app.
-- `anneal-headless` does not import Fyne/fynerisor (the event bus is
-  UI-agnostic), so it builds and runs without GUI libraries.
+- `anneal-headless` does not import Fyne (the event bus is UI-agnostic and
+  the `script` tool uses fynerisor's GUI-free `core` package), so it builds
+  and runs without GUI libraries.
 
 ## Build
 

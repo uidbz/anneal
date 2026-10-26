@@ -145,6 +145,11 @@ cd repo && anneal-headless -allow Read,Glob,Grep,Bash -json -p "run tests" \
 
 ## Scripting the UI
 
+- **Agent-side `script` tool:** when the agent needs data glue — parse
+  session JSONL, reshape CSV, tabulate harness files — it runs a Risor v2
+  script in a sandboxed in-process VM (json/csv/strings/filepath/time +
+  confined fs; no commands, no network). You see an approval card like
+  any write-capable tool. Details: `docs/CONFIG.md` §`script`.
 - **Panes (product):** `ANNEAL_PANE_DIR=/path/to/panes ./bin/anneal` loads
   `harness.risor` from that directory instead of the embedded copy. Compile
   with `anneal -check-ui`. A pane receives a restricted `agent` global

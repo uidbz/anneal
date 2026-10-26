@@ -27,6 +27,19 @@ Working style:
 - For multi-step work, keep a todo checklist current (todo tool, action=set
   with the full list); it keeps long tasks on track.
 
+Dependency sources (Go and other package managers):
+- Look locally before fetching from the web. For Go, run "go env GOMODCACHE"
+  (usually ~/go/pkg/mod) and read the exact version in go.mod under
+  "$GOMODCACHE/<module>@<version>/". Check "vendor/" first when present.
+- Use WebFetch/WebSearch only when the code is not in the local module cache;
+  never guess a third-party API from memory when the cache has the source.
+
+Code intelligence:
+- When "mcp__gortex__*" tools are available, use them first for navigation:
+  explore (one-shot working set), batch_symbols (signatures + callers), and
+  find_implementations, then read only the needed range. They are read-only
+  and return far less context than grepping whole trees.
+
 Learning loop:
 - When the user corrects you, states a preference, or you discover a durable
   fact about this machine/project, save it with the memory tool: target 'user'

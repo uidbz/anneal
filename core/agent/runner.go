@@ -226,9 +226,13 @@ func (r *Runner) Send(input string) {
 // already active (a run.busy event is still emitted). Callers that must
 // correlate events with the run they started use this instead of Send.
 func (r *Runner) StartTask(input string) (id int, ok bool) {
+	// Create the cancellable context before the goroutine starts so a stop
+	// click that races the run's startup is never lost.
+	ctx, cancel := context.WithCancel(context.Background())
 	r.mu.Lock()
 	if r.running {
 		r.mu.Unlock()
+		cancel()
 		r.bus.Emit(map[string]any{"type": "run.busy"})
 		return 0, false
 	}
@@ -236,12 +240,13 @@ func (r *Runner) StartTask(input string) (id int, ok bool) {
 	r.runSeq++
 	r.lastTask = input
 	r.lastAct = time.Now()
+	r.cancel = cancel
 	id = r.runSeq
 	r.mu.Unlock()
 	if r.review != nil {
 		r.review.Interrupt() // foreground preempts background
 	}
-	go r.run(id, input)
+	go r.run(ctx, id, input)
 	return id, true
 }
 
@@ -268,8 +273,8 @@ func (r *Runner) Interrupt() {
 	}
 }
 
-func (r *Runner) run(id int, input string) {
-	defer r.clearRunning() // safety net for early returns / panics
+func (r *Runner) run(ctx context.Context, id int, input string) {
+	defer r.clearRun(id) // safety net for early returns / panics
 
 	h := r.monitor.Current()
 	if h.State == model.StateConnecting {
@@ -280,12 +285,6 @@ func (r *Runner) run(id int, input string) {
 		r.finishRun(id, false, "", fmt.Sprintf("model server not usable (state: %s)", h.State), 0, 0, 0)
 		return
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	r.mu.Lock()
-	r.cancel = cancel
-	r.mu.Unlock()
 
 	deltas := newDeltaBatcher(r.bus, id)
 	defer deltas.close()
@@ -419,6 +418,13 @@ func (r *Runner) run(id int, input string) {
 	if runErr != nil {
 		out["error"] = runErr.Error()
 	}
+	// A user stop is not an error: report it distinctly so the UI can say
+	// "stopped" instead of flashing a provider failure.
+	if ctx.Err() != nil {
+		out["ok"] = false
+		out["stopped"] = true
+		out["error"] = ""
+	}
 	if resp != nil {
 		out["text"] = clip(resp.OutputText(), 4000)
 		if resp.Usage != nil {
@@ -443,16 +449,24 @@ func (r *Runner) run(id int, input string) {
 	}
 	// Clear before announcing completion: a UI that chains sends on
 	// run.finished must not hit run.busy.
-	r.clearRunning()
+	r.clearRun(id)
 	r.emit(out)
 }
 
-// clearRunning marks the runner idle (always before run.finished emits).
-func (r *Runner) clearRunning() {
+// clearRun marks run id idle (always before its run.finished emits). A stale
+// deferred call from a finished run must not clobber a newer run that the
+// event consumer started in the meantime.
+func (r *Runner) clearRun(id int) {
 	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.runSeq != id {
+		return
+	}
+	if r.cancel != nil {
+		r.cancel()
+	}
 	r.running, r.cancel = false, nil
 	r.lastAct = time.Now()
-	r.mu.Unlock()
 }
 
 // compactionThreshold maps ctx window + config percentage to a token budget
@@ -502,7 +516,7 @@ func (r *Runner) preGenCompactionHook(provider llm.LLM, prompt string, threshold
 }
 
 func (r *Runner) finishRun(id int, ok bool, text, errMsg string, in, outTok, ctxPct int) {
-	r.clearRunning()
+	r.clearRun(id)
 	r.emit(map[string]any{"type": "run.finished", "run": id, "ok": ok,
 		"text": text, "error": errMsg,
 		"usage": map[string]any{"tin": in, "tout": outTok}, "ctx_pct": ctxPct})

@@ -50,6 +50,35 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-10-26 — configurable text size, responsive streaming, selectable text, gortex
+- **Text size**: `ui.text_scale` (0.6–2.5) applied via a theme wrapper that
+  multiplies text/caption/heading/inline-icon sizes. Controls: header `A-`/`A+`,
+  Ctrl+= / Ctrl+- / Ctrl+0, `/textsize [120%|+10%|1.2|reset]`, or
+  `ANNEAL_TEXT_SCALE`. The base theme is captured once so repeated config
+  changes never compound the multiplier.
+- **Streaming responsiveness**: a word-wrapped Fyne label re-lays out its whole
+  text on every `SetText`; one tail label growing to ~20 KB froze the UI (and
+  the stop button) for seconds. Streamed text is now frozen into ~2 KB
+  immutable chunks with only a small live tail. Measured in the test driver:
+  180 KB of text went from ~60 s of cumulative layout to ~4 s, bounded per
+  update.
+- **Selectable transcript**: user/tool/notice/todo/activity labels are
+  selectable. Assistant markdown is rendered as selectable plain text
+  (Fyne's `RichText` has no selection support); syntax is stripped by
+  `markdownToPlain`.
+- **Todo panel**: fixed 260 px min width and hidden while empty; it no longer
+  collapses to the minimum width of its wrapped labels.
+- **Stop**: the run context is created in `StartTask` (no stop/start race),
+  `clearRunning` cancels it, and a cancelled run reports `stopped: true` instead
+  of a provider error. UI status shows `stopping…` then `stopped`.
+- **gortex integration**: when `gortex` is on `PATH`, Anneal auto-registers its
+  MCP server (`mcp.auto_detect`, default true) with the read-only
+  `localization` preset; only `explore`/`batch_symbols`/
+  `find_implementations` (plus catalog discovery) are allowlisted. Verified
+  live: 14 tools connected, `mcp__gortex__explore` located `SetTextScale`.
+- **Prompt**: dependency work now checks `go env GOMODCACHE` / `vendor/`
+  before WebFetch; code navigation prefers the gortex tools when present.
+
 ### 2026-10-26 — `script` tool: sandboxed Risor data-glue for the agent
 - New `core/script`: agent-authored Risor v2 runs headless on fynerisor's GUI-free `core` runtime — fresh VM per call, static `AnalyzeRequirements` module gate before anything executes, 30s ctx timeout (the VM honors `ctx.Done()`), result JSON-capped and `print()` output capped at 8 KiB.
 - Capability set: `json`, `csv`, `strings`, `filepath`, `time` + host-injected `fs` (read/write/list/exists/remove) and `import()`/`app` deliberately disabled. **No exec/os/http** in v1: external commands stay on the Bash permission gate (fynerisor `exec` policy-hook is the phase-2 path).

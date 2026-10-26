@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"math"
+	"strings"
 	"testing"
 
 	"fyne.io/fyne/v2/test"
@@ -165,5 +167,65 @@ func TestShellEventRendering(t *testing.T) {
 	}))
 	if len(sh.chatBox.Objects) != 2 {
 		t.Fatalf("replay blocks: %d", len(sh.chatBox.Objects))
+	}
+}
+
+func TestStreamingChunksStaySmall(t *testing.T) {
+	sh := newTestShell(t)
+	sh.ensureTail()
+	for i := 0; i < 12; i++ {
+		sh.tailBuf += strings.Repeat("stream word ", 100)
+		sh.flushTail()
+	}
+	if len(sh.streamBlocks) == 0 {
+		t.Fatal("no stream chunks were frozen")
+	}
+	if n := len(sh.tail.Text); n >= streamChunkBytes {
+		t.Fatalf("live tail grew to %d bytes", n)
+	}
+	sh.closeTail("final answer")
+	if sh.tail != nil || len(sh.streamBlocks) != 0 {
+		t.Fatalf("stream state not cleared: tail=%v chunks=%d", sh.tail, len(sh.streamBlocks))
+	}
+	if got := len(sh.chatBox.Objects); got != 1 {
+		t.Fatalf("chunks not replaced by final block: %d objects", got)
+	}
+}
+
+func TestTodoPaneHidesWhenEmpty(t *testing.T) {
+	sh := newTestShell(t)
+	if sh.todoPane.Visible() {
+		t.Fatal("empty todo pane is visible")
+	}
+	sh.renderTodos([]any{map[string]any{"content": "step", "status": "in_progress"}})
+	if !sh.todoPane.Visible() {
+		t.Fatal("todo pane hidden with items")
+	}
+	if got := sh.todoPane.MinSize().Width; got < todoPanelWidth {
+		t.Fatalf("todo pane min width = %v", got)
+	}
+	sh.renderTodos(nil)
+	if sh.todoPane.Visible() {
+		t.Fatal("todo pane still visible after clearing")
+	}
+}
+
+func TestTextSizeCommand(t *testing.T) {
+	sh := newTestShell(t)
+	sh.slash("/textsize 120%")
+	if got := sh.a.Cfg.UI.TextScale; math.Abs(got-1.2) > 1e-9 {
+		t.Fatalf("absolute percent: %v", got)
+	}
+	sh.slash("/textsize +10%")
+	if got := sh.a.Cfg.UI.TextScale; math.Abs(got-1.3) > 1e-9 {
+		t.Fatalf("relative percent: %v", got)
+	}
+	sh.slash("/textsize 9")
+	if got := sh.a.Cfg.UI.TextScale; got != 2.5 {
+		t.Fatalf("clamp: %v", got)
+	}
+	sh.slash("/textsize reset")
+	if got := sh.a.Cfg.UI.TextScale; got != 1 {
+		t.Fatalf("reset: %v", got)
 	}
 }

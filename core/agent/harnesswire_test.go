@@ -33,6 +33,12 @@ func TestSystemPromptLayers(t *testing.T) {
 	if !strings.Contains(SystemPrompt(t.TempDir(), "plan", nil), "PLAN MODE") {
 		t.Fatal("plan mode text missing")
 	}
+	p = SystemPrompt(t.TempDir(), "build", nil)
+	for _, want := range []string{"GOMODCACHE", "WebFetch", "mcp__gortex__"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("missing local-source guidance %q", want)
+		}
+	}
 }
 
 func TestHarnessInfoTyped(t *testing.T) {

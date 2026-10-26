@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"time"
+
+	"github.com/uidbz/anneal/core/config"
 )
 
 // AgentAPI is the `agent` global exposed to Risor scripts. List endpoints go
@@ -152,6 +154,19 @@ func (a *App) SaveConfig(doc string) error {
 	a.Monitor.SetProvider(a.Cfg.Provider)
 	a.Bus.Emit(map[string]any{"type": "config.changed"})
 	return nil
+}
+
+// SetTextScale updates, clamps, and persists the UI text scale, then
+// announces the change. The GUI shell applies the theme; the event lets other
+// consumers (script panes watching config) stay in sync.
+func (a *App) SetTextScale(scale float64) float64 {
+	a.Cfg.UI.TextScale = config.ClampTextScale(scale)
+	out := map[string]any{"type": "config.changed", "text_scale": a.Cfg.UI.TextScale}
+	if err := a.Cfg.Save(); err != nil {
+		out["error"] = err.Error()
+	}
+	a.Bus.Emit(out)
+	return a.Cfg.UI.TextScale
 }
 
 // RespondSkill resolves one staged skill op (approve/reject) and emits the

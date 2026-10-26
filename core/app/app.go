@@ -60,6 +60,7 @@ func New() (*App, error) {
 		wd = "."
 	}
 	a := &App{Cfg: cfg, Bus: events.New()}
+	a.registerBuiltinMCP()
 	a.Monitor = model.NewMonitor(cfg.Provider, a.onHealth)
 	a.Harness = harness.New(paths.Harness())
 	if err := a.Harness.Seed(); err != nil {

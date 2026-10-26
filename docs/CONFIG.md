@@ -24,6 +24,15 @@ if the new directory does not exist.
 | `ANNEAL_MODEL` | model id (`auto` = first from `/v1/models`) |
 | `ANNEAL_UI_DIR` | full-window script UI directory (`main.risor`, `-script-ui`) |
 | `ANNEAL_PANE_DIR` | scripted-pane directory (`harness.risor`) |
+| `ANNEAL_TEXT_SCALE` | UI text-size multiplier (clamped to 0.6–2.5) |
+
+## `ui`
+
+| key | default | meaning |
+|-----|---------|---------|
+| `ui_dir` | `""` | full-window script UI override (`ANNEAL_UI_DIR`) |
+| `pane_dir` | `""` | scripted harness-pane override (`ANNEAL_PANE_DIR`) |
+| `text_scale` | 1.0 | text-size multiplier, clamped to `0.6`–`2.5`; also `A-` / `A+`, Ctrl+= / Ctrl+- / Ctrl+0, or `/textsize` |
 
 ## `provider`
 
@@ -159,7 +168,19 @@ server reverse-indexes (`tag` + `tie-type`); rebuild with `anneal
 | key | default | meaning |
 |-----|---------|---------|
 | `enabled` | true | connect servers at boot |
+| `auto_detect` | true | register installed built-in servers; currently `gortex` |
 | `servers` | `{}` | name → `{type?, command, args, env, url, disabled}`; `type` inferred (`command`→stdio, else http) |
+
+When `auto_detect` is on and a `gortex` binary is on `PATH`, Anneal registers
+it as an MCP server (`gortex mcp`) unless a `gortex` key already exists in
+`servers`. It runs the read-only `localization` preset (`GORTEX_TOOLS=localization`)
+and allowlists its navigation tools (`mcp__gortex__explore`,
+`batch_symbols`, `find_implementations`, plus catalog discovery), so code
+lookups do not prompt on every call. Start the shared daemon once with
+`gortex daemon start --detach` and index a repo with `gortex track <path>`;
+without a daemon, `gortex mcp` exits unless its own `mcp.allow_embedded` is
+enabled. Set `"auto_detect": false` or define your own `gortex` entry to opt
+out.
 
 Tools are exposed as `mcp__<server>__<tool>` and permission-gated like any
 non-allowlisted tool. State is shown in the header (`mcp: 1/1 up, N tools`).

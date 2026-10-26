@@ -17,7 +17,8 @@ A self-improving, opencode-style desktop coding agent in Go.
 - **Learning loop (Hermes-style):** bounded memory files, agent-authored
   skills, idle-time background self-review, journey timeline, and a
   contrastive harness-improvement loop
-- Also: MCP client, subagents, plan/build permission modes, session replay,
+- Also: MCP client, optional gortex code-intelligence auto-detect, subagents,
+  plan/build permission modes, session replay,
   context compaction, headless CLI.
 
 All milestones (M0–M16) are complete. The hybrid UI migration has landed its

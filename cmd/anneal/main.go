@@ -8,21 +8,26 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"image/color"
 	"log"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/uidbz/anneal/assets"
 	"github.com/uidbz/anneal/core/agent"
 	coreapp "github.com/uidbz/anneal/core/app"
+	"github.com/uidbz/anneal/core/config"
 	"github.com/uidbz/anneal/core/improve"
 	"github.com/uidbz/anneal/core/paths"
 
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
@@ -32,6 +37,20 @@ import (
 // defaultVisibleBlocks bounds how many transcript widgets are laid out at
 // once. Older blocks stay in memory and can be restored on demand.
 const defaultVisibleBlocks = 300
+
+// textScaleStep is the A-/A+ (Ctrl+= / Ctrl+-) increment for ui.text_scale.
+const textScaleStep = 0.1
+
+// streamChunkBytes bounds the mutable streaming label. A word-wrapped Fyne
+// label re-lays out its whole text on every SetText, so letting one label grow
+// to the size of a long answer freezes the UI (and the stop button) for
+// seconds. Streamed text is frozen into immutable chunks instead; only the
+// small tail label is re-laid out.
+const streamChunkBytes = 2000
+
+// todoPanelWidth keeps the todo sidebar readable instead of collapsing to the
+// minimum width of its wrapped labels inside a Border east slot.
+const todoPanelWidth = 260
 
 func main() {
 	rebuild := flag.Bool("rebuild-index", false, "re-index all sessions into tie and exit")
@@ -120,22 +139,26 @@ type shell struct {
 	hidden   []fyne.CanvasObject
 	perms    *fyne.Container
 	todos    *fyne.Container
+	todoPane fyne.CanvasObject
 	activity *fyne.Container
 	tabs     *container.AppTabs
 	harness  *scriptPane
 	paneSrc  string
 	permRows map[string]fyne.CanvasObject
 
+	baseTheme fyne.Theme
+
 	header   fyne.CanvasObject
 	composer fyne.CanvasObject
 	root     fyne.CanvasObject
 
-	tail       *widget.Label
-	tailBuf    string
-	mode       string
-	autoSend   string
-	autoQuit   bool
-	maxVisible int
+	tail         *widget.Label
+	tailBuf      string
+	streamBlocks []fyne.CanvasObject // frozen chunks of the live message
+	mode         string
+	autoSend     string
+	autoQuit     bool
+	maxVisible   int
 }
 
 func newShell(a *coreapp.App, app fyne.App, win fyne.Window, paneSrc string) (*shell, error) {
@@ -147,7 +170,9 @@ func newShell(a *coreapp.App, app fyne.App, win fyne.Window, paneSrc string) (*s
 		mode:       a.Runner.Mode(),
 		paneSrc:    paneSrc,
 		maxVisible: defaultVisibleBlocks,
+		baseTheme:  app.Settings().Theme(),
 	}
+	applyTextScale(app, s.baseTheme, a.Cfg.UI.TextScale)
 	s.build()
 	if err := s.buildHarness(paneSrc); err != nil {
 		return nil, err
@@ -173,6 +198,8 @@ func (s *shell) build() {
 	newBtn := widget.NewButton("+ new", func() { s.a.Runner.NewSession() })
 	sessBtn := widget.NewButton("sessions", s.showSessions)
 	settingsBtn := widget.NewButton("settings", s.showSettings)
+	fontDownBtn := widget.NewButton("A-", func() { s.nudgeTextScale(-textScaleStep) })
+	fontUpBtn := widget.NewButton("A+", func() { s.nudgeTextScale(textScaleStep) })
 
 	s.entry = widget.NewEntry()
 	s.entry.PlaceHolder = "describe a task — Enter to send"
@@ -186,10 +213,13 @@ func (s *shell) build() {
 	s.activity = container.NewVBox()
 
 	sendBtn := widget.NewButton("send", s.submit)
-	stopBtn := widget.NewButton("stop", func() { s.a.Runner.Interrupt() })
+	stopBtn := widget.NewButton("stop", func() {
+		s.status.SetText("stopping…")
+		s.a.Runner.Interrupt()
+	})
 
 	s.header = container.NewVBox(
-		container.NewHBox(s.modeBtn, newBtn, sessBtn, settingsBtn, widget.NewSeparator(), s.status),
+		container.NewHBox(s.modeBtn, newBtn, sessBtn, settingsBtn, fontDownBtn, fontUpBtn, widget.NewSeparator(), s.status),
 		container.NewHBox(s.usage, s.tie, s.mcp),
 	)
 	s.composer = container.NewBorder(nil, nil, nil,
@@ -224,10 +254,20 @@ func paneEvent(v any) bool {
 
 func (s *shell) wireLayout() {
 	s.scroll = container.NewVScroll(container.NewVBox(s.earlier, s.chatBox))
+	// The transparent spacer only exists to give the Border east slot a
+	// readable minimum width; the todo pane itself is hidden while empty.
+	spacer := canvas.NewRectangle(color.Transparent)
+	spacer.SetMinSize(fyne.NewSize(todoPanelWidth, 0))
+	todoBody := container.NewVBox(
+		widget.NewLabelWithStyle("todos", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		s.todos,
+	)
+	s.todoPane = container.NewStack(spacer, todoBody)
+	s.todoPane.Hide()
 	chat := container.NewBorder(
 		container.NewVBox(s.perms),
 		nil, nil,
-		container.NewVBox(widget.NewLabelWithStyle("todos", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), s.todos),
+		s.todoPane,
 		s.scroll,
 	)
 	s.tabs = container.NewAppTabs(
@@ -293,7 +333,7 @@ func (s *shell) slash(line string) {
 	cmd := fields[0]
 	switch cmd {
 	case "/help":
-		s.showText("commands", "/new /sessions /plan /build /stop /memory /skills /journey /activity /runs /index /learn /improve /harness /quit")
+		s.showText("commands", "/new /sessions /plan /build /stop /textsize /memory /skills /journey /activity /runs /index /learn /improve /harness /quit")
 	case "/new":
 		s.a.Runner.NewSession()
 	case "/sessions":
@@ -304,6 +344,8 @@ func (s *shell) slash(line string) {
 		s.a.Runner.SetMode("default")
 	case "/stop", "/interrupt":
 		s.a.Runner.Interrupt()
+	case "/textsize":
+		s.textSizeCommand(fields[1:])
 	case "/memory":
 		m, _ := s.a.Mem.Read("memory")
 		u, _ := s.a.Mem.Read("user")
@@ -393,6 +435,7 @@ func (s *shell) showSessions() {
 func (s *shell) showText(title, body string) {
 	lbl := widget.NewLabel(body)
 	lbl.Wrapping = fyne.TextWrapWord
+	lbl.Selectable = true
 	sc := container.NewVScroll(lbl)
 	sc.SetMinSize(fyne.NewSize(640, 420))
 	d := dialog.NewCustom(title, "Close", sc, s.win)
@@ -416,6 +459,7 @@ func (s *shell) refreshActivity() {
 	for _, e := range journey {
 		lbl := widget.NewLabel(fmt.Sprintf("%s  %s  %v", e.TS, e.Kind, e.Attrs))
 		lbl.Wrapping = fyne.TextWrapWord
+		lbl.Selectable = true
 		s.activity.Add(lbl)
 	}
 	s.activity.Add(widget.NewSeparator())
@@ -454,6 +498,7 @@ func (s *shell) refreshActivity() {
 		}
 		lbl := widget.NewLabel(body)
 		lbl.Wrapping = fyne.TextWrapWord
+		lbl.Selectable = true
 		s.activity.Add(lbl)
 		s.activity.Add(widget.NewSeparator())
 	}
@@ -529,9 +574,67 @@ func (s *shell) installShortcuts() {
 	add(fyne.KeyL, fyne.KeyModifierControl, func() { s.win.Canvas().Focus(s.entry) })
 	add(fyne.KeyR, fyne.KeyModifierControl, s.reloadPane)
 	add(fyne.KeyQ, fyne.KeyModifierControl, func() { s.app.Quit() })
+	add(fyne.KeyEqual, fyne.KeyModifierControl, func() { s.nudgeTextScale(textScaleStep) })
+	add(fyne.KeyPlus, fyne.KeyModifierControl, func() { s.nudgeTextScale(textScaleStep) })
+	add(fyne.KeyMinus, fyne.KeyModifierControl, func() { s.nudgeTextScale(-textScaleStep) })
+	add(fyne.Key0, fyne.KeyModifierControl, func() { s.setTextScale(1.0) })
 	add(fyne.Key1, fyne.KeyModifierControl, func() { s.tabs.SelectIndex(0) })
 	add(fyne.Key2, fyne.KeyModifierControl, func() { s.tabs.SelectIndex(1) })
 	add(fyne.Key3, fyne.KeyModifierControl, func() { s.tabs.SelectIndex(2) })
+}
+
+// setTextScale applies and persists a text-size multiplier. SetTheme repaints
+// every window (Fyne re-layouts all renderers), so the change is live; the
+// config save makes it survive restart. The config.changed event appends the
+// user-facing notice.
+func (s *shell) setTextScale(scale float64) {
+	scale = s.a.SetTextScale(scale) // clamp + persist + config.changed
+	applyTextScale(s.app, s.baseTheme, scale)
+}
+
+// nudgeTextScale steps the text size by delta (A-/A+ buttons, Ctrl+= / Ctrl+-).
+func (s *shell) nudgeTextScale(delta float64) {
+	s.setTextScale(s.a.Cfg.UI.TextScale + delta)
+}
+
+// textSizeCommand implements /textsize:
+//
+//	/textsize             show the current size
+//	/textsize 120%        absolute percentage
+//	/textsize +10%        relative percentage points
+//	/textsize 1.2         absolute multiplier
+//	/textsize reset       back to 100%
+func (s *shell) textSizeCommand(args []string) {
+	if len(args) == 0 {
+		s.addNotice(fmt.Sprintf("text size: %.0f%% (range %.0f–%.0f%%)",
+			s.a.Cfg.UI.TextScale*100, config.MinTextScale*100, config.MaxTextScale*100))
+		return
+	}
+	arg := strings.TrimSpace(strings.ToLower(args[0]))
+	switch arg {
+	case "reset", "default", "normal":
+		s.setTextScale(1.0)
+		return
+	}
+	percent := strings.HasSuffix(arg, "%")
+	raw := strings.TrimSuffix(arg, "%")
+	relative := strings.HasPrefix(raw, "+") || strings.HasPrefix(raw, "-")
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		s.addNotice("⚠ /textsize expects e.g. 120%, +10%, 1.2, +0.1, or reset")
+		return
+	}
+	scale := v
+	switch {
+	case percent:
+		scale = v / 100
+		if relative {
+			scale += s.a.Cfg.UI.TextScale
+		}
+	case relative:
+		scale = s.a.Cfg.UI.TextScale + v
+	}
+	s.setTextScale(scale)
 }
 
 // reloadPane re-reads the pane script from disk (or the embedded copy),
@@ -555,6 +658,7 @@ func (s *shell) addUser(text string) {
 	lbl := widget.NewLabel("> " + text)
 	lbl.Wrapping = fyne.TextWrapWord
 	lbl.TextStyle = fyne.TextStyle{Italic: true}
+	lbl.Selectable = true
 	s.appendBlock(lbl)
 }
 
@@ -562,15 +666,19 @@ func (s *shell) addMarkdown(text string) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
-	rt := widget.NewRichTextFromMarkdown(text)
-	rt.Wrapping = fyne.TextWrapWord
-	s.appendBlock(rt)
+	// RichText is not selectable in Fyne, so the transcript uses a plain
+	// selectable label with the markdown syntax stripped.
+	lbl := widget.NewLabel(markdownToPlain(text))
+	lbl.Wrapping = fyne.TextWrapWord
+	lbl.Selectable = true
+	s.appendBlock(lbl)
 }
 
 func (s *shell) addNotice(text string) {
 	lbl := widget.NewLabel(text)
 	lbl.Wrapping = fyne.TextWrapWord
 	lbl.Importance = widget.LowImportance
+	lbl.Selectable = true
 	s.appendBlock(lbl)
 }
 
@@ -579,6 +687,7 @@ func (s *shell) addTool(text string) {
 	lbl.Wrapping = fyne.TextWrapWord
 	lbl.TextStyle = fyne.TextStyle{Monospace: true}
 	lbl.Importance = widget.LowImportance
+	lbl.Selectable = true
 	s.appendBlock(lbl)
 }
 
@@ -642,6 +751,9 @@ func (s *shell) showEarlier() {
 	for _, obj := range s.visible {
 		s.chatBox.Add(obj)
 	}
+	for _, obj := range s.streamBlocks {
+		s.chatBox.Add(obj)
+	}
 	if s.tail != nil {
 		s.chatBox.Add(s.tail)
 	}
@@ -655,6 +767,7 @@ func (s *shell) showEarlier() {
 func (s *shell) resetChat() {
 	s.tail = nil
 	s.tailBuf = ""
+	s.streamBlocks = nil
 	s.visible = nil
 	s.hidden = nil
 	s.chatBox.RemoveAll()
@@ -667,6 +780,9 @@ func (s *shell) resetChat() {
 	s.permRows = map[string]fyne.CanvasObject{}
 	s.todos.RemoveAll()
 	s.todos.Refresh()
+	if s.todoPane != nil {
+		s.todoPane.Hide()
+	}
 }
 
 func (s *shell) ensureTail() {
@@ -679,20 +795,66 @@ func (s *shell) ensureTail() {
 	}
 }
 
+// flushTail renders the buffered stream text. Once the tail reaches
+// streamChunkBytes it is frozen (the label is left in place and a fresh tail
+// starts), so no single label ever gets large enough for its word-wrap layout
+// to block the UI thread. Frozen chunks are temporary and removed by
+// closeTail, which replaces them with the final selectable block.
 func (s *shell) flushTail() {
 	if s.tail == nil {
 		return
 	}
+	for len(s.tailBuf) >= streamChunkBytes {
+		cut := chunkCut(s.tailBuf, streamChunkBytes)
+		chunk, rest := s.tailBuf[:cut], s.tailBuf[cut:]
+		s.tail.SetText(chunk)
+		s.tail.Refresh()
+		s.streamBlocks = append(s.streamBlocks, s.tail)
+		s.tail = widget.NewLabel(rest)
+		s.tail.Wrapping = fyne.TextWrapWord
+		s.tailBuf = rest
+		s.chatBox.Add(s.tail)
+	}
 	s.tail.SetText(s.tailBuf)
+	s.tail.Refresh()
 	s.chatBox.Refresh()
-	s.scroll.ScrollToBottom()
+	if s.scroll != nil {
+		s.scroll.ScrollToBottom()
+	}
+}
+
+// chunkCut picks a chunk boundary near max, preferring a line or word break
+// and never splitting a UTF-8 rune.
+func chunkCut(s string, max int) int {
+	cut := max
+	if i := strings.LastIndexByte(s[:cut], '\n'); i > cut/2 {
+		cut = i + 1
+	} else if i := strings.LastIndexByte(s[:cut], ' '); i > cut/2 {
+		cut = i + 1
+	}
+	for cut > 0 && cut < len(s) && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	if cut <= 0 {
+		return max
+	}
+	return cut
 }
 
 func (s *shell) closeTail(final string) {
+	removed := false
 	if s.tail != nil {
 		s.chatBox.Remove(s.tail)
 		s.tail = nil
-		s.tailBuf = ""
+		removed = true
+	}
+	for _, obj := range s.streamBlocks {
+		s.chatBox.Remove(obj)
+		removed = true
+	}
+	s.tailBuf = ""
+	s.streamBlocks = nil
+	if removed {
 		s.chatBox.Refresh()
 	}
 	if strings.TrimSpace(final) != "" {
@@ -764,12 +926,15 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.addTool(fmt.Sprintf("  %s %s: %s", mark, str(e["name"]), oneLine(str(e["preview"]))))
 	case "run.finished":
 		s.closeTail("")
-		if boolean(e["ok"]) {
+		u := obj(e["usage"])
+		s.usage.SetText(fmt.Sprintf("in: %d · out: %d · ctx: %d%%",
+			int(num(u["tin"])), int(num(u["tout"])), int(num(e["ctx_pct"]))))
+		switch {
+		case boolean(e["stopped"]):
+			s.status.SetText("stopped")
+		case boolean(e["ok"]):
 			s.status.SetText("ready")
-			u := obj(e["usage"])
-			s.usage.SetText(fmt.Sprintf("in: %d · out: %d · ctx: %d%%",
-				int(num(u["tin"])), int(num(u["tout"])), int(num(e["ctx_pct"]))))
-		} else {
+		default:
 			s.status.SetText("error")
 			s.usage.SetText("")
 			if msg := str(e["error"]); msg != "" {
@@ -911,7 +1076,17 @@ func (s *shell) handleEvent(e map[string]any) {
 		}
 		s.refreshActivity()
 	case "config.changed":
-		s.addNotice("⚙ configuration changed")
+		// Covers edits from the settings dialog, scripts (agent.saveConfig),
+		// and setTextScale; re-applying the theme is idempotent.
+		applyTextScale(s.app, s.baseTheme, s.a.Cfg.UI.TextScale)
+		switch {
+		case str(e["error"]) != "":
+			s.addNotice("⚠ settings save: " + str(e["error"]))
+		case e["text_scale"] != nil:
+			s.addNotice(fmt.Sprintf("⚙ text size: %.0f%%", num(e["text_scale"])*100))
+		default:
+			s.addNotice("⚙ configuration changed")
+		}
 	case "skill.error":
 		s.addNotice("⚠ skill loader: " + str(e["error"]))
 	case "tie.rebuilt":
@@ -955,7 +1130,16 @@ func (s *shell) renderTodos(items []any) {
 		}
 		lbl := widget.NewLabel(glyph + " " + str(it["content"]))
 		lbl.Wrapping = fyne.TextWrapWord
+		lbl.Selectable = true
 		s.todos.Add(lbl)
+	}
+	if s.todoPane != nil {
+		if len(items) == 0 {
+			s.todoPane.Hide()
+		} else {
+			s.todoPane.Show()
+		}
+		s.todoPane.Refresh()
 	}
 	s.todos.Refresh()
 }
@@ -974,6 +1158,7 @@ func (s *shell) addPerm(e map[string]any) {
 func (s *shell) addApprovalCard(id, info string, buttons ...fyne.CanvasObject) {
 	lbl := widget.NewLabel(info)
 	lbl.Wrapping = fyne.TextWrapWord
+	lbl.Selectable = true
 	row := container.NewBorder(nil, nil, nil, container.NewHBox(buttons...), lbl)
 	s.permRows[id] = row
 	s.perms.Add(row)

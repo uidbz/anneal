@@ -28,11 +28,15 @@ The `anneal` binary is a plain Fyne shell with scripted panes.
   **allow** (this call), **session** (same tool/spec for the session), and
   **deny**. When `write_approval` is on, staged memory/skill writes appear as
   cards with an operation preview and **approve/reject**.
-- **Header**: plan/build toggle, `+ new`, `sessions`, `settings`, model health,
-  token/context usage, tie index state, MCP status. `settings` opens the full
-  `config.json` in an editor; saving re-points the health monitor and applies
-  live-capable store settings immediately.
+- **Header**: plan/build toggle, `+ new`, `sessions`, `settings`, `A-`/`A+`
+  text size, model health, token/context usage, tie index state, MCP status.
+  `settings` opens the full `config.json` in an editor; saving re-points the
+  health monitor and applies live-capable store settings immediately.
 - **Todo panel** (right): the model's live checklist for multi-step work.
+  Hidden until the first todo exists, then fixed-width so items stay readable.
+- **Selectable transcript**: every message, tool line, notice, todo, and
+  activity entry can be selected and copied. Assistant markdown is shown as
+  plain text (Fyne's RichText has no selection support).
 - **Activity tab**: journey timeline + improvement-run records
   (`~/.anneal/improvements/*/step.json`): task, k/mode, candidates, decisions,
   library entry, successor overlay. Refresh-on-demand; no background model
@@ -53,6 +57,7 @@ The `anneal` binary is a plain Fyne shell with scripted panes.
 | `/help` | list commands |
 | `/new`, `/sessions` | session control |
 | `/plan`, `/build` | permission mode |
+| `/textsize [120%\|+10%\|1.2\|reset]` | show/change the UI text size |
 | `/skills` | list installed skills |
 | `/memory` | show MEMORY.md / USER.md with usage vs caps |
 | `/journey` | self-improvement timeline |
@@ -72,6 +77,7 @@ The `anneal` binary is a plain Fyne shell with scripted panes.
 | Ctrl+D | stop the current run |
 | Ctrl+L | focus the composer |
 | Ctrl+R | reload the scripted harness pane |
+| Ctrl+= / Ctrl+- / Ctrl+0 | text size up / down / reset |
 | Ctrl+1/2/3 | Chat / Harness / Activity |
 | Ctrl+Q | quit |
 

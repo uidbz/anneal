@@ -86,3 +86,15 @@ func TestNormalizeFixesInvalidValues(t *testing.T) {
 		t.Fatalf("sections not normalized: %+v", c)
 	}
 }
+
+func TestClampTextScale(t *testing.T) {
+	cases := []struct{ in, want float64 }{
+		{0, 1}, {0.1, MinTextScale}, {0.6, 0.6}, {1, 1}, {1.5, 1.5},
+		{MaxTextScale, MaxTextScale}, {3, MaxTextScale}, {-1, 1},
+	}
+	for _, c := range cases {
+		if got := ClampTextScale(c.in); got != c.want {
+			t.Errorf("ClampTextScale(%v)=%v want %v", c.in, got, c.want)
+		}
+	}
+}

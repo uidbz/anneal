@@ -5,10 +5,17 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/uidbz/anneal/core/fsutil"
 	"github.com/uidbz/anneal/core/paths"
+)
+
+// TextScale bounds for the UI text size multiplier.
+const (
+	MinTextScale = 0.6
+	MaxTextScale = 2.5
 )
 
 type Provider struct {
@@ -81,13 +88,15 @@ type MCPServer struct {
 }
 
 type MCP struct {
-	Enabled bool                 `json:"enabled"`
-	Servers map[string]MCPServer `json:"servers"`
+	Enabled    bool                 `json:"enabled"`
+	AutoDetect bool                 `json:"auto_detect"` // register installed built-ins (gortex)
+	Servers    map[string]MCPServer `json:"servers"`
 }
 
 type UI struct {
-	UIDir   string `json:"ui_dir"`   // full-window script UI override (ANNEAL_UI_DIR)
-	PaneDir string `json:"pane_dir"` // scripted-pane override
+	UIDir     string  `json:"ui_dir"`     // full-window script UI override (ANNEAL_UI_DIR)
+	PaneDir   string  `json:"pane_dir"`   // scripted-pane override
+	TextScale float64 `json:"text_scale"` // UI text size multiplier (0.6–2.5)
 }
 
 // Harness toggles the editable harness components (M10).
@@ -150,10 +159,10 @@ func Default() *Config {
 		Skills:     Skills{Enabled: true, WriteApproval: false, ExtraDirs: nil},
 		Review:     Review{Enabled: true, DeferUntilIdle: true, IdleSettleS: 45, MaxAgeS: 1800, MaxInputTokens: 48000, Notify: true},
 		Tie:        Tie{Enabled: true, Collection: "anneal", ConfigName: ""},
-		MCP:        MCP{Enabled: true, Servers: map[string]MCPServer{}},
+		MCP:        MCP{Enabled: true, AutoDetect: true, Servers: map[string]MCPServer{}},
 		Harness:    Harness{Enabled: true, CharLimit: 6000},
 		Improve:    Improve{Enabled: true, Library: true, K: 1, Mode: "sequential"},
-		UI:         UI{},
+		UI:         UI{TextScale: 1.0},
 	}
 }
 
@@ -191,6 +200,11 @@ func Load() (*Config, error) {
 	}
 	if v := os.Getenv("ANNEAL_PANE_DIR"); v != "" {
 		cfg.UI.PaneDir = v
+	}
+	if v := os.Getenv("ANNEAL_TEXT_SCALE"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.UI.TextScale = f
+		}
 	}
 	cfg.normalize()
 	return cfg, nil
@@ -262,6 +276,21 @@ func (c *Config) normalize() {
 	if c.Review.MaxAgeS <= 0 {
 		c.Review.MaxAgeS = d.Review.MaxAgeS
 	}
+	c.UI.TextScale = ClampTextScale(c.UI.TextScale)
+}
+
+// ClampTextScale bounds a text-scale multiplier; non-positive (unset) means 1.0.
+func ClampTextScale(v float64) float64 {
+	if v <= 0 {
+		return 1.0
+	}
+	if v < MinTextScale {
+		return MinTextScale
+	}
+	if v > MaxTextScale {
+		return MaxTextScale
+	}
+	return v
 }
 
 // StreamTimeouts materializes the provider stream timeout durations.

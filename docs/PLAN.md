@@ -28,7 +28,7 @@ A self-improving, opencode-style desktop coding agent in Go.
 - tie: user config at `~/.config/tie/config.toml`; triplestore at `http://storage:1161` (reachable), filehosts at `:1162`. anneal uses its own collection (`[Collections.anneal]` or `--tie-collection`).
 - dive `providers/openaicompletions` supports `WithEndpoint`, `WithModel`, `WithAPIKey`, `WithStreamTimeouts(firstEvent, idle)`, `WithMaxRetries`, Generate + Stream, reasoning params — exactly what Strata needs.
 - tie queries match **exact association values** (tag algebra); the server reverse-indexes *all* relations when unconfigured (`nil reverseRelations ⇒ index everything`) ⇒ word-token AND search works (unless the server pins `ReverseRelations`).
-- dive extras used: `permission.Manager` (modes default/plan/acceptEdits/bypassPermissions/dontAsk), `skill.Loader` (SKILL.md dirs, agentskills-compatible), `session.FileStore` (JSONL, turns), `subagent` pkg (explore/plan prompts), `experimental/{compaction,mcp,todo}`.
+- dive extras used: `skill.Loader` (SKILL.md dirs, agentskills-compatible), `session.FileStore` (JSONL, turns), `subagent` pkg (explore/plan prompts), `experimental/{compaction,mcp,todo}`.
 - fynerisor v0.9.0 GUI API: `gui.NewApp`, `WithGlobal`, `LoadScript/Execute/ShowAndRun`, `(*Window).Do` for cross-thread GUI updates, `widget.NewMarkdown/RichText/MultiLineEntry/List/Tree/Accordion/Toolbar`, dialogs, shortcuts.
 
 ## 2. Architecture
@@ -62,7 +62,7 @@ anneal/
 │   ├── memory/        MEMORY.md/USER.md store, memory tool, injection scanner
 │   ├── skill/         skill dirs, skill_manage tool, staging, archive, usage ledger
 │   ├── review/        background self-improvement fork (defer-until-idle queue)
-│   ├── permission/    permission.Manager + dive.Dialog → GUI approval bridge
+│   ├── permission/    OpenCode-style rules, saved grants, GUI approval bridge
 │   ├── uiapi/         the `agent` global exposed to Risor + event marshaling
 │   └── paths/         ~/.anneal resolution
 ├── ui/                main/chat/sessions/approvals/skills/memory/settings .risor
@@ -143,7 +143,7 @@ Schema (all values exact-match triples; search = reverse-association AND algebra
 
 ## 8. Security
 
-permission.Manager rules/modes first; path policy (project + ~/.anneal; deny `.ssh`, `.aws`, secrets); bash guard (danger patterns, no writes to ~/.anneal); store writes injection-scanned; skills deletions archive; MCP tools ask-by-default; API keys env-only, never logged.
+core/permission rules/modes first (OpenCode-style allow/ask/deny, external_directory, doom_loop); path policy (project + ~/.anneal; deny `.ssh`, `.aws`, secrets); bash guard (danger patterns, no writes to ~/.anneal); store writes injection-scanned; skills deletions archive; MCP tools ask-by-default; API keys env-only, never logged.
 
 ## 9. Milestones (M0–M9)
 
@@ -221,7 +221,7 @@ Milestones:
 
 - **M10 harness component layer** ✔ — `~/.anneal/harness/` file-mounted
   components (`system.md`, `guardrails.md` prose + `deny:/ask:/allow:` rule
-  lines enforced via dive permission rules, `tool-guidance.md`,
+  lines translated to OpenCode-style permission rules, `tool-guidance.md`,
   `subagents/*.md` via dive's subagent FileLoader, `scripts/` manifest);
   prompt composition per run; `-check-harness`, `/harness`.
 - **M11 probe infrastructure** ✔ — sandboxed task replay (Go tree copy with

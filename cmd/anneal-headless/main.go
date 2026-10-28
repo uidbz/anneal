@@ -229,18 +229,22 @@ func (s *sink) handle(v any) {
 func (s *sink) decidePerm(e map[string]any) {
 	id := fmt.Sprint(e["id"])
 	tool := fmt.Sprint(e["tool"])
-	action := "deny"
+	action := fmt.Sprint(e["action"])
+	if action == "" {
+		action = tool
+	}
+	answer := "deny"
 	switch {
 	case s.denyAll:
-		action = "deny"
-	case s.allow["*"], s.allow[tool]:
-		action = "allow"
+		answer = "deny"
+	case s.allow["*"], s.allow[action], s.allow[tool]:
+		answer = "allow"
 	}
 	if !s.jsonMode {
-		fmt.Printf("🔐 %s → %s (headless policy)\n", tool, action)
+		fmt.Printf("🔐 %s → %s (headless policy)\n", action, answer)
 	}
 	// respondPerm re-enters Emit; keep off the tap's lock path
-	go s.app.Runner.RespondPerm(id, action)
+	go s.app.Runner.RespondPerm(id, answer)
 }
 
 func clip(s string, n int) string {
@@ -257,7 +261,7 @@ func main() {
 	jsonMode := flag.Bool("json", false, "emit raw event stream as JSONL")
 	verbose := flag.Bool("v", false, "log all events to stderr")
 	yolo := flag.Bool("yolo", false, "bypass all permission prompts")
-	allowList := flag.String("allow", "", "comma-separated tool names to auto-allow")
+	allowList := flag.String("allow", "", "comma-separated permission actions or tool names to auto-allow")
 	newSess := flag.Bool("new", false, "start a fresh session")
 	session := flag.String("session", "", "resume a session by id")
 	learn := flag.Bool("learn", false, "run the self-improvement review pass after the task")

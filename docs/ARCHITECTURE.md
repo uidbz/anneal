@@ -78,7 +78,7 @@ on missing keys is a hard error. The Go shell consumes the same values as maps
 | `text.delta` / `message.final` | streaming + final assistant text |
 | `thinking.delta` | reasoning stream |
 | `tool.start` / `tool.result` | tool calls (result has 600-char preview) |
-| `perm.request` / `perm.resolved` | permission inbox (reply: `agent.respondPerm(id, allow|session|deny)`) |
+| `perm.request` / `perm.saved` / `perm.resolved` | permission inbox (reply: `agent.respondPerm(id, once|always|reject)`; legacy `allow|session|deny` still accepted) |
 | `session.started` / `session.opened` / `session.error` | session lifecycle (opened carries replay blocks) |
 | `mode.changed` | permission mode |
 | `todo.updated` | checklist (always the full list) |
@@ -94,13 +94,22 @@ on missing keys is a hard error. The Go shell consumes the same values as maps
 
 ## Permissions
 
-`permission.Manager` (dive) with rules from config + `HookFromManager` on
-PreToolUse. Prompts route through anneal's `dive.Dialog` implementation:
-emit `perm.request`, block on a channel until `respondPerm` (or interrupt ⇒
-deny). Plan-mode enforcement lives in the dialog (ask rules evaluate before
-the mode gate — non-read-only tools are denied, not prompted). Subagents are
-spawned through a **custom AgentFactory** that re-attaches the permission
-hook — dive's default factory would spawn unguarded agents.
+`core/permission` implements an OpenCode-style engine: ordered
+`{action, resource, effect}` rules, last-match-wins wildcard matching
+(`*`, `?`, optional-argument `"cmd *"`), and `allow`/`ask`/`deny` effects.
+`core/agent/permcall.go` maps dive tool calls to OpenCode's vocabulary
+(`read`, `edit`, `bash`, `glob`, `grep`, `todowrite`, `skill`, `task`,
+`webfetch`, `script`, MCP tool names) and parses shell commands into
+per-segment resources plus safe `always` prefixes. External paths are checked
+as `external_directory` first; three identical calls trigger `doom_loop`.
+`core/agent/perm.go` runs the PreToolUse hook for the main agent and every
+subagent, emits `perm.request`, and blocks on a channel until
+`agent.respondPerm` (or interrupt ⇒ deny). `always` saves project-scoped
+grants in `~/.anneal/permissions.json` and re-evaluates pending cards so
+matching requests release immediately. Plan-mode enforcement is a hard
+read-only gate in the manager (non-read-only tools are denied, not prompted).
+Subagents are spawned through a **custom AgentFactory** that re-attaches the
+permission hook — dive's default factory would spawn unguarded agents.
 
 ## Learning loop (Hermes-style)
 

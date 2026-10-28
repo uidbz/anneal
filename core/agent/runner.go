@@ -17,6 +17,7 @@ import (
 	"github.com/uidbz/anneal/core/memory"
 	"github.com/uidbz/anneal/core/model"
 	"github.com/uidbz/anneal/core/paths"
+	"github.com/uidbz/anneal/core/permission"
 	"github.com/uidbz/anneal/core/review"
 	"github.com/uidbz/anneal/core/skills"
 	"github.com/uidbz/anneal/core/textutil"
@@ -26,7 +27,6 @@ import (
 	"github.com/deepnoodle-ai/dive/experimental/compaction"
 	"github.com/deepnoodle-ai/dive/experimental/mcp"
 	"github.com/deepnoodle-ai/dive/llm"
-	"github.com/deepnoodle-ai/dive/permission"
 	"github.com/deepnoodle-ai/dive/session"
 	"github.com/deepnoodle-ai/dive/toolkit"
 )
@@ -40,7 +40,7 @@ type Runner struct {
 	bus     *events.Bus
 	cwd     string
 	store   *session.FileStore
-	mgr     *permission.Manager
+	perm    *permission.Manager
 	index   *tieindex.Indexer
 	mem     *memory.Store
 	skills  *skills.Store
@@ -49,16 +49,19 @@ type Runner struct {
 	mcp     *mcp.Manager
 	lastAct time.Time
 
-	mu           sync.Mutex
-	sess         *session.Session
-	sessID       string
-	lastTask     string
-	todos        []todoItem
-	cancel       context.CancelFunc
-	runSeq       int
-	running      bool
+	mu       sync.Mutex
+	sess     *session.Session
+	sessID   string
+	lastTask string
+	todos    []todoItem
+	cancel   context.CancelFunc
+	runSeq   int
+	running  bool
+
+	permMu       sync.Mutex // guards pendingPerms and doom counts
 	permSeq      int
-	pendingPerms map[string]chan *dive.DialogOutput
+	pendingPerms map[string]*pendingPerm
+	doom         map[string]int
 
 	mcpMu sync.Mutex // guards mcp: it is attached asynchronously at boot
 }
@@ -192,9 +195,10 @@ func NewRunner(cfg *config.Config, monitor *model.Monitor, bus *events.Bus, cwd 
 		bus:          bus,
 		cwd:          cwd,
 		harn:         harn,
-		pendingPerms: make(map[string]chan *dive.DialogOutput),
+		pendingPerms: make(map[string]*pendingPerm),
+		doom:         make(map[string]int),
 	}
-	r.mgr = permission.NewManager(permConfig(cfg, r.harn), &uiDialog{r: r})
+	r.perm = newPermManager(cfg, r.harn, cwd)
 	if err := r.initStore(); err != nil {
 		return nil, err
 	}
@@ -275,6 +279,7 @@ func (r *Runner) Interrupt() {
 
 func (r *Runner) run(ctx context.Context, id int, input string) {
 	defer r.clearRun(id) // safety net for early returns / panics
+	r.resetDoom()
 
 	h := r.monitor.Current()
 	if h.State == model.StateConnecting {
@@ -339,7 +344,7 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 	}
 	prompt := SystemPrompt(r.cwd, r.Mode(), layers)
 	hooks := dive.Hooks{
-		PreToolUse: []dive.PreToolUseHook{permission.HookFromManager(r.mgr)},
+		PreToolUse: []dive.PreToolUseHook{r.permissionHook},
 	}
 	hooks.PreGeneration = []dive.PreGenerationHook{r.memoryReminderHook()}
 	if r.cfg.Compaction.Enabled {

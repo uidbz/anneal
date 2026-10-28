@@ -12,6 +12,7 @@ if the new directory does not exist.
 | `skills/` | agent-authored skills (`<name>/SKILL.md`) |
 | `skills-archive/` | removed skills land here (`<name>-<timestamp>`) |
 | `pending/` | staged writes awaiting approval: `pending/memory/`, `pending/skills/` |
+| `permissions.json` | project-scoped `always` grants saved by the approval inbox |
 | `journey.jsonl` | self-improvement timeline (memory/skill writes, review batches) |
 | `logs/` | reserved |
 
@@ -54,24 +55,159 @@ UI scripts can call `agent.config()` / `agent.saveConfig(doc)`). Stores that
 keep a live config pointer (memory, skills, review) re-read changed limits and
 `write_approval` immediately; edited guardrail rule lines still need a restart.
 
+## `permission` — OpenCode-style rules
+
+Anneal uses the same rule model as OpenCode: each rule resolves to `allow`,
+`ask`, or `deny`, rules are matched against an **action** (tool kind) and a
+**resource** (path, command, URL, subagent type, ...), and the **last matching
+rule wins**. The default when nothing matches is `ask`.
+
+```json
+{
+  "permission": {
+    "*": "ask",
+    "bash": {
+      "*": "ask",
+      "git status *": "allow",
+      "git diff *": "allow",
+      "git push *": "deny",
+      "rm *": "deny"
+    },
+    "edit": {
+      "*": "deny",
+      "docs/*.md": "allow"
+    },
+    "webfetch": "ask"
+  }
+}
+```
+
+Shapes accepted:
+
+- a single effect: `"permission": "allow"`
+- action → effect: `{"bash": "ask", "edit": "allow"}`
+- action → resource → effect (ordered): `{"bash": {"git *": "allow", "*": "ask"}}`
+- OpenCode's native array form under either `permission` or `permissions`:
+  `[{"action":"bash","resource":"git *","effect":"allow"}]`
+
+The native `permissions` array is appended after the object-form `permission`
+section, so it takes precedence when both are present.
+
+Within an action, write the catch-all `"*"` first and specific rules after it —
+that is the OpenCode convention and matches the last-match-wins evaluation.
+Supported wildcards are `*` (any sequence, including `/`) and `?` (one
+character). A pattern ending in ` *` also matches the bare prefix, so
+`"git status *"` allows both `git status` and `git status --porcelain`.
+Patterns may start with `~`, `$HOME`, or `${HOME}`; the home directory is
+expanded when the config is loaded.
+
+### Actions and resources
+
+| action | covers | resource |
+|--------|--------|----------|
+| `read` | Read, ListDirectory, TextEditor view | file/directory path |
+| `edit` | Write, Edit, TextEditor create/replace, patch | file path |
+| `bash` | Bash | each parsed command segment (`git status`, `rm -rf build`) |
+| `glob` | Glob | glob pattern |
+| `grep` | Grep | regex pattern |
+| `todowrite` | todo tool | `*` |
+| `skill` | Skill loader | skill name |
+| `skill_manage` | skill_manage | skill name or `*` |
+| `memory` | memory | `memory` / `user` |
+| `session_search` | session_search | `*` |
+| `task` | Agent tool | subagent type (`explore`, `plan`, ...) |
+| `script` | sandboxed Risor script tool | `*` |
+| `webfetch` | WebFetch | URL |
+| `external_directory` | any path outside the working directory | `<dir>/*` |
+| `doom_loop` | the same tool call repeated 3× | tool name |
+| MCP tool name | `mcp__server__tool` | `*` unless the tool has inputs |
+
+Compound shell commands contribute one resource per unquoted `;`, `&&`,
+`||`, `|`, `&`, or newline segment. Every segment must be allowed; a denied
+segment denies the whole call, and any asking segment prompts once for the
+batch. Commands with `$(...)`/backticks are kept whole because the substituted
+part cannot be analyzed safely.
+
+`external_directory` is checked **before** the tool's own action. Approving
+`always` on it saves a `<dir>/*` grant for the project, so later accesses below
+that directory do not prompt. Paths are symlink-resolved first; a symlink that
+escapes the working directory counts as external.
+
+### Defaults
+
+Anneal keeps its safer legacy defaults, expressed as rules:
+
+- reads/searches/todo/session search/memory/skill tools: `allow`
+- Bash, Write/Edit, WebFetch, script: `ask`
+- unknown tools and MCP tools: `ask`
+- `.env` files ask even though reads are allowed; `.env.example` is allowed
+  (this built-in guard is applied by the manager, not written into
+  `config.json`; add a later `read` rule to override it)
+- `external_directory` and `doom_loop` ask
+
+To get OpenCode's permissive out-of-the-box behavior, add `"*": "allow"` at the
+**end** of the rules. A configured `deny` cannot be overridden by a saved
+`always` grant or `bypassPermissions`; a later config rule can still supersede
+it (last match wins).
+
+### Approving: once / always / reject
+
+When an `ask` rule fires, the UI shows:
+
+- **once** — run this call only (`agent.respondPerm(id, "allow")`)
+- **always** — save the suggested patterns for this project and auto-allow
+  matching pending cards (`agent.respondPerm(id, "session")`; `"always"` is
+  also accepted)
+- **reject** — deny the call (`agent.respondPerm(id, "deny")`)
+
+The patterns come from the tool. Bash suggests a safe command prefix
+(`git status *`); skills suggest the skill name; file/edit/read tools suggest
+`*` for that action; external access suggests `<dir>/*`. `always` grants are
+stored in `~/.anneal/permissions.json` under the project root. Delete an entry
+(or the file) to revoke it.
+
+### Modes
+
+| mode | behavior |
+|------|----------|
+| `default` | evaluate rules normally |
+| `plan` | non-read-only tools are denied (not prompted); reads still follow rules |
+| `acceptEdits` | an `ask` on `edit` becomes `allow` |
+| `bypassPermissions` | asks become `allow`; explicit denies still win |
+| `dontAsk` | asks become `deny` (headless/automation) |
+
+### Precedence
+
+Rules are evaluated in this order, later winning:
+
+1. legacy `agent.allow` / `agent.ask` / `agent.deny`
+2. top-level `permission`, then `permissions` (native array)
+3. `agent.permission`, then `agent.permissions` (per-agent override)
+4. harness `guardrails.md` rules
+
+The legacy lists remain supported and default to the safe anneal policy shown
+above. A new-style rule appended later can therefore override them.
+
 ## `agent` — permissions & toolkit
 
 | key | default | meaning |
 |-----|---------|---------|
 | `permission_mode` | `default` | `default` \| `plan` \| `acceptEdits` \| `bypassPermissions` \| `dontAsk` |
-| `allow` | `Read Glob Grep ListDirectory todo session_search memory skill_manage Skill` | never prompt |
-| `ask` | `Bash Write Edit WebFetch script` | prompt the user (GUI inbox card / headless policy) |
-| `deny` | — | auto-deny |
+| `permission` | — | per-agent OpenCode-style rules (overrides top-level `permission`) |
+| `allow` | `Read Glob Grep ListDirectory todo session_search memory skill_manage Skill` | legacy: never prompt |
+| `ask` | `Bash Write Edit WebFetch script` | legacy: prompt (GUI inbox card / headless policy) |
+| `deny` | — | legacy: auto-deny |
 | `tool_iteration_limit` | 80 | max tool rounds per run |
 | `subagents` | true | register the `Agent` tool (general-purpose / explore / plan) |
 | `script` | true | register the `script` tool (sandboxed Risor data-glue runner, see below) |
 
-Rule strings support specifiers: `"Bash(go test *)"`. Gotcha: **ask rules run
-before dive's mode gate**, so plan mode is enforced in the approval dialog
-(non-read-only tools are auto-denied, not prompted). The meta-tools
-(`memory`, `skill_manage`, `Skill`, `session_search`) are read-only hints —
-their real gate is `write_approval` staging; `Agent` keeps prompting (spawning
-costs compute).
+Legacy rule strings support tool-name patterns and specifiers:
+`"Bash(go test *)"`. They are canonicalized to the actions above
+(`Write(...)` → `edit`, `Read`/`ListDirectory` → `read`, `Agent` → `task`), so
+both syntaxes can be mixed, but prefer the `permission` section for new rules.
+The meta-tools (`memory`, `skill_manage`, `Skill`, `session_search`) are
+read-only hints — their real gate is `write_approval` staging; `Agent` keeps
+prompting (spawning costs compute).
 
 ### `script` — sandboxed Risor data-glue tool
 
@@ -182,8 +318,9 @@ without a daemon, `gortex mcp` exits unless its own `mcp.allow_embedded` is
 enabled. Set `"auto_detect": false` or define your own `gortex` entry to opt
 out.
 
-Tools are exposed as `mcp__<server>__<tool>` and permission-gated like any
-non-allowlisted tool. State is shown in the header (`mcp: 1/1 up, N tools`).
+Tools are exposed as `mcp__<server>__<tool>` and use that name as their
+permission action (so `"mcp__gortex__explore": "allow"` works). Unlisted MCP
+tools default to `ask`. State is shown in the header (`mcp: 1/1 up, N tools`).
 
 ## `harness` — editable components (M10)
 
@@ -193,9 +330,11 @@ non-allowlisted tool. State is shown in the header (`mcp: 1/1 up, N tools`).
 | `char_limit` | 6000 | per-component cap on injected prompt text |
 
 Components are plain files (see `~/.anneal/harness/README.md`):
-`system.md`, `guardrails.md` (prose + `allow:/ask:/deny:` rule lines —
-same syntax as `agent.allow/ask/deny`, applied at startup, restart to
-re-read), `tool-guidance.md`, `subagents/*.md` (dive FileLoader format;
+`system.md`, `guardrails.md` (prose + `allow:/ask:/deny:` rule lines using the
+same `Tool(specifier)` syntax as the legacy lists; they are translated to
+OpenCode actions and evaluated **after** config rules, so a guardrail deny can
+veto a config allow; applied at startup, restart to re-read),
+`tool-guidance.md`, `subagents/*.md` (dive FileLoader format;
 override built-ins), `scripts/` (manifest surfaced to the model).
 Check with `anneal -check-harness` or `/harness`.
 

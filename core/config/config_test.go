@@ -87,6 +87,65 @@ func TestNormalizeFixesInvalidValues(t *testing.T) {
 	}
 }
 
+func TestPermissionConfigApply(t *testing.T) {
+	t.Setenv("ANNEAL_HOME", t.TempDir())
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := `{"permission":{"bash":{"*":"ask","git *":"allow"},"edit":"deny"}}`
+	if err := cfg.Apply([]byte(doc)); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Permission) != 3 {
+		t.Fatalf("permission rules: %+v", cfg.Permission)
+	}
+	if cfg.Permission[0].Action != "bash" || cfg.Permission[1].Resource != "git *" ||
+		cfg.Permission[2].Action != "edit" || cfg.Permission[2].Effect != "deny" {
+		t.Fatalf("unexpected decode: %+v", cfg.Permission)
+	}
+
+	onDisk, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk.Permission) != 3 || onDisk.Permission[1].Resource != "git *" {
+		t.Fatalf("permission not persisted: %+v", onDisk.Permission)
+	}
+
+	// A partial document that omits permission clears user rules; the
+	// built-in .env guard lives in the permission manager, not config.
+	if err := onDisk.Apply([]byte(`{"provider":{"model":"x"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk.Permission) != 0 {
+		t.Fatalf("omitted permission should be empty: %+v", onDisk.Permission)
+	}
+}
+
+func TestNativePermissionsArray(t *testing.T) {
+	t.Setenv("ANNEAL_HOME", t.TempDir())
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := `{
+	  "permission": {"bash": "ask"},
+	  "permissions": [{"action":"bash","resource":"git *","effect":"allow"}],
+	  "agent": {"permissions": [{"action":"bash","resource":"rm *","effect":"deny"}]}
+	}`
+	if err := cfg.Apply([]byte(doc)); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Permission) != 1 || len(cfg.Permissions) != 1 || len(cfg.Agent.Permissions) != 1 {
+		t.Fatalf("native arrays not decoded: %+v %+v %+v", cfg.Permission, cfg.Permissions, cfg.Agent.Permissions)
+	}
+	if cfg.Permissions[0].Action != "bash" || cfg.Permissions[0].Resource != "git *" ||
+		cfg.Agent.Permissions[0].Effect != "deny" {
+		t.Fatalf("unexpected native rules: %+v %+v", cfg.Permissions, cfg.Agent.Permissions)
+	}
+}
+
 func TestClampTextScale(t *testing.T) {
 	cases := []struct{ in, want float64 }{
 		{0, 1}, {0.1, MinTextScale}, {0.6, 0.6}, {1, 1}, {1.5, 1.5},

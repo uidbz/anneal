@@ -25,9 +25,9 @@ The `anneal` binary is a plain Fyne shell with scripted panes.
   most 300 blocks; older blocks are kept in memory behind a **“show N earlier
   messages”** button (Phase 2 hardening).
 - **Approval inbox** (above the transcript): `perm.request` cards with
-  **allow** (this call), **session** (same tool/spec for the session), and
-  **deny**. When `write_approval` is on, staged memory/skill writes appear as
-  cards with an operation preview and **approve/reject**.
+  **once** (this call), **always** (save matching grants for this project),
+  and **reject**. When `write_approval` is on, staged memory/skill writes
+  appear as cards with an operation preview and **approve/reject**.
 - **Header**: plan/build toggle, `+ new`, `sessions`, `settings`, `A-`/`A+`
   text size, model health, token/context usage, tie index state, MCP status.
   `settings` opens the full `config.json` in an editor; saving re-points the
@@ -106,7 +106,7 @@ anneal-headless -p "…" -learn                            # review pass after
 | `-v` | log every event to stderr |
 | `-session ID` / `--new` | resume / fresh session (default: resume most recent) |
 | `-yolo` | bypass permission mode entirely |
-| `-allow a,b,*` | auto-answer permission prompts (anything not allowed → denied) |
+| `-allow a,b,*` | auto-answer permission prompts by action or tool name (anything not allowed → denied) |
 | `-learn` | run the self-improvement review after the task |
 
 Exit codes: `0` ok · `1` run error · `124` timeout · `130` interrupted.

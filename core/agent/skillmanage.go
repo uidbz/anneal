@@ -10,7 +10,6 @@ import (
 
 	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
-	"github.com/deepnoodle-ai/dive/permission"
 	"github.com/deepnoodle-ai/dive/skill"
 	"github.com/deepnoodle-ai/dive/subagent"
 	"github.com/deepnoodle-ai/dive/toolkit/orchestration"
@@ -88,7 +87,7 @@ func (r *Runner) agentTool(provider llm.LLM, tools []dive.Tool) dive.Tool {
 				SystemPrompt:       def.Prompt,
 				Model:              provider,
 				Tools:              subagent.FilterTools(def, parentTools),
-				Hooks:              dive.Hooks{PreToolUse: []dive.PreToolUseHook{permission.HookFromManager(r.mgr)}},
+				Hooks:              dive.Hooks{PreToolUse: []dive.PreToolUseHook{r.permissionHook}},
 				ToolIterationLimit: 40,
 			})
 		},

@@ -30,6 +30,7 @@ func Root() string {
 }
 
 func Config() string        { return filepath.Join(Root(), "config.json") }
+func Permissions() string   { return filepath.Join(Root(), "permissions.json") }
 func Sessions() string      { return filepath.Join(Root(), "sessions") }
 func Memories() string      { return filepath.Join(Root(), "memories") }
 func Skills() string        { return filepath.Join(Root(), "skills") }

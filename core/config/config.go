@@ -10,6 +10,7 @@ import (
 
 	"github.com/uidbz/anneal/core/fsutil"
 	"github.com/uidbz/anneal/core/paths"
+	"github.com/uidbz/anneal/core/permission"
 )
 
 // TextScale bounds for the UI text size multiplier.
@@ -32,13 +33,21 @@ type Provider struct {
 }
 
 type Agent struct {
-	PermissionMode     string   `json:"permission_mode"` // default|plan|acceptEdits|bypassPermissions|dontAsk
-	Allow              []string `json:"allow"`
-	Ask                []string `json:"ask"`
-	Deny               []string `json:"deny"`
-	ToolIterationLimit int      `json:"tool_iteration_limit"`
-	Subagents          bool     `json:"subagents"`
-	Script             bool     `json:"script"` // Risor data-glue script tool
+	PermissionMode string `json:"permission_mode"` // default|plan|acceptEdits|bypassPermissions|dontAsk
+	// Allow/Ask/Deny are the legacy rule lists. They are translated to
+	// OpenCode-style actions and evaluated before Permission, so the newer
+	// rules below can override them.
+	Allow []string `json:"allow"`
+	Ask   []string `json:"ask"`
+	Deny  []string `json:"deny"`
+	// Permission is the per-agent OpenCode-style ruleset. It takes precedence
+	// over the global permission section and the legacy lists. Permissions is
+	// the native list form (same rules, appended after Permission).
+	Permission         permission.Config `json:"permission,omitempty"`
+	Permissions        permission.Config `json:"permissions,omitempty"`
+	ToolIterationLimit int               `json:"tool_iteration_limit"`
+	Subagents          bool              `json:"subagents"`
+	Script             bool              `json:"script"` // Risor data-glue script tool
 }
 
 type Compaction struct {
@@ -116,17 +125,27 @@ type Improve struct {
 }
 
 type Config struct {
-	Provider   Provider   `json:"provider"`
-	Agent      Agent      `json:"agent"`
-	Compaction Compaction `json:"compaction"`
-	Memory     Memory     `json:"memory"`
-	Skills     Skills     `json:"skills"`
-	Review     Review     `json:"review"`
-	Tie        Tie        `json:"tie"`
-	MCP        MCP        `json:"mcp"`
-	Harness    Harness    `json:"harness"`
-	Improve    Improve    `json:"improve"`
-	UI         UI         `json:"ui"`
+	// Permission is the global OpenCode-style ruleset:
+	//
+	//   "permission": {"bash": {"*": "ask", "git *": "allow"}, "edit": "deny"}
+	//
+	// Rules are last-match-wins. The legacy agent.allow/ask/deny lists are
+	// evaluated first; agent.permission then overrides this section.
+	// Permissions is OpenCode's native array form and is appended after
+	// Permission, so it takes precedence when both are present.
+	Permission  permission.Config `json:"permission,omitempty"`
+	Permissions permission.Config `json:"permissions,omitempty"`
+	Provider    Provider          `json:"provider"`
+	Agent       Agent             `json:"agent"`
+	Compaction  Compaction        `json:"compaction"`
+	Memory      Memory            `json:"memory"`
+	Skills      Skills            `json:"skills"`
+	Review      Review            `json:"review"`
+	Tie         Tie               `json:"tie"`
+	MCP         MCP               `json:"mcp"`
+	Harness     Harness           `json:"harness"`
+	Improve     Improve           `json:"improve"`
+	UI          UI                `json:"ui"`
 
 	path string `json:"-"`
 }

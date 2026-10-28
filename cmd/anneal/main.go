@@ -969,6 +969,11 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.renderTodos(list(e["items"]))
 	case "perm.request":
 		s.addPerm(e)
+	case "perm.saved":
+		s.addNotice(fmt.Sprintf("🔐 saved permission: %s %s", str(e["action"]),
+			strings.Join(stringList(e["resources"]), ", ")))
+	case "perm.warning":
+		s.addNotice("⚠ permission save failed: " + str(e["error"]))
 	case "perm.resolved":
 		s.removeCard(str(e["id"]))
 	case "memory.stage":
@@ -1146,12 +1151,24 @@ func (s *shell) renderTodos(items []any) {
 
 func (s *shell) addPerm(e map[string]any) {
 	id := str(e["id"])
-	info := fmt.Sprintf("🔐 %s — %s\n[%s] %s",
-		str(e["tool"]), str(e["message"]), str(e["grant"]), oneLine(str(e["input"])))
+	action := str(e["action"])
+	if action == "" {
+		action = str(e["tool"])
+	}
+	if resources := strings.Join(stringList(e["resources"]), ", "); resources != "" {
+		action += " [" + resources + "]"
+	}
+	action = oneLine(action)
+	grant := ""
+	if g := str(e["grant"]); g != "" {
+		grant = "\nalways: " + g
+	}
+	info := fmt.Sprintf("🔐 %s — %s%s\n%s", action, str(e["message"]), grant,
+		oneLine(str(e["input"])))
 	s.addApprovalCard(id, info,
-		widget.NewButton("allow", func() { s.a.Runner.RespondPerm(id, "allow") }),
-		widget.NewButton("session", func() { s.a.Runner.RespondPerm(id, "session") }),
-		widget.NewButton("deny", func() { s.a.Runner.RespondPerm(id, "deny") }),
+		widget.NewButton("once", func() { s.a.Runner.RespondPerm(id, "allow") }),
+		widget.NewButton("always", func() { s.a.Runner.RespondPerm(id, "session") }),
+		widget.NewButton("reject", func() { s.a.Runner.RespondPerm(id, "deny") }),
 	)
 }
 
@@ -1275,6 +1292,21 @@ func obj(v any) map[string]any {
 func list(v any) []any {
 	l, _ := v.([]any)
 	return l
+}
+
+func stringList(v any) []string {
+	items := list(v)
+	if items == nil {
+		if values, ok := v.([]string); ok {
+			return values
+		}
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, str(item))
+	}
+	return out
 }
 
 // paneSource prefers an on-disk pane script (config `ui.pane_dir`, then the

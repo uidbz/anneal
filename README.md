@@ -32,14 +32,14 @@ active follow-ups (see [progress.md](progress.md)).
 |---|---|
 | Streaming chat with tool calls | dive toolkit: Read/Write/Edit/Bash/Glob/Grep/WebFetch + todo |
 | Sessions | JSONL truth under `~/.anneal/sessions`, replay, resume-at-boot |
-| Permissions | plan/build modes, approval inbox (allow / session-grant / deny), allow-ask-deny rules |
+| Permissions | OpenCode-style allow/ask/deny rules (last match wins, wildcards), approval inbox (once / always / reject), saved project grants, plan/build modes |
 | Cross-session recall | `session_search` over the tie index (word tokens, AND, newest-first) |
 | Memory | `MEMORY.md`/`USER.md` with caps, dup-guard, injection scan, optional write approval |
 | Skills | SKILL.md authoring (`skill_manage`), auto-discovery via dive skill loader, staging |
 | Self-review | background reviewer mines finished sessions while idle; ledger-backed notifications |
 | Harness improvement | Propose→Probe→Compose, evidence-gated library, session overlay, explicit promote |
 | Compaction | mid-turn + pre-generation summarization at 82% of context window |
-| MCP | stdio/HTTP servers, `mcp__server__tool` names, permission-gated |
+| MCP | stdio/HTTP servers, `mcp__server__tool` names, permission action per tool |
 | Subagents | `Agent` tool (general-purpose/explore/plan) inheriting permission hooks |
 | Headless | `anneal-headless -p … / -i / -json` with permission policy flags |
 | Scripted panes | `CanvasObject`-embedded Risor (harness editor now; more panes later) |

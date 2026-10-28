@@ -50,6 +50,35 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-10-27 — OpenCode-style permission system
+- Reimplemented OpenCode v2's permission model in `core/permission`: ordered
+  `{action, resource, effect}` rules with last-match-wins wildcards (`*`, `?`,
+  optional-argument `"cmd *"`), `allow`/`ask`/`deny`, `once`/`always`/`reject`
+  replies, and project-scoped saved grants (`~/.anneal/permissions.json`).
+  Reference: OpenCode v2.0.30 `packages/core/src/permission.ts`,
+  `permission/saved.ts`, `v1/config/permission.ts`, `shell/parse.ts`, and
+  `packages/web/src/content/docs/permissions.mdx`.
+- Config now has the OpenCode shapes: top-level `permission` (string, action →
+  effect, or action → resource → effect) plus an `agent.permission` override.
+  Legacy `agent.allow/ask/deny` are translated to the same actions and
+  evaluated first, so existing configs keep working and new rules can override
+  them. Harness guardrails evaluate last. Default `.env` read asks match
+  OpenCode's secret-file guard; anneal keeps its safer ask-on-write/bash
+  defaults (add `"*": "allow"` for OpenCode's permissive default).
+- Tool mapping: Read/ListDirectory → `read`, Write/Edit/TextEditor → `edit`,
+  Bash → `bash` (per-segment resources + safe `always` prefixes), Glob/Grep,
+  WebFetch, todo → `todowrite`, Skill → `skill`, Agent → `task`, plus
+  `external_directory` (symlink-resolved; checked first) and `doom_loop`
+  (three identical calls). MCP tools use their qualified name as the action.
+- Approval bridge no longer uses dive's `permission.Manager`/`Dialog`; the
+  custom PreToolUse hook works for subagents too. UI buttons are now
+  once/always/reject (legacy `allow|session|deny` still accepted by
+  `agent.respondPerm`); `always` saves the suggested patterns and immediately
+  releases matching pending cards. Headless `-allow` matches action or tool.
+- Tests: `core/permission` (wildcards, ordered config, compound commands,
+  saved grants, modes) and `core/agent` (default policy, external paths, shell
+  parsing, doom loop, always-release). `go test ./...` green.
+
 ### 2026-10-26 — configurable text size, responsive streaming, selectable text, gortex
 - **Text size**: `ui.text_scale` (0.6–2.5) applied via a theme wrapper that
   multiplies text/caption/heading/inline-icon sizes. Controls: header `A-`/`A+`,

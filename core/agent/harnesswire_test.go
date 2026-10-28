@@ -8,8 +8,7 @@ import (
 
 	"github.com/uidbz/anneal/core/config"
 	"github.com/uidbz/anneal/core/harness"
-
-	"github.com/deepnoodle-ai/dive/permission"
+	"github.com/uidbz/anneal/core/permission"
 )
 
 func TestSystemPromptLayers(t *testing.T) {
@@ -81,27 +80,27 @@ func TestPermConfigHarnessRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.Default()
-	c := permConfig(cfg, h)
-	denyMsg := ""
+	rules := permConfig(cfg, h)
+	denySeen := false
 	allowSeen := false
-	for _, r := range c.Rules {
-		if r.Type == permission.RuleDeny && r.Tool == "Bash" && r.Specifier == "rm -rf *" {
-			denyMsg = r.Message
+	for _, r := range rules {
+		if r.Effect == permission.Deny && r.Action == "bash" && r.Resource == "rm -rf *" {
+			denySeen = true
 		}
-		if r.Type == permission.RuleAllow && r.Tool == "Bash" && r.Specifier == "go test *" {
+		if r.Effect == permission.Allow && r.Action == "bash" && r.Resource == "go test *" {
 			allowSeen = true
 		}
 	}
-	if denyMsg != "denied by harness guardrail" {
-		t.Fatalf("harness deny rule missing/wrong: %q", denyMsg)
+	if !denySeen {
+		t.Fatal("harness deny rule missing")
 	}
 	if !allowSeen {
 		t.Fatal("harness allow rule missing")
 	}
 	// Disabled harness must not mount rules.
 	cfg.Harness.Enabled = false
-	for _, r := range permConfig(cfg, h).Rules {
-		if r.Message == "denied by harness guardrail" {
+	for _, r := range permConfig(cfg, h) {
+		if r.Effect == permission.Deny && r.Action == "bash" && r.Resource == "rm -rf *" {
 			t.Fatal("rules mounted while disabled")
 		}
 	}

@@ -77,7 +77,7 @@ func main() {
 	sh.autoSend = *sendTask
 	sh.autoQuit = *quitAfterRun
 	win.SetContent(sh.root)
-	win.Resize(fyne.NewSize(1100, 750))
+	win.Resize(fyne.NewSize(1280, 800))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -85,12 +85,12 @@ Decisions (agreed with the user):
 
 ## Phase 2 — app frame
 
-- [x] [x] `root = Border(bottom: statusBar, left: rail, center: viewStack)`.
+- [x] `root = Border(bottom: statusBar, left: rail, center: viewStack)`.
 - [x] Views: Chat, Harness, Activity, Settings — a stack driven by
   `nav.show(view)` (replaces `AppTabs`).
 - [x] Chat view = sessions sidebar | chat column | inspector, with draggable
   handles (widths in px, clamped 180–480, persisted). Narrow windows hide the
-  inspector below 1100 px and the sidebar below 820 px without changing the
+  inspector below 1180 px and the sidebar below 900 px without changing the
   saved preference.
 - [x] Activity rail (56 px): logo, Chat / Harness / Activity, Settings pinned at
   the bottom; icon + caption, accent bar + raised background on the active
@@ -108,13 +108,13 @@ Decisions (agreed with the user):
 
 ## Phase 3 — sessions sidebar
 
-- Header "Sessions" + new-session button; filter entry.
-- `widget.List` of flattened rows: group headings (Today / Yesterday /
+- [x] Header "Sessions" + new-session button; filter entry.
+- [x] `widget.List` of flattened rows: group headings (Today / Yesterday /
   Previous 7 days / Older) and two-line session rows (title or "Untitled
   session", muted relative time). Current session highlighted with an accent
   bar. Right-click: copy session ID.
-- Refresh on `session.started`, `session.opened`, `run.finished`.
-- Tests: grouping with a fixed clock, filter, current marker, refresh.
+- [x] Refresh on `session.started`, `session.opened`, `run.finished`.
+- [x] Tests: grouping with a fixed clock, filter, current marker, refresh.
 
 ## Phase 4 — transcript
 

@@ -23,9 +23,12 @@ type sessionsSidebar struct {
 	filter *widget.Entry
 
 	list  *widget.List
+	count *badge
+	empty *themedText
 	rows  []sessionRow
 	infos []agent.SessionInfo
 	now   func() time.Time // injectable clock for tests
+	load  func() []agent.SessionInfo
 }
 
 // sessionRow is either a group heading or a session entry in the flat list.
@@ -36,7 +39,8 @@ type sessionRow struct {
 }
 
 func newSessionsSidebar(s *shell) *sessionsSidebar {
-	sb := &sessionsSidebar{s: s, now: time.Now}
+	sb := &sessionsSidebar{s: s, now: time.Now,
+		load: func() []agent.SessionInfo { return s.a.Runner.Sessions() }}
 
 	sb.filter = widget.NewEntry()
 	sb.filter.PlaceHolder = "Filter sessions"
@@ -44,8 +48,9 @@ func newSessionsSidebar(s *shell) *sessionsSidebar {
 
 	newBtn := iconButton(theme.ContentAddIcon(), func() { s.a.Runner.NewSession() })
 
+	sb.count = newBadge("", colorRaised, colorMuted)
 	head := container.NewBorder(nil, nil,
-		newSectionLabel("SESSIONS"), newBtn, nil)
+		container.New(&rowLayout{gap: spaceS}, newSectionLabel("SESSIONS"), sb.count), newBtn, nil)
 
 	sb.list = widget.NewList(
 		func() int { return len(sb.rows) },
@@ -70,10 +75,12 @@ func newSessionsSidebar(s *shell) *sessionsSidebar {
 		s.a.Runner.OpenSession(row.info.ID)
 	}
 
+	sb.empty = newThemedText("No sessions yet", colorMuted)
+	center := container.NewStack(sb.list, container.NewCenter(sb.empty))
 	body := container.NewBorder(
 		container.New(&padLayout{l: spaceM, r: spaceS, t: spaceM, b: spaceS},
 			container.NewVBox(head, sb.filter)),
-		nil, nil, nil, sb.list)
+		nil, nil, nil, center)
 	sb.object = newSurface(colorSidebar, body)
 	sb.refresh()
 	return sb
@@ -84,7 +91,7 @@ func (sb *sessionsSidebar) Object() fyne.CanvasObject { return sb.object }
 // refresh reloads the session list, applies the filter, and rebuilds the
 // grouped rows.
 func (sb *sessionsSidebar) refresh() {
-	sb.infos = sb.s.a.Runner.Sessions()
+	sb.infos = sb.load()
 	query := strings.ToLower(strings.TrimSpace(sb.filter.Text))
 	now := sb.now()
 	rows := groupSessions(sb.infos, now)
@@ -102,7 +109,19 @@ func (sb *sessionsSidebar) refresh() {
 		rows = filtered
 	}
 	sb.rows = rows
+	sb.count.SetText(fmt.Sprintf("%d", len(sb.infos)))
+	sb.empty.Hide()
+	if len(rows) == 0 {
+		sb.empty.Show()
+	}
 	sb.list.Refresh()
+	for i, r := range rows {
+		h := theme.Size(theme.SizeNameText)*2 + spaceS
+		if r.heading != "" {
+			h = theme.Size(theme.SizeNameCaptionText) + spaceS
+		}
+		sb.list.SetItemHeight(i, h)
+	}
 }
 
 // groupSessions sorts newest first and inserts group headings.
@@ -224,6 +243,23 @@ func (it *sessionRowItem) set(row sessionRow) {
 	it.meta.SetText(relativeTime(row.info.Updated, it.sb.now()))
 	it.meta.Show()
 	it.title.Refresh()
+}
+
+// SecondaryTapped offers the session ID on right-click.
+func (it *sessionRowItem) SecondaryTapped(ev *fyne.PointEvent) {
+	if it.row.heading != "" || it.row.info.ID == "" {
+		return
+	}
+	id := it.row.info.ID
+	menu := fyne.NewMenu("",
+		fyne.NewMenuItem("Copy session ID", func() {
+			it.sb.s.win.Clipboard().SetContent(id)
+			it.sb.s.addNotice("✔ copied session ID")
+		}),
+	)
+	pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(it)
+	widget.ShowPopUpMenuAtPosition(menu, it.sb.s.win.Canvas(),
+		fyne.NewPos(pos.X+ev.Position.X, pos.Y+ev.Position.Y))
 }
 
 func (it *sessionRowItem) Tapped(*fyne.PointEvent) {

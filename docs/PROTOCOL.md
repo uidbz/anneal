@@ -73,10 +73,13 @@ clients receive it); the operations are idempotent.
 
 `server.auth_token_env` names an environment variable; if that variable is
 set and non-empty, every hello must carry it (constant-time compare). The
-Unix socket is the trusted local transport for one user; for TCP —
-especially `0.0.0.0` inside a container — set the token and publish the
-port loopback-only (`-p 127.0.0.1:7777:7777`) or front it with TLS.
-TLS is not terminated by anneald (v1): use a reverse proxy if needed.
+Unix socket is the trusted local transport for one user. Without a token
+the server also refuses handshakes carrying a browser `Origin` header and
+refuses to start on wildcard/remote TCP binds (loopback TCP only) — so the
+default unauthenticated posture is strictly same-machine, native-client.
+With a token, publish the port loopback-only (`-p 127.0.0.1:7777:7777`) or
+front it with TLS. TLS is not terminated by anneald (v1): use a reverse
+proxy if needed.
 
 ## Lifecycle
 

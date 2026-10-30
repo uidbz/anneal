@@ -129,6 +129,9 @@ func (s *Server) Run(ctx context.Context) error {
 	})
 	httpSrv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	for _, addr := range s.cfg.Listen {
+		if s.token == "" && !tokenlessBindOK(addr) {
+			return fmt.Errorf("anneald: refusing to bind %s without a token (set the %s env var)", addr, s.cfg.AuthTokenEnv)
+		}
 		ln, err := listen(addr)
 		if err != nil {
 			for _, l := range lnss {
@@ -301,6 +304,24 @@ func trimUnix(addr string) string {
 		return addr[5:]
 	}
 	return ""
+}
+
+// tokenlessBindOK reports whether an address may be bound without a token:
+// Unix sockets (owner-only 0600) and loopback TCP only. Wildcard or remote
+// binds require auth.
+func tokenlessBindOK(addr string) bool {
+	if trimUnix(addr) != "" {
+		return true
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil || host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // checkToken compares the hello-frame bearer token against the configured

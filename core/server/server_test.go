@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/uidbz/anneal/core/app"
 	"github.com/uidbz/anneal/core/client"
+
+	"github.com/gorilla/websocket"
 )
 
 // startTest boots the full app against a temp ANNEAL_HOME and serves the
@@ -208,6 +211,74 @@ func TestIdleConnectionSurvivesHelloDeadline(t *testing.T) {
 	case <-c.Dead():
 		t.Fatal("idle connection was reaped after the hello deadline")
 	default:
+	}
+}
+
+// TestBrowserOriginRejectedWithoutToken: with auth disabled, a handshake
+// carrying an Origin header (i.e. from a browser) must be refused.
+func TestBrowserOriginRejectedWithoutToken(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ANNEAL_HOME", home)
+	a, err := app.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Cfg.Server.Listen = []string{"127.0.0.1:0"}
+	s, err := New(a, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = s.Run(ctx) }()
+	addr := waitAddr(t, s)
+
+	d := websocket.Dialer{}
+	hdr := http.Header{}
+	hdr.Set("Origin", "http://evil.example")
+	_, resp, err := d.Dial("ws://"+addr+"/ws", hdr)
+	if err == nil {
+		t.Fatal("expected rejection of browser origin without token")
+	}
+	if resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("want 403, got %v", resp)
+	}
+	// Native (no Origin) still works.
+	c2, err := client.Dial(ctx, "ws://"+addr, "")
+	if err != nil {
+		t.Fatalf("native dial should work: %v", err)
+	}
+	c2.Close()
+}
+
+func TestTokenlessBindPolicy(t *testing.T) {
+	cases := map[string]bool{
+		"unix:/tmp/x.sock": true,
+		"127.0.0.1:7777":   true,
+		"[::1]:7777":       true,
+		"localhost:7777":   true,
+		"0.0.0.0:7777":     false,
+		":7777":            false,
+		"10.0.0.5:7777":    false,
+	}
+	for addr, ok := range cases {
+		if got := tokenlessBindOK(addr); got != ok {
+			t.Errorf("tokenlessBindOK(%q) = %v, want %v", addr, got, ok)
+		}
+	}
+	// And Run enforces it: wildcard bind without a token must fail.
+	t.Setenv("ANNEAL_HOME", t.TempDir())
+	a, err := app.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Cfg.Server.Listen = []string{"0.0.0.0:0"}
+	s, err := New(a, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Run(context.Background()); err == nil {
+		t.Fatal("wildcard tokenless bind should refuse to start")
 	}
 }
 

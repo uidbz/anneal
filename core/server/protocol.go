@@ -82,6 +82,14 @@ func decode(params json.RawMessage, v any) error {
 // handleWS upgrades the connection, performs the hello handshake, then serves
 // RPC until either side closes.
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	// Browsers always attach Origin to a WebSocket handshake; native
+	// clients never do. With auth disabled, refuse the browser surface:
+	// a random web page in the user's own browser must not drive the
+	// agent over a tokenless loopback TCP listener.
+	if s.token == "" && r.Header.Get("Origin") != "" {
+		http.Error(w, `{"error":"origin not allowed without a token"}`, http.StatusForbidden)
+		return
+	}
 	ws, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return // Upgrade already closed the socket

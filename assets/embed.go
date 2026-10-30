@@ -5,5 +5,5 @@ package assets
 
 import "embed"
 
-//go:embed all:ui
+//go:embed all:ui anneal.svg
 var UI embed.FS

@@ -4,6 +4,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,7 +52,14 @@ func TestUICapture(t *testing.T) {
 	win.SetContent(sh.root)
 	win.Resize(fyne.NewSize(1280, 800))
 	feedSampleSession(sh)
+	// The harness pane is a scripted view; run it so the capture shows it.
+	sh.harness.Execute()
+	waitPaneReady(t, sh)
 	capture(t, win, filepath.Join(dir, "chat-"+mode+".png"))
+	for _, v := range []viewID{viewHarness, viewActivity, viewSettings} {
+		sh.showView(v)
+		capture(t, win, filepath.Join(dir, strings.ToLower(v.String())+"-"+mode+".png"))
+	}
 }
 
 func capture(t *testing.T, win fyne.Window, path string) {
@@ -125,4 +133,22 @@ func feedSampleSession(sh *shell) {
 	ev(map[string]any{"type": "perm.request", "id": "p1", "tool": "Write", "action": "edit",
 		"resources": []any{"core/textutil/textutil_test.go"}, "message": "Write wants to create a file",
 		"grant": "edit(core/textutil/*)", "input": `{"file_path":"core/textutil/textutil_test.go"}`})
+}
+
+func waitPaneReady(t *testing.T, sh *shell) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		st := sh.harness.view.Window().Status()
+		if st == "Ready!" {
+			return
+		}
+		if strings.HasPrefix(st, "ERROR") {
+			t.Fatalf("pane script failed: %s", st)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pane did not finish; status %q", st)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }

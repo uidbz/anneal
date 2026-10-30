@@ -78,16 +78,16 @@ func (s *shell) handleEvent(e map[string]any) {
 			s.chipMCP.Hide()
 		}
 	case "run.started":
-		s.setRunState("running…", colorWarn, false)
-		s.usage.SetText("running…")
+		s.setRunState("Running…", colorWarn, false)
+		s.usage.SetText("")
 	case "run.busy":
-		s.status.SetText("a run is already active")
+		s.status.SetText("A run is already active")
 	case "text.delta":
 		s.ensureTail()
 		s.tailBuf += str(e["text"])
 		s.flushTail()
 	case "thinking.delta":
-		s.status.SetText("thinking…")
+		s.status.SetText("Thinking…")
 		s.runDot.setToken(colorWarn)
 	case "message.final":
 		s.closeTail(str(e["text"]))
@@ -105,13 +105,18 @@ func (s *shell) handleEvent(e map[string]any) {
 		u := obj(e["usage"])
 		s.usage.SetText(fmt.Sprintf("in %s · out %s · ctx %d%%",
 			humanK(int(num(u["tin"]))), humanK(int(num(u["tout"]))), int(num(e["ctx_pct"]))))
+		s.inspector.tin = int(num(u["tin"]))
+		s.inspector.tout = int(num(u["tout"]))
+		s.inspector.ctxPct = int(num(e["ctx_pct"]))
+		s.inspector.refresh()
+		s.refreshSessionMeta()
 		switch {
 		case boolean(e["stopped"]):
-			s.setRunState("stopped", colorWarn, false)
+			s.setRunState("Stopped", colorWarn, false)
 		case boolean(e["ok"]):
-			s.setRunState("ready", colorOK, false)
+			s.setRunState("Ready", colorOK, false)
 		default:
-			s.setRunState("error", colorErr, true)
+			s.setRunState("Error", colorErr, true)
 			s.usage.SetText("")
 			if msg := str(e["error"]); msg != "" {
 				s.addNotice("⚠ " + msg)
@@ -122,11 +127,15 @@ func (s *shell) handleEvent(e map[string]any) {
 			time.AfterFunc(1500*time.Millisecond, func() { fyne.Do(func() { s.app.Quit() }) })
 		}
 	case "session.started":
+		s.sessionID = str(e["id"])
+		s.title = ""
 		s.resetChat()
-		s.addNotice("new session — describe a task below, or /help for commands")
+		s.header.setTitle("New session")
 		s.win.SetTitle("Anneal")
 		s.entry.SetText("")
 		s.win.Canvas().Focus(s.entry)
+		s.side.refresh()
+		s.inspector.refresh()
 	case "session.opened":
 		s.resetChat()
 		for _, raw := range list(e["blocks"]) {
@@ -135,16 +144,20 @@ func (s *shell) handleEvent(e map[string]any) {
 		if len(list(e["blocks"])) == 0 {
 			s.addNotice("welcome — describe a task below, or /help for commands")
 		}
-		title := str(e["title"])
-		if title != "" {
-			s.win.SetTitle("Anneal — " + title)
-		}
+		s.sessionID = str(e["id"])
+		s.title = str(e["title"])
+		s.setWindowTitle()
+		s.side.refresh()
+		s.inspector.refresh()
 		s.scroll.ScrollToBottom()
 	case "session.error":
 		s.addNotice(fmt.Sprintf("⚠ session %s: %s", str(e["id"]), str(e["error"])))
 	case "mode.changed":
 		s.mode = str(e["mode"])
 		s.modeBtn.SetText(modeTitle(s.mode))
+		text, fill, fg := modeBadge(s.mode)
+		s.header.setBadge(text, fill, fg)
+		s.inspector.refresh()
 	case "todo.updated":
 		s.renderTodos(list(e["items"]))
 	case "perm.request":
@@ -174,7 +187,10 @@ func (s *shell) handleEvent(e map[string]any) {
 			widget.NewButton("approve", func() { s.a.RespondSkill(id, "approve") }),
 			widget.NewButton("reject", func() { s.a.RespondSkill(id, "reject") }),
 		)
+	case "harness.overlay":
+		s.inspector.refresh()
 	case "compaction.done":
+		s.inspector.compacted++
 		s.addNotice(fmt.Sprintf("🗜 context compacted: %d → %d tokens (%d msgs)",
 			int(num(e["before"])), int(num(e["after"])), int(num(e["msgs"]))))
 	case "review.start":
@@ -276,6 +292,9 @@ func (s *shell) handleEvent(e map[string]any) {
 		// Covers edits from the settings dialog, scripts (agent.saveConfig),
 		// and theme/text-size changes; re-applying the theme is idempotent.
 		applyTheme(s.app, s.a.Cfg.UI)
+		if s.settingsForm != nil {
+			s.settingsForm.onExternalChange(e)
+		}
 		switch {
 		case str(e["error"]) != "":
 			s.addNotice("⚠ settings save: " + str(e["error"]))
@@ -320,6 +339,7 @@ func (s *shell) renderTodos(items []any) {
 			s.todoPane.Show()
 		}
 		s.todoPane.Refresh()
+		s.inspector.refresh()
 	}
 	s.todos.Refresh()
 }
@@ -340,13 +360,6 @@ func shortText(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
-}
-
-func modeTitle(mode string) string {
-	if mode == "plan" {
-		return "📋 plan"
-	}
-	return "🛠 build"
 }
 
 func oneLine(s string) string {

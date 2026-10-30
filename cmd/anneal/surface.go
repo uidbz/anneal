@@ -157,8 +157,20 @@ func (t *themedText) SetText(s string) {
 
 func (t *themedText) Text() string { return t.text }
 
+// MinSize measures from the widget's own fields so the very first layout pass
+// (before any Refresh) has real dimensions.
+func (t *themedText) MinSize() fyne.Size {
+	size := theme.Size(t.size)
+	style := fyne.TextStyle{Bold: t.bold, Monospace: t.mono}
+	ms := fyne.MeasureText(t.text, size, style)
+	return fyne.NewSize(ms.Width, ms.Height)
+}
+
 func (t *themedText) CreateRenderer() fyne.WidgetRenderer {
-	ct := canvas.NewText(t.text, color.Transparent)
+	ct := canvas.NewText(t.text, theme.Color(t.token))
+	ct.TextSize = theme.Size(t.size)
+	ct.TextStyle = fyne.TextStyle{Bold: t.bold, Monospace: t.mono}
+	ct.Alignment = t.align
 	return &themedTextRenderer{owner: t, text: ct, objects: []fyne.CanvasObject{ct}}
 }
 
@@ -433,4 +445,85 @@ func vgap(h float32) fyne.CanvasObject {
 // spacer absorbs slack in a box layout (transparent, zero minimum size).
 func spacer() fyne.CanvasObject {
 	return canvas.NewRectangle(color.Transparent)
+}
+
+// themedRect is a solid, theme-colored rectangle with a fixed minimum size
+// (accent bars, hairlines drawn by hand).
+type themedRect struct {
+	widget.BaseWidget
+	token fyne.ThemeColorName
+	minW  float32
+	minH  float32
+}
+
+func newThemedRect(token fyne.ThemeColorName, w, h float32) *themedRect {
+	r := &themedRect{token: token, minW: w, minH: h}
+	r.ExtendBaseWidget(r)
+	return r
+}
+
+func (r *themedRect) setToken(token fyne.ThemeColorName) {
+	r.token = token
+	r.Refresh()
+}
+
+func (r *themedRect) MinSize() fyne.Size { return fyne.NewSize(r.minW, r.minH) }
+
+func (r *themedRect) CreateRenderer() fyne.WidgetRenderer {
+	return &themedRectRenderer{rect: r, bg: canvas.NewRectangle(color.Transparent)}
+}
+
+type themedRectRenderer struct {
+	rect *themedRect
+	bg   *canvas.Rectangle
+}
+
+func (r *themedRectRenderer) Layout(size fyne.Size) {
+	r.bg.Move(fyne.NewPos(0, 0))
+	r.bg.Resize(size)
+}
+
+func (r *themedRectRenderer) MinSize() fyne.Size { return r.rect.MinSize() }
+
+func (r *themedRectRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.bg} }
+
+func (r *themedRectRenderer) Refresh() {
+	r.bg.FillColor = theme.Color(r.rect.token)
+	r.bg.Refresh()
+}
+
+func (r *themedRectRenderer) Destroy() {}
+
+// columnLayout packs children top-to-bottom at their MinSize heights with a
+// fixed gap (used by the rail so items stay compact).
+type columnLayout struct {
+	gap float32
+}
+
+func (l *columnLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	y := float32(0)
+	for i, o := range objects {
+		if i > 0 {
+			y += l.gap
+		}
+		ms := o.MinSize()
+		o.Move(fyne.NewPos(0, y))
+		o.Resize(fyne.NewSize(size.Width, ms.Height))
+		y += ms.Height
+	}
+}
+
+func (l *columnLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	var w, h float32
+	for i, o := range objects {
+		if i > 0 {
+			h += l.gap
+		}
+		ms := o.MinSize()
+		if ms.Width > w {
+			w = ms.Width
+		}
+		h += ms.Height
+	}
+	return fyne.NewSize(w, h)
 }

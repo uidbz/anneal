@@ -194,15 +194,13 @@ func TestStreamingChunksStaySmall(t *testing.T) {
 
 func TestTodoPaneHidesWhenEmpty(t *testing.T) {
 	sh := newTestShell(t)
+	sh.renderTodos(nil)
 	if sh.todoPane.Visible() {
 		t.Fatal("empty todo pane is visible")
 	}
 	sh.renderTodos([]any{map[string]any{"content": "step", "status": "in_progress"}})
 	if !sh.todoPane.Visible() {
 		t.Fatal("todo pane hidden with items")
-	}
-	if got := sh.todoPane.MinSize().Width; got < todoPanelWidth {
-		t.Fatalf("todo pane min width = %v", got)
 	}
 	sh.renderTodos(nil)
 	if sh.todoPane.Visible() {

@@ -85,25 +85,25 @@ Decisions (agreed with the user):
 
 ## Phase 2 — app frame
 
-- `root = Border(bottom: statusBar, left: rail, center: viewStack)`.
-- Views: Chat, Harness, Activity, Settings — a stack driven by
+- [x] [x] `root = Border(bottom: statusBar, left: rail, center: viewStack)`.
+- [x] Views: Chat, Harness, Activity, Settings — a stack driven by
   `nav.show(view)` (replaces `AppTabs`).
-- Chat view = sessions sidebar | chat column | inspector, with draggable
+- [x] Chat view = sessions sidebar | chat column | inspector, with draggable
   handles (widths in px, clamped 180–480, persisted). Narrow windows hide the
   inspector below 1100 px and the sidebar below 820 px without changing the
   saved preference.
-- Activity rail (56 px): logo, Chat / Harness / Activity, Settings pinned at
+- [x] Activity rail (56 px): logo, Chat / Harness / Activity, Settings pinned at
   the bottom; icon + caption, accent bar + raised background on the active
   item.
-- View headers (44 px): chat shows the session title + mode badge and
+- [x] View headers (44 px): chat shows the session title + mode badge and
   actions (sidebar toggle, Improve, inspector toggle, overflow menu: New
   session, Rebuild index, Learn now, Memory…, Skills…, Journey…, Reload
   harness pane).
-- Native main menu (File / View / Session / Help) owns the shortcuts
+- [x] Native main menu (File / View / Session / Help) owns the shortcuts
   (menu shortcuts fire regardless of focus). Default window 1280×800.
-- Config: `ui.sidebar_open`, `ui.inspector_open`, `ui.sidebar_width`,
+- [x] Config: `ui.sidebar_open`, `ui.inspector_open`, `ui.sidebar_width`,
   `ui.inspector_width`.
-- Tests: nav switches views + rail state; toggles hide/show and persist;
+- [x] Tests: nav switches views + rail state; toggles hide/show and persist;
   narrow-window collapse; slash commands that used `tabs.SelectIndex`.
 
 ## Phase 3 — sessions sidebar

@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/uidbz/anneal/assets"
 	"github.com/uidbz/anneal/core/config"
 )
 
@@ -363,3 +364,12 @@ func (r *statusDotRenderer) Refresh() {
 }
 
 func (r *statusDotRenderer) Destroy() {}
+
+// logoResource is the embedded brand mark for the rail.
+func logoResource() fyne.Resource {
+	b, err := assets.UI.ReadFile("anneal.svg")
+	if err != nil {
+		return theme.FyneLogo()
+	}
+	return fyne.NewStaticResource("anneal.svg", b)
+}

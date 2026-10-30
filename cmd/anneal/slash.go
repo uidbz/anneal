@@ -51,7 +51,7 @@ func (s *shell) slash(line string) {
 		s.showText("journey", b.String())
 	case "/activity", "/runs":
 		s.refreshActivity()
-		s.tabs.SelectIndex(2)
+		s.showView(viewActivity)
 	case "/index":
 		go func() {
 			n, err := s.a.Runner.RebuildIndex(context.Background())
@@ -68,7 +68,7 @@ func (s *shell) slash(line string) {
 	case "/improve":
 		s.improveNow()
 	case "/harness":
-		s.tabs.SelectIndex(1)
+		s.showView(viewHarness)
 	case "/quit":
 		s.app.Quit()
 	default:

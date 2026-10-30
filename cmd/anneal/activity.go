@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 	"github.com/uidbz/anneal/core/improve"
 	"github.com/uidbz/anneal/core/journey"
@@ -24,8 +23,6 @@ func (s *shell) refreshActivity() {
 		return
 	}
 	s.activity.RemoveAll()
-	s.activity.Add(container.NewBorder(nil, nil, nil,
-		widget.NewButton("refresh", s.refreshActivity), nil))
 	s.activity.Add(widget.NewLabelWithStyle("Journey (newest last)", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 	journey := s.a.Journey.Tail(40)
 	if len(journey) == 0 {

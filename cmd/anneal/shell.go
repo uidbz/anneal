@@ -3,26 +3,50 @@ package main
 import (
 	"context"
 	"fmt"
-	"image/color"
 	"strconv"
 	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
 	coreapp "github.com/uidbz/anneal/core/app"
+	"github.com/uidbz/anneal/core/config"
 )
 
 // textScaleStep is the A-/A+ (Ctrl+= / Ctrl+-) increment for ui.text_scale.
 const textScaleStep = 0.1
 
-// todoPanelWidth keeps the todo sidebar readable instead of collapsing to the
-// minimum width of its wrapped labels inside a Border east slot.
-const todoPanelWidth = 260
+// Transcript column: readable measure and block cap.
+const (
+	transcriptMaxWidth float32 = 820
+	todoPanelWidth     float32 = 260
+)
+
+// viewID identifies the main content views.
+type viewID int
+
+const (
+	viewChat viewID = iota
+	viewHarness
+	viewActivity
+	viewSettings
+)
+
+func (v viewID) String() string {
+	switch v {
+	case viewHarness:
+		return "Harness"
+	case viewActivity:
+		return "Activity"
+	case viewSettings:
+		return "Settings"
+	default:
+		return "Chat"
+	}
+}
 
 // shell owns the Go/Fyne UI state. All widget mutation happens on the Fyne
 // thread (via fyne.Do); the event consumer is a single ordered goroutine.
@@ -31,6 +55,7 @@ type shell struct {
 	app fyne.App
 	win fyne.Window
 
+	// Global status bar.
 	status     *widget.Label // run state: ready/running…/improving…
 	runDot     *statusDot
 	usage      *widget.Label
@@ -44,23 +69,39 @@ type shell struct {
 	mcpDot     *statusDot
 	chipMCP    *fyne.Container
 	improveBtn *widget.Button
-	modeBtn    *widget.Button
-	entry      *widget.Entry
-	scroll     *container.Scroll
-	chatBox    *fyne.Container // visible transcript blocks (append-only)
-	earlier    *widget.Button  // "show earlier messages" when the window is capped
-	visible    []fyne.CanvasObject
-	hidden     []fyne.CanvasObject
-	perms      *fyne.Container
-	todos      *fyne.Container
-	todoPane   fyne.CanvasObject
-	activity   *fyne.Container
-	tabs       *container.AppTabs
-	harness    *scriptPane
-	paneSrc    string
-	permRows   map[string]fyne.CanvasObject
 
-	header    fyne.CanvasObject
+	// Navigation and frame.
+	frame     *chromeframe
+	rail      *rail
+	navRail   map[viewID]*railItem
+	views     map[viewID]fyne.CanvasObject
+	view      viewID
+	chatView  fyne.CanvasObject
+	header    *header // chat header
+	side      *sessionsSidebar
+	inspector *inspectorPanel
+
+	// Chat.
+	modeBtn        *widget.Button
+	entry          *widget.Entry
+	scroll         *container.Scroll
+	chatBox        *fyne.Container // visible transcript blocks (append-only)
+	earlier        *widget.Button  // "show earlier messages" when the window is capped
+	visible        []fyne.CanvasObject
+	hidden         []fyne.CanvasObject
+	perms          *fyne.Container
+	todos          *fyne.Container
+	todoPane       fyne.CanvasObject
+	activity       *fyne.Container
+	activityHeader *header
+	settingsHeader *header
+	settings       fyne.CanvasObject
+	settingsForm   *settingsPanel
+	harnessHeader  *header
+	harness        *scriptPane
+	paneSrc        string
+	permRows       map[string]fyne.CanvasObject
+
 	composer  fyne.CanvasObject
 	statusbar fyne.CanvasObject
 	root      fyne.CanvasObject
@@ -73,6 +114,9 @@ type shell struct {
 	autoSend     string
 	autoQuit     bool
 	maxVisible   int
+
+	title     string // current session title ("" = untitled)
+	sessionID string
 }
 
 func newShell(a *coreapp.App, app fyne.App, win fyne.Window, paneSrc string) (*shell, error) {
@@ -84,40 +128,29 @@ func newShell(a *coreapp.App, app fyne.App, win fyne.Window, paneSrc string) (*s
 		mode:       a.Runner.Mode(),
 		paneSrc:    paneSrc,
 		maxVisible: defaultVisibleBlocks,
+		navRail:    map[viewID]*railItem{},
+		views:      map[viewID]fyne.CanvasObject{},
 	}
 	applyTheme(app, a.Cfg.UI)
-	s.build()
+	win.SetPadded(false)
+	s.wireFrame()
 	if err := s.buildHarness(paneSrc); err != nil {
 		return nil, err
 	}
 	s.wireLayout()
+	s.installMenu()
 	return s, nil
 }
 
 func (s *shell) build() {
-	s.status = widget.NewLabel("ready")
+	s.status = widget.NewLabel("Ready")
 	s.usage = widget.NewLabel("")
 	s.modelLbl = widget.NewLabel("model: connecting…")
 	s.tie = widget.NewLabel("")
 	s.mcp = widget.NewLabel("")
 	s.status.Wrapping = fyne.TextWrapOff // one short line; never wraps
 
-	brand := widget.NewLabelWithStyle("◆ anneal", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-
-	s.modeBtn = widget.NewButton(modeTitle(s.mode), func() {
-		if s.mode == "plan" {
-			s.a.Runner.SetMode("default")
-		} else {
-			s.a.Runner.SetMode("plan")
-		}
-	})
-	newBtn := widget.NewButton("+ new", func() { s.a.Runner.NewSession() })
-	sessBtn := widget.NewButton("sessions", s.showSessions)
-	settingsBtn := widget.NewButton("settings", s.showSettings)
-	fontDownBtn := widget.NewButton("A-", func() { s.nudgeTextScale(-textScaleStep) })
-	fontUpBtn := widget.NewButton("A+", func() { s.nudgeTextScale(textScaleStep) })
-
-	s.improveBtn = widget.NewButtonWithIcon("improve", theme.MoveUpIcon(), s.improveNow)
+	s.improveBtn = labeledButton("Improve", theme.MoveUpIcon(), s.improveNow)
 	if !s.a.Cfg.Improve.Enabled {
 		s.improveBtn.Hide()
 	}
@@ -133,6 +166,15 @@ func (s *shell) build() {
 	s.chipTie.Hide()
 	s.chipMCP.Hide()
 
+	s.modeBtn = widget.NewButton(modeTitle(s.mode), func() {
+		if s.mode == "plan" {
+			s.a.Runner.SetMode("default")
+		} else {
+			s.a.Runner.SetMode("plan")
+		}
+	})
+	s.modeBtn.Importance = widget.LowImportance
+
 	s.entry = widget.NewEntry()
 	s.entry.PlaceHolder = "describe a task — Enter to send"
 	s.entry.OnSubmitted = func(string) { s.submit() }
@@ -144,27 +186,127 @@ func (s *shell) build() {
 	s.todos = container.NewVBox()
 	s.activity = container.NewVBox()
 
-	sendBtn := widget.NewButtonWithIcon("send", theme.MailSendIcon(), s.submit)
-	stopBtn := widget.NewButtonWithIcon("stop", theme.MediaStopIcon(), func() {
-		s.status.SetText("stopping…")
+	sendBtn := widget.NewButtonWithIcon("Send", theme.MailSendIcon(), s.submit)
+	sendBtn.Importance = widget.HighImportance
+	stopBtn := labeledButton("Stop", theme.MediaStopIcon(), func() {
+		s.status.SetText("Stopping…")
 		s.a.Runner.Interrupt()
 	})
 
-	left := container.New(&rowLayout{gap: 8}, brand, s.modeBtn, newBtn, sessBtn,
-		settingsBtn, s.improveBtn, fontDownBtn, fontUpBtn)
-	rule := newDivider()
-	s.header = container.New(&padLayout{l: 12, r: 12, t: 8, b: 6},
-		container.NewBorder(nil, rule, left, nil, nil))
-	s.composer = container.New(&padLayout{l: 12, r: 12, t: 6, b: 2},
-		container.NewBorder(nil, nil, nil,
-			container.NewHBox(sendBtn, hgap(6), stopBtn), s.entry))
-	// Status bar (bottom, IDE-style): run state + health chips + usage.
-	// Keeping it out of the header keeps the header's minimum window
-	// width small enough for narrow windows.
-	s.statusbar = container.New(&padLayout{l: 12, r: 12, t: 2, b: 8},
-		container.New(&rowLayout{gap: 14}, s.runDot, s.status, s.chipModel,
-			s.chipTie, s.chipMCP, s.usage))
+	composerRow := container.NewBorder(nil, nil,
+		container.New(&rowLayout{gap: spaceS}, s.modeBtn),
+		container.New(&rowLayout{gap: spaceS}, sendBtn, stopBtn),
+		s.entry)
+	s.composer = container.New(&padLayout{l: spaceL, r: spaceL, t: spaceS, b: spaceS},
+		newSurface(colorRaised, composerRow).border(colorBorder, 1))
+
+	// Status bar (bottom): run state + health chips + usage.
+	s.statusbar = newSurface(colorRail, container.New(&padLayout{l: spaceM, r: spaceM, t: 3, b: 3},
+		container.New(&rowLayout{gap: spaceM}, s.runDot, s.status, s.chipModel,
+			s.chipTie, s.chipMCP, s.usage)))
 }
+
+// wireFrame builds the navigation chrome: rail, sidebar, chat view,
+// inspector, and the secondary views.
+func (s *shell) wireFrame() {
+	s.build()
+
+	s.header = newHeader("New session")
+	s.header.setActions(
+		iconButton(theme.MenuIcon(), s.toggleSidebar),
+		s.improveBtn,
+		iconButton(theme.ListIcon(), s.toggleInspector),
+		iconButton(theme.MoreVerticalIcon(), s.showOverflow),
+	)
+	s.header.setBadge(modeBadge(s.mode))
+
+	s.side = newSessionsSidebar(s)
+	s.inspector = newInspectorPanel(s)
+
+	// Transcript: centered, capped measure inside a scroll.
+	padded := container.New(&padLayout{l: spaceL, r: spaceL, t: spaceS, b: spaceS},
+		container.New(&maxWidthLayout{max: transcriptMaxWidth},
+			container.NewVBox(s.earlier, s.chatBox)))
+	s.scroll = container.NewVScroll(padded)
+	chatBody := container.NewBorder(container.NewVBox(s.perms), s.composer, nil, nil, s.scroll)
+	s.chatView = container.NewBorder(s.header.object, nil, nil, nil, chatBody)
+
+	s.harnessHeader = newHeader("Harness")
+	s.activityHeader = newHeader("Activity")
+	s.activityHeader.setActions(labeledButton("Refresh", theme.ViewRefreshIcon(), s.refreshActivity))
+	s.settingsHeader = newHeader("Settings")
+
+	s.views[viewChat] = s.chatView
+	s.views[viewActivity] = s.activityView()
+	s.views[viewSettings] = s.settingsView()
+}
+
+// harnessView is the Harness page: Go header, scripted pane underneath.
+func (s *shell) harnessView() fyne.CanvasObject {
+	refresh := iconButton(theme.ViewRefreshIcon(), func() {
+		s.a.Bus.Emit(map[string]any{"type": "harness.refresh"})
+	})
+	improve := labeledButton("Improve", theme.MoveUpIcon(), s.improveNow)
+	s.harnessHeader.setActions(refresh, improve)
+	return container.NewBorder(s.harnessHeader.object, nil, nil, nil, s.harness.view)
+}
+
+func (s *shell) activityView() fyne.CanvasObject {
+	return container.NewBorder(s.activityHeader.object, nil, nil, nil,
+		container.NewVScroll(newSurface(colorSidebar, container.New(&padLayout{l: spaceXL, r: spaceXL, t: spaceM, b: spaceM}, s.activity))))
+}
+
+func (s *shell) settingsView() fyne.CanvasObject {
+	return container.NewBorder(s.settingsHeader.object, nil, nil, nil, s.settingsPage())
+}
+
+// showView switches the main content view and updates the rail.
+func (s *shell) showView(v viewID) {
+	if _, ok := s.views[v]; !ok {
+		return
+	}
+	for id, view := range s.views {
+		toggleShown(view, id == v)
+	}
+	for id, item := range s.navRail {
+		item.SetActive(id == v)
+	}
+	s.view = v
+	if s.frame != nil {
+		s.frame.SetPanels(v == viewChat)
+	}
+}
+
+func (s *shell) toggleSidebar() {
+	open := !s.a.Cfg.UI.SidebarOpen
+	s.a.Cfg.UI.SidebarOpen = open
+	s.frame.SetSidebar(open)
+	s.saveUIPrefs()
+}
+
+func (s *shell) toggleInspector() {
+	open := !s.a.Cfg.UI.InspectorOpen
+	s.a.Cfg.UI.InspectorOpen = open
+	s.frame.SetInspector(open)
+	s.saveUIPrefs()
+}
+
+// saveUIPrefs persists panel visibility/width without emitting a notice.
+func (s *shell) saveUIPrefs() {
+	if err := s.a.Cfg.Save(); err != nil {
+		s.addNotice("⚠ settings save: " + err.Error())
+	}
+}
+
+// showSessions focuses the chat view with the session list open.
+func (s *shell) showSessions() {
+	s.showView(viewChat)
+	if !s.a.Cfg.UI.SidebarOpen {
+		s.toggleSidebar()
+	}
+}
+
+func (s *shell) showSettings() { s.showView(viewSettings) }
 
 // trunc keeps header chips from forcing a huge window minimum width.
 func trunc(s string, n int) string {
@@ -203,7 +345,7 @@ func (s *shell) setRunState(text string, dot fyne.ThemeColorName, alarm bool) {
 // improveNow runs one harness-improvement pass (header button, Ctrl+I, and
 // /improve). Guards live in ImproveWith; failures arrive as improve.error.
 func (s *shell) improveNow() {
-	s.addNotice("🔧 harness improvement started")
+	s.addNotice("Harness improvement started")
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 		defer cancel()
@@ -222,37 +364,61 @@ func (s *shell) buildHarness(src string) error {
 	return nil
 }
 
+// wireLayout assembles the root: rail | (sidebar | views | inspector), with
+// the status bar across the bottom.
 func (s *shell) wireLayout() {
-	// Breathing room: the transcript is inset from the window edges.
-	padded := container.New(&padLayout{l: 12, r: 12, t: 4, b: 2},
-		container.NewVBox(s.earlier, s.chatBox))
-	s.scroll = container.NewVScroll(padded)
-	// The transparent spacer only exists to give the Border east slot a
-	// readable minimum width; the todo pane itself is hidden while empty.
-	spacer := canvas.NewRectangle(color.Transparent)
-	spacer.SetMinSize(fyne.NewSize(todoPanelWidth, 0))
-	todoBody := container.NewVBox(
-		widget.NewLabelWithStyle("todos", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		s.todos,
-	)
-	// Faint card behind the todo list so the sidebar reads as one panel.
-	s.todoPane = container.NewStack(spacer,
-		newSurface(colorRaised, container.New(&padLayout{l: 10, r: 10, t: 8, b: 8}, todoBody)))
-	s.todoPane.Hide()
-	chat := container.NewBorder(
-		container.NewVBox(s.perms),
-		nil, nil,
-		s.todoPane,
-		s.scroll,
-	)
-	s.tabs = container.NewAppTabs(
-		container.NewTabItem("Chat", chat),
-		container.NewTabItem("Harness", s.harness.view),
-		container.NewTabItem("Activity", container.NewVScroll(s.activity)),
-	)
-	s.root = container.NewBorder(s.header,
-		container.NewVBox(s.composer, s.statusbar), nil, nil, s.tabs)
+	// The harness view was built before the pane existed; rebuild it now.
+	s.views[viewHarness] = s.harnessView()
+	s.showView(viewChat)
+
+	s.frame = newChromeFrame(s.side.Object(), s.viewStack(),
+		s.inspector.Object(), float32(s.a.Cfg.UI.SidebarWidth), float32(s.a.Cfg.UI.InspectorWidth))
+	s.frame.onPanelResize = func(sidebar bool, width float32) {
+		if sidebar {
+			s.a.Cfg.UI.SidebarWidth = float64(width)
+		} else {
+			s.a.Cfg.UI.InspectorWidth = float64(width)
+		}
+		s.saveUIPrefs()
+	}
+	s.frame.SetSidebar(s.a.Cfg.UI.SidebarOpen)
+	s.frame.SetInspector(s.a.Cfg.UI.InspectorOpen)
+
+	s.root = container.NewBorder(nil, s.statusbar, s.railObject(), nil, s.frame)
 	s.refreshActivity()
+}
+
+func (s *shell) viewStack() fyne.CanvasObject {
+	stack := container.NewStack()
+	for _, v := range []viewID{viewChat, viewHarness, viewActivity, viewSettings} {
+		view := s.views[v]
+		view.Hide()
+		stack.Add(view)
+	}
+	s.showView(s.view)
+	return stack
+}
+
+// railObject builds the activity rail once and remembers its items.
+func (s *shell) railObject() fyne.CanvasObject {
+	if s.rail != nil {
+		return s.rail
+	}
+	item := func(v viewID, icon fyne.Resource) *railItem {
+		it := newRailItem(icon, v.String(), func() { s.showView(v) })
+		s.navRail[v] = it
+		return it
+	}
+	chat := item(viewChat, theme.DocumentIcon())
+	harness := item(viewHarness, theme.StorageIcon())
+	activity := item(viewActivity, theme.HistoryIcon())
+	settings := item(viewSettings, theme.SettingsIcon())
+	logo := logoResource()
+	s.rail = newRail(
+		[]fyne.CanvasObject{chat, harness, activity},
+		settings, logo)
+	s.navRail[viewChat] = chat
+	return s.rail
 }
 
 func (s *shell) start(ctx context.Context) {
@@ -270,7 +436,6 @@ func (s *shell) start(ctx context.Context) {
 
 	s.harness.Execute()
 	s.a.Start(ctx)
-	s.installShortcuts()
 	fyne.Do(func() { s.win.Canvas().Focus(s.entry) })
 	if s.autoSend != "" {
 		time.AfterFunc(700*time.Millisecond, func() {
@@ -280,10 +445,6 @@ func (s *shell) start(ctx context.Context) {
 			})
 		})
 	}
-	time.AfterFunc(500*time.Millisecond, func() {
-		// GLFW/Wayland ignores pre-show resize hints on some compositors.
-		fyne.Do(func() { s.win.Resize(fyne.NewSize(1100, 750)) })
-	})
 }
 
 func (s *shell) submit() {
@@ -302,28 +463,6 @@ func (s *shell) submit() {
 	s.scroll.ScrollToBottom()
 }
 
-// installShortcuts wires the navigation keys plus pane reload/quit.
-func (s *shell) installShortcuts() {
-	add := func(key fyne.KeyName, mod fyne.KeyModifier, fn func()) {
-		s.win.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: key, Modifier: mod},
-			func(fyne.Shortcut) { fn() })
-	}
-	add(fyne.KeyN, fyne.KeyModifierControl, func() { s.a.Runner.NewSession() })
-	add(fyne.KeyB, fyne.KeyModifierControl, s.showSessions)
-	add(fyne.KeyD, fyne.KeyModifierControl, func() { s.a.Runner.Interrupt() })
-	add(fyne.KeyI, fyne.KeyModifierControl, s.improveNow)
-	add(fyne.KeyL, fyne.KeyModifierControl, func() { s.win.Canvas().Focus(s.entry) })
-	add(fyne.KeyR, fyne.KeyModifierControl, s.reloadPane)
-	add(fyne.KeyQ, fyne.KeyModifierControl, func() { s.app.Quit() })
-	add(fyne.KeyEqual, fyne.KeyModifierControl, func() { s.nudgeTextScale(textScaleStep) })
-	add(fyne.KeyPlus, fyne.KeyModifierControl, func() { s.nudgeTextScale(textScaleStep) })
-	add(fyne.KeyMinus, fyne.KeyModifierControl, func() { s.nudgeTextScale(-textScaleStep) })
-	add(fyne.Key0, fyne.KeyModifierControl, func() { s.setTextScale(1.0) })
-	add(fyne.Key1, fyne.KeyModifierControl, func() { s.tabs.SelectIndex(0) })
-	add(fyne.Key2, fyne.KeyModifierControl, func() { s.tabs.SelectIndex(1) })
-	add(fyne.Key3, fyne.KeyModifierControl, func() { s.tabs.SelectIndex(2) })
-}
-
 // setTextScale applies and persists a text-size multiplier. SetTheme repaints
 // every window (Fyne re-layouts all renderers), so the change is live; the
 // config save makes it survive restart. The config.changed event appends the
@@ -336,6 +475,16 @@ func (s *shell) setTextScale(scale float64) {
 // nudgeTextScale steps the text size by delta (A-/A+ buttons, Ctrl+= / Ctrl+-).
 func (s *shell) nudgeTextScale(delta float64) {
 	s.setTextScale(s.a.Cfg.UI.TextScale + delta)
+}
+
+// setThemeMode applies and persists ui.theme (system/light/dark).
+func (s *shell) setThemeMode(mode string) {
+	s.a.Cfg.UI.Theme = normMode(mode)
+	applyTheme(s.app, s.a.Cfg.UI)
+	if err := s.a.Cfg.Save(); err != nil {
+		s.addNotice("⚠ theme save: " + err.Error())
+	}
+	s.addNotice("Theme: " + s.a.Cfg.UI.ThemeMode())
 }
 
 // reloadPane re-reads the pane script from disk (or the embedded copy),
@@ -353,4 +502,39 @@ func (s *shell) reloadPane() {
 	s.paneSrc = src
 	s.harness.Execute()
 	s.addNotice("✔ harness pane reloaded")
+}
+
+// modeBadge returns the header pill text/colors for a permission mode.
+func modeBadge(mode string) (string, fyne.ThemeColorName, fyne.ThemeColorName) {
+	if mode == "plan" {
+		return "PLAN", colorWarnWash, colorWarn
+	}
+	return "BUILD", colorRaised, colorMuted
+}
+
+// clampScale is a local alias for config clamping (tests use it directly).
+func clampScale(v float64) float64 { return config.ClampTextScale(v) }
+
+// setWindowTitle reflects the session title in the OS window title.
+func (s *shell) setWindowTitle() {
+	if s.title == "" {
+		s.win.SetTitle("Anneal")
+		s.header.setTitle("New session")
+		return
+	}
+	s.win.SetTitle("Anneal — " + s.title)
+	s.header.setTitle(trunc(s.title, 80))
+}
+
+// refreshSessionMeta re-reads the current session's title (the runner sets it
+// after the first run) and refreshes the sidebar.
+func (s *shell) refreshSessionMeta() {
+	for _, info := range s.a.Runner.Sessions() {
+		if info.ID == s.sessionID {
+			s.title = info.Title
+			s.setWindowTitle()
+			break
+		}
+	}
+	s.side.refresh()
 }

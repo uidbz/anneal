@@ -66,6 +66,7 @@ type Server struct {
 	shutdownOnce   sync.Once
 	reason         string
 	cancel         context.CancelFunc // set by Run
+	lastBusy       time.Time          // run/improve/review edges; defers idle exit
 
 	upgrader websocket.Upgrader
 }
@@ -104,6 +105,20 @@ func (s *Server) Run(ctx context.Context) error {
 	defer cancel()
 
 	s.App.Bus.AddTap(s.fanout)
+	// Busy edges (run/improve/review start AND finish) count as activity:
+	// an idle window opened by a long-running protected job must not expire
+	// the instant that job completes (PROTOCOL.md lifecycle).
+	s.App.Bus.AddTap(func(v any) {
+		if m, ok := v.(map[string]any); ok {
+			switch m["type"] {
+			case "run.started", "run.finished", "improve.start", "improve.done",
+				"improve.error", "review.start", "review.done":
+				s.mu.Lock()
+				s.lastBusy = time.Now()
+				s.mu.Unlock()
+			}
+		}
+	})
 
 	var lnss []net.Listener
 	mux := http.NewServeMux()
@@ -202,6 +217,9 @@ func (s *Server) idleLoop(ctx context.Context) {
 			}
 			s.mu.Lock()
 			last := s.lastAct
+			if s.lastBusy.After(last) {
+				last = s.lastBusy
+			}
 			s.mu.Unlock()
 			if act := s.App.Runner.LastActivity(); act.After(last) {
 				last = act

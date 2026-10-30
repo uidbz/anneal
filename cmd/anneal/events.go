@@ -46,14 +46,17 @@ func (s *shell) handleEvent(e map[string]any) {
 		st := obj(e["state"])
 		switch {
 		case !boolean(st["enabled"]):
+			s.tieShown = false
 			s.tieChip.Hide()
 		case boolean(st["online"]):
 			s.tieChip.SetText("index " + str(st["collection"]))
 			s.tieChip.dot.setToken(colorOK)
+			s.tieShown = true
 			s.tieChip.Show()
 		default:
 			s.tieChip.SetText("index offline")
 			s.tieChip.dot.setToken(colorErr)
+			s.tieShown = true
 			s.tieChip.Show()
 		}
 	case "mcp.state":
@@ -80,8 +83,10 @@ func (s *shell) handleEvent(e map[string]any) {
 			default:
 				s.mcpChip.dot.setToken(colorErr)
 			}
+			s.mcpShown = true
 			s.mcpChip.Show()
 		} else {
+			s.mcpShown = false
 			s.mcpChip.Hide()
 		}
 	case "run.started":

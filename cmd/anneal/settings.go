@@ -132,7 +132,7 @@ func (p *settingsPanel) changed() {
 	p.updateButtons()
 }
 
-func (p *settingsPanel) setBad(key string, bad bool, msg string) {
+func (p *settingsPanel) setBad(key string, bad bool) {
 	p.bad[key] = bad
 	p.updateButtons()
 }
@@ -227,7 +227,7 @@ func (p *settingsPanel) validated(key, label string, e *widget.Entry, validate f
 	p.controls[label] = e
 	e.OnChanged = func(s string) {
 		err := validate(s)
-		p.setBad(key, err != nil, "")
+		p.setBad(key, err != nil)
 		if err != nil {
 			errLbl.SetText(err.Error())
 			errLbl.Show()

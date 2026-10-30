@@ -65,6 +65,21 @@ func TestUICapture(t *testing.T) {
 		sh.showView(v)
 		capture(t, win, filepath.Join(dir, strings.ToLower(v.String())+"-"+mode+".png"))
 	}
+	sh.showView(viewChat)
+	sh.resetChat()
+	capture(t, win, filepath.Join(dir, "empty-"+mode+".png"))
+
+	// Narrow window: panels auto-collapse, the header/status bar stay usable.
+	win.Resize(fyne.NewSize(900, 700))
+	capture(t, win, filepath.Join(dir, "narrow-"+mode+".png"))
+	win.Resize(fyne.NewSize(1280, 800))
+
+	// Text scale: the layout must survive 80% and 150%.
+	sh.setTextScale(1.5)
+	capture(t, win, filepath.Join(dir, "text150-"+mode+".png"))
+	sh.setTextScale(0.8)
+	capture(t, win, filepath.Join(dir, "text80-"+mode+".png"))
+	sh.setTextScale(1.0)
 }
 
 func capture(t *testing.T, win fyne.Window, path string) {

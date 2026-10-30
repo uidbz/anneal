@@ -368,10 +368,15 @@ type rowLayout struct {
 
 func (l *rowLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	x := float32(0)
-	for i, o := range objects {
-		if i > 0 {
+	first := true
+	for _, o := range objects {
+		if o == nil || !o.Visible() {
+			continue
+		}
+		if !first {
 			x += l.gap
 		}
+		first = false
 		ms := o.MinSize()
 		o.Move(fyne.NewPos(x, (size.Height-ms.Height)/2))
 		o.Resize(fyne.NewSize(ms.Width, ms.Height))
@@ -381,10 +386,15 @@ func (l *rowLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 
 func (l *rowLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	var w, h float32
-	for i, o := range objects {
-		if i > 0 {
+	first := true
+	for _, o := range objects {
+		if o == nil || !o.Visible() {
+			continue
+		}
+		if !first {
 			w += l.gap
 		}
+		first = false
 		ms := o.MinSize()
 		w += ms.Width
 		if ms.Height > h {
@@ -507,10 +517,15 @@ type columnLayout struct {
 
 func (l *columnLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	y := float32(0)
-	for i, o := range objects {
-		if i > 0 {
+	first := true
+	for _, o := range objects {
+		if o == nil || !o.Visible() {
+			continue
+		}
+		if !first {
 			y += l.gap
 		}
+		first = false
 		ms := o.MinSize()
 		o.Move(fyne.NewPos(0, y))
 		o.Resize(fyne.NewSize(size.Width, ms.Height))
@@ -520,10 +535,15 @@ func (l *columnLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 
 func (l *columnLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	var w, h float32
-	for i, o := range objects {
-		if i > 0 {
+	first := true
+	for _, o := range objects {
+		if o == nil || !o.Visible() {
+			continue
+		}
+		if !first {
 			h += l.gap
 		}
+		first = false
 		ms := o.MinSize()
 		if ms.Width > w {
 			w = ms.Width

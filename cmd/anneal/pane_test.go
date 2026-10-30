@@ -121,31 +121,59 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	}
 }
 
+// paneRun executes fn on the pane's script goroutine (the same goroutine that
+// runs widget callbacks), serializing test reads/writes with the script.
+func paneRun(t *testing.T, p *scriptPane, fn func()) {
+	t.Helper()
+	done := make(chan struct{})
+	p.view.Window().Do(func() {
+		defer close(done)
+		fn()
+	})
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("pane callback did not run")
+	}
+}
+
 func TestHarnessPaneUnsavedGuard(t *testing.T) {
 	p, a := runHarnessPane(t)
 	root := p.view.Window().GetContentContainer()
-	entry := paneEntry(root)
-	if entry == nil {
-		t.Fatal("pane has no harness editor")
-	}
-	original := entry.Text
-	entry.SetText(original + "\n# local edit")
+
+	var original string
+	paneRun(t, p, func() {
+		entry := paneEntry(root)
+		if entry == nil {
+			t.Fatal("pane has no harness editor")
+		}
+		original = entry.Text
+		entry.SetText(original + "\n# local edit")
+	})
 	waitFor(t, "unsaved notice", func() bool {
-		return strings.Contains(paneTexts(root), "unsaved changes")
+		var text string
+		paneRun(t, p, func() { text = paneTexts(root) })
+		return strings.Contains(text, "unsaved changes")
 	})
 
 	// First refresh keeps the edits and asks for confirmation.
 	a.Bus.Emit(map[string]any{"type": "harness.refresh"})
 	time.Sleep(100 * time.Millisecond)
-	if got := paneEntry(root); got == nil || got.Text == original {
-		t.Fatal("pane refresh discarded unsaved edits without confirmation")
-	}
+	paneRun(t, p, func() {
+		if got := paneEntry(root); got == nil || got.Text == original {
+			t.Fatal("pane refresh discarded unsaved edits without confirmation")
+		}
+	})
 
 	// Second refresh discards them and rebuilds from disk.
 	a.Bus.Emit(map[string]any{"type": "harness.refresh"})
 	waitFor(t, "rebuild after forced refresh", func() bool {
-		e := paneEntry(root)
-		return e != nil && e.Text == original
+		var ok bool
+		paneRun(t, p, func() {
+			e := paneEntry(root)
+			ok = e != nil && e.Text == original
+		})
+		return ok
 	})
 }
 

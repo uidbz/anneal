@@ -103,7 +103,7 @@ func TestModeBadgeAndHeaderTitle(t *testing.T) {
 	sh := newTestShell(t)
 	sh.handleEvent(normalizeEvent(map[string]any{"type": "session.opened", "id": "s1",
 		"title": "Fix the parser", "blocks": []any{}}))
-	if got := sh.header.title.Text(); got != "Fix the parser" {
+	if got := sh.header.title.Text; got != "Fix the parser" {
 		t.Fatalf("header title = %q", got)
 	}
 	sh.handleEvent(normalizeEvent(map[string]any{"type": "mode.changed", "mode": "plan"}))

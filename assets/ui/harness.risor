@@ -196,7 +196,7 @@ build = () => {
         "",
         "",
         container.NewVBox([
-            hint("Harness" + en + " · " + h.root),
+            hint(h.root + en),
             label("Components:" + cs),
             hint(sprintf("Guardrails: allow=%d  ask=%d  deny=%d", len(r.allow), len(r.ask), len(r.deny))),
             hint("Edit the files below; prose applies next run and rule lines need a restart.")

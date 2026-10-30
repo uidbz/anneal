@@ -110,7 +110,6 @@ func newComposer(s *shell) *composer {
 	c.entry.PlaceHolder = "Describe a task…  (/ for commands)"
 	c.entry.onSend = s.submit
 	c.entry.onCtrlCR = s.allowOldest
-	c.entry.OnCursorChanged = func() {}
 
 	c.buildBtn = widget.NewButton("Build", func() { s.a.Runner.SetMode("default") })
 	c.planBtn = widget.NewButton("Plan", func() { s.a.Runner.SetMode("plan") })
@@ -190,6 +189,16 @@ func (c *composer) setModel(model string, ctx int) {
 	}
 	c.modelBtn.SetText(text)
 	c.modelBtn.Show()
+}
+
+// setCompact hides the shortcut hint when the window is narrow.
+func (c *composer) setCompact(on bool) {
+	if on {
+		c.hint.Hide()
+	} else {
+		c.hint.Show()
+	}
+	c.hint.Refresh()
 }
 
 // focus puts the caret in the composer.

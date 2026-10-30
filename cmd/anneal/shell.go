@@ -13,7 +13,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	coreapp "github.com/uidbz/anneal/core/app"
-	"github.com/uidbz/anneal/core/config"
 )
 
 // textScaleStep is the A-/A+ (Ctrl+= / Ctrl+-) increment for ui.text_scale.
@@ -68,6 +67,8 @@ type shell struct {
 	runStarted time.Time
 	ctxWindow  int
 	mcpServers []map[string]any
+	tieShown   bool
+	mcpShown   bool
 
 	// Navigation and frame.
 	frame     *chromeframe
@@ -349,6 +350,7 @@ func (s *shell) wireLayout() {
 		}
 		s.saveUIPrefs()
 	}
+	s.frame.onWidth = func(w float32) { s.updateCompact() }
 	s.frame.SetSidebar(s.a.Cfg.UI.SidebarOpen)
 	s.frame.SetInspector(s.a.Cfg.UI.InspectorOpen)
 
@@ -438,6 +440,26 @@ func (s *shell) submit() {
 func (s *shell) setTextScale(scale float64) {
 	scale = s.a.SetTextScale(scale) // clamp + persist + config.changed
 	applyTheme(s.app, s.a.Cfg.UI.WithTextScale(scale))
+	s.updateCompact()
+}
+
+// updateCompact drops the composer hint and secondary status chips when the
+// window or the text is too large for everything to fit.
+func (s *shell) updateCompact() {
+	w := s.win.Canvas().Size().Width
+	compact := (w > 0 && w < 1000) || s.a.Cfg.UI.TextScale > 1.2
+	s.cmp.setCompact(compact)
+	if compact {
+		s.tieChip.Hide()
+		s.mcpChip.Hide()
+	} else {
+		if s.tieShown {
+			s.tieChip.Show()
+		}
+		if s.mcpShown {
+			s.mcpChip.Show()
+		}
+	}
 }
 
 // nudgeTextScale steps the text size by delta (A-/A+ buttons, Ctrl+= / Ctrl+-).
@@ -479,9 +501,6 @@ func modeBadge(mode string) (string, fyne.ThemeColorName, fyne.ThemeColorName) {
 	}
 	return "BUILD", colorRaised, colorMuted
 }
-
-// clampScale is a local alias for config clamping (tests use it directly).
-func clampScale(v float64) float64 { return config.ClampTextScale(v) }
 
 // setWindowTitle reflects the session title in the OS window title.
 func (s *shell) setWindowTitle() {

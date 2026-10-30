@@ -164,6 +164,7 @@ type toolRow struct {
 	nameLbl *themedText
 	args    *themedText
 	elapsed *themedText
+	caret   *themedText
 	preview *widget.Label
 	body    *fyne.Container
 	detail  *surface
@@ -181,12 +182,14 @@ func newToolRow(name, summary string) *toolRow {
 		nameLbl: newThemedText(toolDisplayName(name), theme.ColorNameForeground),
 		args:    newThemedText(summary, colorMuted),
 		elapsed: newThemedText("", colorMuted),
+		caret:   newThemedText("", colorMuted),
 	}
 	r.marker.bold = true
 	r.nameLbl.bold = true
 	header := container.NewBorder(nil, nil,
 		container.New(&rowLayout{gap: spaceS}, r.marker, r.nameLbl, r.args),
-		container.New(&padLayout{l: spaceS, r: 0, t: 0, b: 0}, r.elapsed), nil)
+		container.New(&rowLayout{gap: spaceS},
+			container.New(&padLayout{l: spaceS, r: 0, t: 0, b: 0}, r.elapsed), r.caret), nil)
 	r.body = container.New(&padLayout{l: 0, r: 0, t: 3, b: 3}, header)
 	r.content = container.NewVBox(r.body)
 	r.ExtendBaseWidget(r)
@@ -213,6 +216,7 @@ func (r *toolRow) finish(preview string, isErr bool, took time.Duration) {
 			container.New(&padLayout{l: spaceM, r: spaceM, t: spaceS, b: spaceS}, r.preview)).
 			border(colorBorder, 1)
 		r.detail.Hide()
+		r.caret.SetText("▸")
 		r.content.Add(r.detail)
 		r.Refresh()
 	}
@@ -225,14 +229,16 @@ func (r *toolRow) setExpanded(open bool) {
 		return
 	}
 	if open {
-		// Build the preview lazily on first expand.
 		if r.preview == nil {
 			return
 		}
 		r.detail.Show()
+		r.caret.SetText("▾")
 	} else {
 		r.detail.Hide()
+		r.caret.SetText("▸")
 	}
+	r.caret.Refresh()
 	r.Refresh()
 }
 

@@ -201,11 +201,11 @@ Decisions (agreed with the user):
 
 ## Phase 8 — polish, docs, verification
 
-- Narrow windows (900 px), text scale 80/100/150/200 %, transcript
+- [x] Narrow windows (900 px), text scale 80/100/150/200 %, transcript
   performance (1,000 blocks, long streams), keyboard reachability, contrast.
-- Capture test (`ANNEAL_UI_CAPTURE=dir`) renders every view in light and
+- [x] Capture test (`ANNEAL_UI_CAPTURE=dir`) renders every view in light and
   dark for visual review.
-- Docs: README UI paragraph, `docs/USING.md` (layout, shortcuts, settings),
+- [x] Docs: README UI paragraph, `docs/USING.md` (layout, shortcuts, settings),
   `docs/CONFIG.md` (`ui.*`), `progress.md` note.
-- Final: `go vet ./...`, `go test ./...`, `-check-ui`, `-check-harness`,
+- [x] Final: `go vet ./...`, `go test ./...`, `-check-ui`, `-check-harness`,
   `-check-script-ui` against a minimal `main.risor`.

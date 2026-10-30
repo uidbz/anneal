@@ -18,37 +18,49 @@ for scripted settings UIs (there is no built-in settings tab yet).
 
 ## GUI tour (hybrid shell)
 
-The `anneal` binary is a plain Fyne shell with scripted panes.
+The `anneal` binary is a plain Fyne shell with scripted panes, laid out like a
+small IDE.
 
-- **Transcript** (center): user/assistant blocks, streaming tail, tool calls
-  with previews, notices (✔/⚠/🧠). It appends incrementally and lays out at
-  most 300 blocks; older blocks are kept in memory behind a **“show N earlier
-  messages”** button (Phase 2 hardening).
-- **Approval inbox** (above the transcript): `perm.request` cards with
-  **once** (this call), **always** (save matching grants for this project),
-  and **reject**. When `write_approval` is on, staged memory/skill writes
-  appear as cards with an operation preview and **approve/reject**.
-- **Header**: plan/build toggle, `+ new`, `sessions`, `settings`, `A-`/`A+`
-  text size, model health, token/context usage, tie index state, MCP status.
-  `settings` opens the full `config.json` in an editor; saving re-points the
-  health monitor and applies live-capable store settings immediately.
-- **Todo panel** (right): the model's live checklist for multi-step work.
-  Hidden until the first todo exists, then fixed-width so items stay readable.
-- **Selectable transcript**: every message, tool line, notice, todo, and
-  activity entry can be selected and copied. Assistant markdown is shown as
-  plain text (Fyne's RichText has no selection support).
-- **Activity tab**: journey timeline + improvement-run records
-  (`~/.anneal/improvements/*/step.json`): task, k/mode, candidates, decisions,
-  library entry, successor overlay. Refresh-on-demand; no background model
-  work.
-- **Session picker** (`sessions` or `/sessions`): newest first — click to
-  replay/resume.
-- **Harness tab**: a fynerisor `CanvasObject` pane. Edit component files
-  inline, review guardrail rule counts, browse the improvement library, read
-  EXPERIENCE.md, promote with a two-click confirmation, inspect reviewer
-  flags, and start `/improve`. The pane is pull-based and receives only a
-  filtered harness/improve event feed that updates a notice line; it never
-  gets chat deltas or host-window capabilities. Ctrl+R reloads it.
+- **Activity rail** (far left): Chat, Harness, Activity, and Settings. The
+  active view gets an accent bar; Settings is pinned to the bottom.
+- **Sessions sidebar** (left, Ctrl+B): stored sessions grouped by Today /
+  Yesterday / Previous 7 days / Older, with a filter box. The current session
+  is highlighted; right-click a row to copy its session ID. New sessions use
+  the `+` button. The split handle resizes it (180–480 px, remembered).
+- **Transcript** (center): "You" turns on raised cards; "Anneal" turns with
+  prose, code/table surfaces, and compact tool rows (`✔` done, `✖` failed);
+  click a tool row to expand its result. System notices are muted lines with
+  `✔ ⚠ ✖` markers. Improve/review progress updates one live `●` line. The
+  column is width-capped for readability, and at most 300 blocks are laid out;
+  older blocks stay in memory behind a **Show N earlier messages** button.
+- **Composer** (bottom): multi-line; **Enter sends**, **Shift+Enter** adds a
+  newline, and it grows from 2 to 8 rows. The toolbar has the Build/Plan
+  switch, the model (click → Settings), and one primary button that turns
+  into **Stop** while a run is going.
+- **Approval dock** (above the composer): permission, memory, and skill cards
+  with details and buttons. Permissions offer **Reject / Always allow / Allow
+  once**; Ctrl+Enter (with an empty composer) allows the oldest card once.
+- **Inspector** (right, Ctrl+J): task checklist with progress count, a context
+  meter (amber at 70 %, red at 82 %), token totals, compaction count, session
+  ID (copy button), mode, and whether an improvement overlay is active.
+- **Status bar**: run state and elapsed time on the left; model, index, MCP,
+  and token/context chips on the right (the model and MCP chips open Settings;
+  the index chip asks before re-indexing).
+- **Header**: the session title, the PLAN/BUILD badge, and view actions
+  (sidebar/inspector toggles, Improve, overflow menu). The native menu bar
+  (File / View / Session / Help) owns the shortcuts.
+- **Settings view**: a real form over a draft of `~/.anneal/config.json`
+  (Appearance applies live; Save/Revert/Edit JSON; unsaved changes are
+  guarded). Some integrations reconnect on restart.
+- **Activity view**: journey timeline rows (time, kind badge, readable text)
+  and one card per improvement run (outcome, candidates, decisions, library
+  entry). Refresh-on-demand; no background model work.
+- **Harness view**: a fynerisor `CanvasObject` pane below a Go header. Edit
+  component files inline (Save), review component and guardrail counts, browse
+  the improvement library, read experience, promote with a two-click
+  confirmation, and inspect reviewer flags. Refresh asks before discarding
+  unsaved edits. The pane only receives a filtered harness/improve event feed
+  and never chat deltas or host-window capabilities. Ctrl+R reloads it.
 
 ### Slash commands (entry box)
 
@@ -61,11 +73,12 @@ The `anneal` binary is a plain Fyne shell with scripted panes.
 | `/skills` | list installed skills |
 | `/memory` | show MEMORY.md / USER.md with usage vs caps |
 | `/journey` | self-improvement timeline |
-| `/activity`, `/runs` | switch to the Activity tab |
+| `/activity`, `/runs` | switch to the Activity view |
 | `/index` | rebuild the session search index |
 | `/learn` | queue a background-review pass now (runs when idle) |
 | `/improve` | one contrastive harness-improvement step for the last task |
-| `/harness` | switch to the harness tab |
+| `/harness` | switch to the Harness view |
+| `/theme system\|light\|dark` | switch the theme |
 | `/quit` | exit |
 
 ### Keyboard
@@ -73,13 +86,19 @@ The `anneal` binary is a plain Fyne shell with scripted panes.
 | shortcut | effect |
 |----------|--------|
 | Ctrl+N | new session |
-| Ctrl+B | session picker |
+| Ctrl+B | toggle the sessions sidebar |
+| Ctrl+J | toggle the inspector |
+| Ctrl+M | toggle plan/build mode |
 | Ctrl+D | stop the current run |
+| Ctrl+I | improve the harness |
 | Ctrl+L | focus the composer |
 | Ctrl+R | reload the scripted harness pane |
+| Ctrl+, | Settings |
 | Ctrl+= / Ctrl+- / Ctrl+0 | text size up / down / reset |
-| Ctrl+1/2/3 | Chat / Harness / Activity |
+| Ctrl+1/2/3/4 | Chat / Harness / Activity / Settings |
 | Ctrl+Q | quit |
+| Enter / Shift+Enter | send / newline in the composer |
+| Ctrl+Enter | allow the oldest pending approval |
 
 For UI smoke tests without typing, `anneal -send "task" -quit-after-run` fills
 the composer, submits it, and exits after the run finishes.

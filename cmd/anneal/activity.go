@@ -145,6 +145,12 @@ func journeyText(e journey.Entry) string {
 		return "Reviewer flagged a gap: " + shortText(oneLine(str(e.Attrs["gap"])), 160)
 	case "harness-promote":
 		return "Harness promoted from the library: " + str(e.Attrs["entry"])
+	case "memory-add", "memory-patch", "memory-remove":
+		verb := strings.TrimPrefix(e.Kind, "memory-")
+		return "Memory " + verb + "ed for " + str(e.Attrs["target"])
+	case "skill-create", "skill-update":
+		verb := strings.TrimPrefix(e.Kind, "skill-")
+		return "Skill " + verb + "d: " + str(e.Attrs["name"])
 	default:
 		var parts []string
 		for k, v := range e.Attrs {

@@ -27,6 +27,12 @@ func (s *shell) slash(line string) {
 		s.a.Runner.Interrupt()
 	case "/textsize":
 		s.textSizeCommand(fields[1:])
+	case "/theme":
+		if len(fields) < 2 {
+			s.notice(noticeInfo, "Theme: "+s.a.Cfg.UI.ThemeMode()+" (system|light|dark)")
+			return
+		}
+		s.setThemeMode(fields[1])
 	case "/memory":
 		m, _ := s.a.Mem.Read("memory")
 		u, _ := s.a.Mem.Read("user")

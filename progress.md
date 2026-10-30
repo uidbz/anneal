@@ -51,6 +51,43 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-10-30 — desktop shell redesign (docs/UI-REDESIGN.md)
+- Goal: replace the widget-demo feel with a professional IDE-style shell, in
+  eight phases, each committed and test-covered.
+- Layout: activity rail (Chat/Harness/Activity/Settings), sessions sidebar
+  with date grouping + filter + current-session marker (right-click copies
+  the ID), centered/capped transcript, multi-line composer (Enter sends,
+  Shift+Enter newline, grows 2–8 rows), approval dock above the composer,
+  right inspector (tasks, context meter at 70/82 %, session facts), status
+  bar (run/elapsed, clickable model/index/MCP chips, tokens). Panel
+  visibility/width persisted under `ui.*`; narrow windows auto-collapse the
+  panels without touching the preference.
+- Transcript: You/Anneal turn captions, raised user cards, code/table
+  surfaces, one expandable row per tool call updated by call id (replay pairs
+  results FIFO), one live progress line per improve/review pass, muted notice
+  lines with ✔/⚠/✖, and a welcome state for empty sessions. A few status
+  markers remain; decorative emoji are gone.
+- Theme: layered light/dark palette (`ui.theme` = system|light|dark,
+  `ANNEAL_THEME`), WCAG contrast tests, theme-aware surfaces/dividers/meters
+  (`surface`, `themedText`, `themedRect`) that repaint on theme changes.
+- Settings is now a form over a draft config (Appearance applies live;
+  Save/Revert/Edit JSON; inline validation; unsaved-change guard). Activity
+  renders journey rows and improvement-run cards. The harness pane was
+  rewritten with compact theme-aware cards, per-file editors + Save, an
+  unsaved-changes guard on refresh, and a two-step promote; the Go header
+  owns Refresh/Improve.
+- Fixed a latent bridge limitation: `uiapi` event handlers now run with
+  `object.WithCallFunc`, so scripts can create widgets while handling an
+  event (the pane rebuilds on `harness.refresh`). Also fixed the pane's
+  latent `harnessGet`/`harnessSave` JSON parsing (it never ran with files
+  before).
+- Verification: headless captures (`ANNEAL_UI_CAPTURE=dir`) for every view in
+  both themes plus 900 px narrow and 80/150 % text scale; pane execution test
+  runs the real harness.risor end to end, including the unsaved guard.
+- Deviation: pane file sections are always visible instead of an Accordion —
+  `widget.NewAccordion` takes variadic items and Risor has no spread, and the
+  pane only has a couple of files.
+
 ### 2026-10-30 — GUI polish pass + automatic improve (M17 follow-up)
 - Goal: visual polish of the desktop shell and making harness improvement
   fully automatic in a sensible way (the button was only on the Harness tab).

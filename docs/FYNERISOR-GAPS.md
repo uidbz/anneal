@@ -14,12 +14,20 @@ fynerisor to it until the next release.
 | 4 | `tie.connect`: namespace/collection options silently overridden by config-file `[Collections.*]`/`DefaultCollection` (also hijacks the connect URL) | M4 session_search against local tie | **fixed on fynerisor main** (1c0e93f, issue #5) |
 | 5 | No synchronous script compile-check — `LoadScript` is fire-and-forget, errors only surface async via stderr from `Execute()` | CI gate for UI scripts (`anneal -check-ui`) | **fixed on fynerisor main** (0b826e9, issue #6) — `Window.CompileScript()` |
 | 6 | No way to embed a scripted view inside an existing Go/Fyne layout | hybrid UI: Go shell + scripted harness pane | **fixed on fynerisor main** (b2b1478) — `gui.NewCanvasObject` + `WithHostWindow`; used by `cmd/anneal` |
+| 7 | `MultiLineEntry` has no `SetMinRowsVisible` binding (editors use Fyne's default height) | harness file editors | open — anneal accepts the default; tracked here |
+| 8 | Event handlers dispatched by a host (`window.Do` + `vmguard.Call`) run without the VM call func, so creating widgets inside a handler failed with "unable to get call function" | harness pane rebuild on `harness.refresh` | worked around in anneal: `uiapi` wraps the context with `object.WithCallFunc`; consider doing this in fynerisor's own dispatch helpers |
 
 ## Workarounds currently in use (Anneal)
 
 - Hybrid shell: Go/Fyne owns the transcript and window; the harness pane uses
   `gui.NewCanvasObject` and a narrow, pull-based `agent` API plus a filtered
   event feed. `-script-ui` keeps the full-window driver/e2e scripts working.
+- Scripted panes style themselves with standard widgets only (Card, Separator,
+  label/button `Importance`, `TextStyle`): `canvas.NewRectangle` takes fixed
+  colors and cannot follow a light/dark theme switch. The pane never draws a
+  colored background.
+- Host→script event handlers that rebuild widgets need a VM call func; the
+  anneal bridge supplies one via `object.WithCallFunc` before `vmguard.Call`.
 - `agent.quit()` Go bridge (still fine; `app.Quit()` now also works for
   gui.NewApp apps).
 

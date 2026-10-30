@@ -181,6 +181,3 @@ func (s *shell) setUsageText(tin, tout, pct int) {
 	}
 	s.usage.SetText(fmt.Sprintf("↑ %s ↓ %s · ctx %d%%", humanK(tin), humanK(tout), pct))
 }
-
-// statusText is the current run-state label (tests and headers read it).
-func (s *shell) statusText() string { return s.status.Text() }

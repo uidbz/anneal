@@ -37,6 +37,8 @@ type chromeframe struct {
 	inspectorShown bool
 
 	onPanelResize func(sidebar bool, width float32)
+	onWidth       func(width float32)
+	lastWidth     float32
 }
 
 func newChromeFrame(sidebar, main, inspector fyne.CanvasObject, sidebarW, inspectorW float32) *chromeframe {
@@ -107,6 +109,10 @@ func (f *chromeframe) showPanels(size fyne.Size) (bool, bool) {
 }
 
 func (f *chromeframe) Layout(size fyne.Size) {
+	if f.onWidth != nil && (size.Width < 1000) != (f.lastWidth < 1000) {
+		f.onWidth(size.Width)
+	}
+	f.lastWidth = size.Width
 	sidebar, inspector := f.showPanels(size)
 	if sidebar != f.sidebarShown {
 		f.sidebarShown = sidebar

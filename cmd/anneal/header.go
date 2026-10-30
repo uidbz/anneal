@@ -11,7 +11,7 @@ import (
 // header is a view's top bar: title, optional badge/subtitle, actions on the
 // right, and a hairline underneath.
 type header struct {
-	title    *themedText
+	title    *widget.Label // ellipsized so a long title never collides with actions
 	subtitle *themedText
 	badge    *badge
 	actions  *fyne.Container
@@ -20,17 +20,19 @@ type header struct {
 
 func newHeader(title string) *header {
 	h := &header{
-		title:    newThemedText(title, theme.ColorNameForeground),
+		title:    widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		subtitle: newThemedText("", colorMuted),
 		badge:    newBadge("", colorRaised, colorMuted),
 		actions:  container.NewHBox(),
 	}
-	h.title.size = theme.SizeNameSubHeadingText
-	h.title.bold = true
+	h.title.SizeName = theme.SizeNameSubHeadingText
+	h.title.Truncation = fyne.TextTruncateEllipsis
+	h.title.Wrapping = fyne.TextWrapOff
 
-	left := container.New(&rowLayout{gap: spaceS}, h.title, h.badge, h.subtitle)
-	right := container.New(&padLayout{l: spaceS, r: 0, t: 0, b: 0}, h.actions)
-	row := container.NewBorder(nil, nil, left, right, nil)
+	center := container.New(&columnLayout{gap: 0}, h.title, h.subtitle)
+	right := container.New(&padLayout{l: spaceS, r: 0, t: 0, b: 0},
+		container.New(&rowLayout{gap: spaceS}, h.badge, h.actions))
+	row := container.NewBorder(nil, nil, nil, right, center)
 	h.object = container.NewVBox(
 		container.New(&padLayout{l: spaceL, r: spaceM, t: spaceS, b: spaceS}, row),
 		newDivider(),

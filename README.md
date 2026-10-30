@@ -3,12 +3,13 @@
 A self-improving, opencode-style desktop coding agent in Go.
 
 - **Agent runtime:** [dive](https://github.com/deepnoodle-ai/dive)
-- **UI:** a plain Go/[Fyne](https://fyne.io) shell for the stable surfaces
-  (transcript, composer, permissions, sessions, todos, activity) plus
-  [fynerisor](https://github.com/uidbz/fynerisor) `CanvasObject` panes for
-  editable/agent-adjacent surfaces (harness editor/library first). A
-  `-script-ui` developer mode keeps full-window scripted e2e drivers and
-  custom UI hacking working.
+- **UI:** a plain Go/[Fyne](https://fyne.io) shell with an activity rail,
+  collapsible sessions sidebar, capped transcript, multi-line composer,
+  docked approvals, context inspector, and a status bar; light and dark
+  themes. Editable/agent-adjacent surfaces (the harness editor/library) are
+  [fynerisor](https://github.com/uidbz/fynerisor) `CanvasObject` panes that
+  share the host theme. A `-script-ui` developer mode keeps full-window
+  scripted e2e drivers and custom UI hacking working.
 - **Model:** local [Strata](https://github.com/Niko1221/Strata) or any
   OpenAI Chat-Completions server
 - **Episodic memory / session search:** [tie](https://github.com/uidbz/tie)
@@ -22,8 +23,9 @@ A self-improving, opencode-style desktop coding agent in Go.
 
 All milestones (M0–M16) are complete. The hybrid UI migration has landed its
 rename, Go shell, scripted harness pane, event-bus split, and headless
-decoupling; transcript virtualization and the remaining shell surfaces are the
-active follow-ups (see [progress.md](progress.md)).
+decoupling, and the shell was redesigned into a professional IDE-style layout
+(see [docs/UI-REDESIGN.md](docs/UI-REDESIGN.md) and
+[progress.md](progress.md)).
 
 ## Features
 

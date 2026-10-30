@@ -26,6 +26,7 @@ func (s *shell) handleEvent(e map[string]any) {
 			s.modelLbl.SetText(fmt.Sprintf("%s · %s ctx",
 				trunc(str(h["model"]), 22), humanK(int(num(h["ctx_window"])))))
 			s.modelDot.setToken(colorOK)
+			s.cmp.setModel(str(h["model"]), int(num(h["ctx_window"])))
 		case "connecting", "probing":
 			s.modelLbl.SetText("model: " + state + "…")
 			s.modelDot.setToken(colorWarn)
@@ -80,6 +81,7 @@ func (s *shell) handleEvent(e map[string]any) {
 	case "run.started":
 		s.setRunState("Running…", colorWarn, false)
 		s.usage.SetText("")
+		s.cmp.setRunning(true)
 	case "run.busy":
 		s.status.SetText("A run is already active")
 	case "text.delta":
@@ -93,13 +95,9 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.closeTail(str(e["text"]))
 	case "tool.start":
 		s.closeTail("")
-		s.addTool(fmt.Sprintf("🔧 %s %s", str(e["name"]), oneLine(str(e["input"]))))
+		s.addTool(str(e["id"]), str(e["name"]), str(e["input"]))
 	case "tool.result":
-		mark := "✔"
-		if boolean(e["error"]) {
-			mark = "✖"
-		}
-		s.addTool(fmt.Sprintf("  %s %s: %s", mark, str(e["name"]), oneLine(str(e["preview"]))))
+		s.finishTool(str(e["id"]), str(e["name"]), str(e["preview"]), boolean(e["error"]))
 	case "run.finished":
 		s.closeTail("")
 		u := obj(e["usage"])
@@ -122,6 +120,7 @@ func (s *shell) handleEvent(e map[string]any) {
 				s.addNotice("⚠ " + msg)
 			}
 		}
+		s.cmp.setRunning(false)
 		s.scroll.ScrollToBottom()
 		if s.autoQuit {
 			time.AfterFunc(1500*time.Millisecond, func() { fyne.Do(func() { s.app.Quit() }) })
@@ -151,141 +150,130 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.inspector.refresh()
 		s.scroll.ScrollToBottom()
 	case "session.error":
-		s.addNotice(fmt.Sprintf("⚠ session %s: %s", str(e["id"]), str(e["error"])))
+		s.notice(noticeError, fmt.Sprintf("Session %s: %s", str(e["id"]), str(e["error"])))
 	case "mode.changed":
 		s.mode = str(e["mode"])
-		s.modeBtn.SetText(modeTitle(s.mode))
+		s.cmp.setMode(s.mode)
 		text, fill, fg := modeBadge(s.mode)
 		s.header.setBadge(text, fill, fg)
 		s.inspector.refresh()
 	case "todo.updated":
 		s.renderTodos(list(e["items"]))
 	case "perm.request":
-		s.addPerm(e)
+		s.addPermEvent(e)
 	case "perm.saved":
-		s.addNotice(fmt.Sprintf("🔐 saved permission: %s %s", str(e["action"]),
+		s.notice(noticeSuccess, fmt.Sprintf("Permission saved: %s %s", str(e["action"]),
 			strings.Join(stringList(e["resources"]), ", ")))
 	case "perm.warning":
-		s.addNotice("⚠ permission save failed: " + str(e["error"]))
+		s.notice(noticeWarn, "Permission save failed: "+str(e["error"]))
 	case "perm.resolved":
 		s.removeCard(str(e["id"]))
 	case "memory.stage":
-		op := obj(e["op"])
-		id := str(op["id"])
-		info := fmt.Sprintf("💾 memory[%s] %s via %s\n%s", str(op["target"]),
-			str(op["action"]), str(op["source"]), memoryOpText(op))
-		s.addApprovalCard(id, info,
-			widget.NewButton("approve", func() { s.a.RespondMemory(id, "approve") }),
-			widget.NewButton("reject", func() { s.a.RespondMemory(id, "reject") }),
-		)
+		s.addMemoryCard(e)
 	case "skill.stage":
-		op := obj(e["op"])
-		id := str(op["id"])
-		info := fmt.Sprintf("🛠 skill[%s] %s via %s\n%s", str(op["action"]),
-			str(op["name"]), str(op["source"]), str(e["preview"]))
-		s.addApprovalCard(id, info,
-			widget.NewButton("approve", func() { s.a.RespondSkill(id, "approve") }),
-			widget.NewButton("reject", func() { s.a.RespondSkill(id, "reject") }),
-		)
+		s.addSkillCard(e)
 	case "harness.overlay":
 		s.inspector.refresh()
 	case "compaction.done":
 		s.inspector.compacted++
-		s.addNotice(fmt.Sprintf("🗜 context compacted: %d → %d tokens (%d msgs)",
+		s.notice(noticeInfo, fmt.Sprintf("Context compacted: %d → %d tokens (%d messages)",
 			int(num(e["before"])), int(num(e["after"])), int(num(e["msgs"]))))
 	case "review.start":
-		s.setRunState("reviewing…", colorWarn, false)
-		s.addNotice("🧠 background review started")
+		s.setRunState("Reviewing…", colorWarn, false)
+		s.progress("review", "Reviewing the session in the background…")
 	case "review.skipped":
-		s.setRunState("ready", colorOK, false)
-		if str(e["reason"]) != "preempted by user" {
-			s.addNotice("🧠 review skipped: " + str(e["reason"]))
+		s.setRunState("Ready", colorOK, false)
+		if str(e["reason"]) == "preempted by user" {
+			s.finishProgress("review", noticeInfo, "")
+		} else {
+			s.finishProgress("review", noticeInfo, "Background review skipped: "+str(e["reason"]))
 		}
 	case "review.flag":
-		s.addNotice("🪧 reviewer flagged a harness gap: " + str(e["gap"]))
+		s.notice(noticeWarn, "Reviewer flagged a harness gap: "+str(e["gap"]))
 		s.refreshActivity()
 	case "review.done":
-		s.setRunState("ready", colorOK, false)
+		s.setRunState("Ready", colorOK, false)
 		ledger := list(e["ledger"])
 		switch {
 		case str(e["error"]) != "":
-			s.addNotice("⚠ background review: " + str(e["error"]))
+			s.finishProgress("review", noticeError, "Background review: "+str(e["error"]))
 		case len(ledger) == 0:
-			s.addNotice("🧠 review: nothing worth saving")
+			s.finishProgress("review", noticeInfo, "Background review: nothing worth saving.")
 		default:
-			s.addNotice(fmt.Sprintf("🧠 review saved %d lessons", len(ledger)))
+			s.finishProgress("review", noticeSuccess,
+				fmt.Sprintf("Background review saved %d lessons.", len(ledger)))
 		}
 		s.refreshActivity()
 	case "improve.auto":
 		s.improveAuto = true
-		s.addNotice("⚡ auto-improve: idle after a successful run — improving the harness once for this session")
+		s.notice(noticeInfo, "Auto-improve is armed: the harness is improved once this session goes idle.")
 	case "improve.start":
-		s.setRunState("improving harness…", colorWarn, false)
-		s.improveBtn.SetText("improving…")
+		s.setRunState("Improving harness…", colorWarn, false)
+		s.improveBusy(true)
 		tag := ""
 		if s.improveAuto {
 			tag = " (auto)"
 		}
-		s.addNotice("🔧 harness improvement started" + tag + " (run " + str(e["run"]) + ")")
+		s.progress("improve", "Improving harness"+tag+" — drafting…")
 	case "improve.propose":
-		s.addNotice("🔧 propose: " + str(e["kind"]) + " editor drafting…")
+		s.progress("improve", "Improving harness — drafting "+str(e["kind"])+" changes…")
 	case "improve.probe":
-		s.addNotice(fmt.Sprintf("🔧 probe %s: %d steps in %ds",
+		s.progress("improve", fmt.Sprintf("Improving harness — probing %s: %d steps in %ds",
 			str(e["kind"]), int(num(e["steps"])), int(num(e["duration_s"]))))
 	case "improve.compose":
-		s.addNotice("🔧 composed successor")
+		s.progress("improve", "Improving harness — composing the successor…")
 	case "improve.done":
-		s.setRunState("ready", colorOK, false)
-		s.improveBtn.SetText("improve")
+		s.setRunState("Ready", colorOK, false)
+		s.improveBusy(false)
 		s.improveAuto = false
 		switch {
 		case !boolean(e["ok"]):
-			s.addNotice("⚠ improve: " + str(e["error"]))
+			s.finishProgress("improve", noticeError, "Harness improvement failed: "+str(e["error"]))
 		case !boolean(e["successor"]):
-			s.addNotice("🔧 improve: composer kept the current harness")
+			s.finishProgress("improve", noticeInfo, "Harness improvement kept the current harness.")
 		default:
-			s.addNotice("🔧 improve: successor applied to this session")
+			s.finishProgress("improve", noticeSuccess, "Harness improved — the successor applies to this session.")
 		}
 		s.refreshActivity()
 	case "improve.library":
 		if str(e["entry"]) != "" {
-			s.addNotice("🔧 improvement library entry: " + str(e["entry"]))
+			s.notice(noticeSuccess, "Improvement library entry created: "+str(e["entry"]))
 		} else if str(e["error"]) != "" {
-			s.addNotice("⚠ improvement library: " + str(e["error"]))
+			s.notice(noticeWarn, "Improvement library: "+str(e["error"]))
 		}
 		s.refreshActivity()
 	case "improve.error":
-		s.setRunState("ready", colorWarn, false)
-		s.improveBtn.SetText("improve")
+		s.setRunState("Ready", colorWarn, false)
+		s.improveBusy(false)
 		s.improveAuto = false
-		s.addNotice("⚠ improve: " + str(e["error"]))
+		s.finishProgress("improve", noticeError, "Harness improvement: "+str(e["error"]))
 		s.refreshActivity()
 	case "memory.updated":
-		s.addNotice(fmt.Sprintf("💾 memory %s: %s", str(e["target"]), str(e["action"])))
+		s.notice(noticeSuccess, fmt.Sprintf("Memory %s: %s", str(e["target"]), str(e["action"])))
 	case "memory.resolved":
 		s.removeCard(str(e["id"]))
 		if str(e["error"]) != "" {
-			s.addNotice("⚠ memory approval: " + str(e["error"]))
+			s.notice(noticeWarn, "Memory approval: "+str(e["error"]))
 		} else if boolean(e["approved"]) {
-			s.addNotice("✔ memory saved")
+			s.notice(noticeSuccess, "Memory saved.")
 		}
 	case "skill.applied":
-		s.addNotice(fmt.Sprintf("✔ skill %s: %s", str(e["action"]), str(e["name"])))
+		s.notice(noticeSuccess, fmt.Sprintf("Skill %s: %s", str(e["action"]), str(e["name"])))
 	case "skill.resolved":
 		s.removeCard(str(e["id"]))
 		if str(e["error"]) != "" {
-			s.addNotice("⚠ skill approval: " + str(e["error"]))
+			s.notice(noticeWarn, "Skill approval: "+str(e["error"]))
 		}
 	case "harness.warning":
-		s.addNotice("⚠ harness: " + str(e["message"]))
+		s.notice(noticeWarn, "Harness: "+str(e["message"]))
 	case "harness.warn":
-		s.addNotice("⚠ harness files changed — prose applies next run")
+		s.notice(noticeWarn, "Harness files changed — prose applies on the next run.")
 		s.refreshActivity()
 	case "harness.promoted":
 		if str(e["error"]) != "" {
-			s.addNotice("⚠ harness promote: " + str(e["error"]))
+			s.notice(noticeWarn, "Harness promote: "+str(e["error"]))
 		} else {
-			s.addNotice("✔ harness promoted (restart for guardrail rules)")
+			s.notice(noticeSuccess, "Harness promoted (restart for guardrail rules).")
 		}
 		s.refreshActivity()
 	case "config.changed":
@@ -297,19 +285,19 @@ func (s *shell) handleEvent(e map[string]any) {
 		}
 		switch {
 		case str(e["error"]) != "":
-			s.addNotice("⚠ settings save: " + str(e["error"]))
+			s.notice(noticeWarn, "Settings save: "+str(e["error"]))
 		case e["text_scale"] != nil:
-			s.addNotice(fmt.Sprintf("⚙ text size: %.0f%%", num(e["text_scale"])*100))
+			s.notice(noticeInfo, fmt.Sprintf("Text size: %.0f%%", num(e["text_scale"])*100))
 		default:
-			s.addNotice("⚙ configuration changed")
+			s.notice(noticeInfo, "Configuration changed.")
 		}
 	case "skill.error":
-		s.addNotice("⚠ skill loader: " + str(e["error"]))
+		s.notice(noticeWarn, "Skill loader: "+str(e["error"]))
 	case "tie.rebuilt":
 		if str(e["error"]) != "" {
-			s.addNotice("⚠ index rebuild: " + str(e["error"]))
+			s.notice(noticeWarn, "Index rebuild: "+str(e["error"]))
 		} else {
-			s.addNotice(fmt.Sprintf("✔ index rebuilt: %d sessions", int(num(e["sessions"]))))
+			s.notice(noticeSuccess, fmt.Sprintf("Index rebuilt: %d sessions", int(num(e["sessions"]))))
 		}
 	}
 }

@@ -52,6 +52,8 @@ func TestUICapture(t *testing.T) {
 	win.SetContent(sh.root)
 	win.Resize(fyne.NewSize(1280, 800))
 	feedSampleSession(sh)
+	win.Canvas().Unfocus() // show the composer placeholder
+	t.Logf("entry text=%q placeholder=%q", sh.entry.Text, sh.entry.PlaceHolder)
 	// The harness pane is a scripted view; run it so the capture shows it.
 	sh.harness.Execute()
 	waitPaneReady(t, sh)
@@ -68,6 +70,7 @@ func capture(t *testing.T, win fyne.Window, path string) {
 	// The software test canvas does not re-layout on MinSize changes the way
 	// the GLFW driver does every frame, so lay the whole tree out top-down.
 	relayout(win.Content())
+	refreshTree(win.Content())
 	img := win.Canvas().Capture()
 	f, err := os.Create(path)
 	if err != nil {
@@ -96,6 +99,30 @@ func relayout(o fyne.CanvasObject) {
 			relayout(c)
 		}
 	}
+}
+
+func refreshTree(o fyne.CanvasObject) {
+	seen := map[fyne.CanvasObject]bool{}
+	var walk func(fyne.CanvasObject)
+	walk = func(o fyne.CanvasObject) {
+		if o == nil || seen[o] {
+			return
+		}
+		seen[o] = true
+		switch v := o.(type) {
+		case *fyne.Container:
+			for _, c := range v.Objects {
+				walk(c)
+			}
+		case fyne.Widget:
+			r := test.WidgetRenderer(v)
+			r.Refresh()
+			for _, c := range r.Objects() {
+				walk(c)
+			}
+		}
+	}
+	walk(o)
 }
 
 // feedSampleSession drives the shell through the same events a real session

@@ -120,11 +120,3 @@ func (s *shell) showAbout() {
 	d := dialog.NewCustom("About", "Close", body, s.win)
 	d.Show()
 }
-
-// modeTitle is the composer mode button label.
-func modeTitle(mode string) string {
-	if mode == "plan" {
-		return "Plan"
-	}
-	return "Build"
-}

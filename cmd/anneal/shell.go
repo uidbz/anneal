@@ -82,38 +82,44 @@ type shell struct {
 	inspector *inspectorPanel
 
 	// Chat.
-	modeBtn        *widget.Button
-	entry          *widget.Entry
-	scroll         *container.Scroll
-	chatBox        *fyne.Container // visible transcript blocks (append-only)
-	earlier        *widget.Button  // "show earlier messages" when the window is capped
-	visible        []fyne.CanvasObject
-	hidden         []fyne.CanvasObject
-	perms          *fyne.Container
-	todos          *fyne.Container
-	todoPane       fyne.CanvasObject
-	activity       *fyne.Container
-	activityHeader *header
-	settingsHeader *header
-	settings       fyne.CanvasObject
-	settingsForm   *settingsPanel
-	harnessHeader  *header
-	harness        *scriptPane
-	paneSrc        string
-	permRows       map[string]fyne.CanvasObject
+	cmp              *composer
+	entry            *composerEntry
+	dock             *approvalDock
+	scroll           *container.Scroll
+	chatBox          *fyne.Container // visible transcript blocks (append-only)
+	earlier          *widget.Button  // "show earlier messages" when the window is capped
+	visible          []fyne.CanvasObject
+	hidden           []fyne.CanvasObject
+	todos            *fyne.Container
+	todoPane         fyne.CanvasObject
+	activity         *fyne.Container
+	activityHeader   *header
+	settingsHeader   *header
+	settings         fyne.CanvasObject
+	settingsForm     *settingsPanel
+	harnessHeader    *header
+	harness          *scriptPane
+	paneSrc          string
+	permRows         map[string]fyne.CanvasObject
+	pendingApprovals []pendingApproval
 
 	composer  fyne.CanvasObject
 	statusbar fyne.CanvasObject
 	root      fyne.CanvasObject
 
-	tail         *widget.Label
-	tailBuf      string
-	streamBlocks []fyne.CanvasObject // frozen chunks of the live message
-	mode         string
-	improveAuto  bool // current improve pass was auto-triggered (notice wording)
-	autoSend     string
-	autoQuit     bool
-	maxVisible   int
+	tail          *widget.Label
+	tailBuf       string
+	turn          blockKind
+	toolRows      map[string]*toolRow
+	pendingTools  []*toolRow
+	progressLines map[string]*progressLine
+	streamBlocks  []fyne.CanvasObject // frozen chunks of the live message
+	welcome       fyne.CanvasObject
+	mode          string
+	improveAuto   bool // current improve pass was auto-triggered (notice wording)
+	autoSend      string
+	autoQuit      bool
+	maxVisible    int
 
 	title     string // current session title ("" = untitled)
 	sessionID string
@@ -166,44 +172,22 @@ func (s *shell) build() {
 	s.chipTie.Hide()
 	s.chipMCP.Hide()
 
-	s.modeBtn = widget.NewButton(modeTitle(s.mode), func() {
-		if s.mode == "plan" {
-			s.a.Runner.SetMode("default")
-		} else {
-			s.a.Runner.SetMode("plan")
-		}
-	})
-	s.modeBtn.Importance = widget.LowImportance
-
-	s.entry = widget.NewEntry()
-	s.entry.PlaceHolder = "describe a task — Enter to send"
-	s.entry.OnSubmitted = func(string) { s.submit() }
-
 	s.chatBox = container.NewVBox()
 	s.earlier = widget.NewButton("", s.showEarlier)
+	s.earlier.Importance = widget.LowImportance
 	s.earlier.Hide()
-	s.perms = container.NewVBox()
 	s.todos = container.NewVBox()
 	s.activity = container.NewVBox()
 
-	sendBtn := widget.NewButtonWithIcon("Send", theme.MailSendIcon(), s.submit)
-	sendBtn.Importance = widget.HighImportance
-	stopBtn := labeledButton("Stop", theme.MediaStopIcon(), func() {
-		s.status.SetText("Stopping…")
-		s.a.Runner.Interrupt()
-	})
-
-	composerRow := container.NewBorder(nil, nil,
-		container.New(&rowLayout{gap: spaceS}, s.modeBtn),
-		container.New(&rowLayout{gap: spaceS}, sendBtn, stopBtn),
-		s.entry)
-	s.composer = container.New(&padLayout{l: spaceL, r: spaceL, t: spaceS, b: spaceS},
-		newSurface(colorRaised, composerRow).border(colorBorder, 1))
+	s.cmp = newComposer(s)
+	s.entry = s.cmp.entry
+	s.dock = newApprovalDock()
 
 	// Status bar (bottom): run state + health chips + usage.
 	s.statusbar = newSurface(colorRail, container.New(&padLayout{l: spaceM, r: spaceM, t: 3, b: 3},
 		container.New(&rowLayout{gap: spaceM}, s.runDot, s.status, s.chipModel,
 			s.chipTie, s.chipMCP, s.usage)))
+
 }
 
 // wireFrame builds the navigation chrome: rail, sidebar, chat view,
@@ -228,7 +212,10 @@ func (s *shell) wireFrame() {
 		container.New(&maxWidthLayout{max: transcriptMaxWidth},
 			container.NewVBox(s.earlier, s.chatBox)))
 	s.scroll = container.NewVScroll(padded)
-	chatBody := container.NewBorder(container.NewVBox(s.perms), s.composer, nil, nil, s.scroll)
+	s.welcome = s.welcomeView()
+	transcript := container.NewStack(s.scroll, s.welcome)
+	bottom := container.NewVBox(s.dock, s.cmp.Object())
+	chatBody := container.NewBorder(nil, bottom, nil, nil, transcript)
 	s.chatView = container.NewBorder(s.header.object, nil, nil, nil, chatBody)
 
 	s.harnessHeader = newHeader("Harness")
@@ -537,4 +524,19 @@ func (s *shell) refreshSessionMeta() {
 		}
 	}
 	s.side.refresh()
+}
+
+// improveBusy toggles the Improve action's busy state so a second pass cannot
+// be triggered (the core guards too, this is the visible affordance).
+func (s *shell) improveBusy(busy bool) {
+	if s.improveBtn == nil {
+		return
+	}
+	if busy {
+		s.improveBtn.SetText("Improving…")
+		s.improveBtn.Disable()
+		return
+	}
+	s.improveBtn.SetText("Improve")
+	s.improveBtn.Enable()
 }

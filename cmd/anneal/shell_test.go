@@ -103,8 +103,12 @@ func TestShellEventRendering(t *testing.T) {
 	sh.handleEvent(normalizeEvent(map[string]any{
 		"type": "tool.result", "run": 1, "id": "t1", "name": "Read", "error": false, "preview": "ok",
 	}))
-	if len(sh.chatBox.Objects) < 3 {
+	// One assistant block plus one tool row: the result updates that row.
+	if len(sh.chatBox.Objects) != 2 {
 		t.Fatalf("transcript blocks: %d", len(sh.chatBox.Objects))
+	}
+	if row := sh.toolRows["t1"]; row != nil {
+		t.Fatalf("completed tool row still tracked: %+v", row)
 	}
 
 	sh.handleEvent(normalizeEvent(map[string]any{

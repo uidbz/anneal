@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -23,59 +23,149 @@ const defaultVisibleBlocks = 300
 // small tail label is re-laid out.
 const streamChunkBytes = 2000
 
+// addUser appends one user turn (caption + card) and closes the assistant
+// turn so the next answer gets its own caption.
 func (s *shell) addUser(text string) {
-	lbl := widget.NewLabel("> " + text)
-	lbl.Wrapping = fyne.TextWrapWord
-	lbl.TextStyle = fyne.TextStyle{Italic: true}
-	lbl.Selectable = true
-	// Thin accent bar marks the user's own turns in the transcript.
-	bar := canvas.NewRectangle(theme.Color(theme.ColorNamePrimary))
-	bar.SetMinSize(fyne.NewSize(3, 0))
-	s.appendBlock(container.NewBorder(nil, nil, bar, nil, lbl))
+	s.turn = turnUser
+	s.appendBlock(s.userBlock(text))
 }
 
+// addMarkdown appends an assistant answer as prose and code/table blocks.
+// Code blocks go on a code surface; the caption is attached to the first
+// block so a turn still counts as one visible transcript block.
 func (s *shell) addMarkdown(text string) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
-	// RichText is not selectable in Fyne, so the transcript uses plain
-	// selectable labels: prose with markdown stripped, tables/code as
-	// monospace blocks with intact alignment.
-	for _, seg := range splitMarkdownSegments(text) {
-		lbl := widget.NewLabel(seg.text)
-		lbl.Wrapping = fyne.TextWrapWord
-		lbl.Selectable = true
-		if seg.mono {
-			lbl.TextStyle = fyne.TextStyle{Monospace: true}
+	segs := splitMarkdownSegments(text)
+	for i, seg := range segs {
+		obj := s.markdownBlock(seg)
+		if i == 0 && s.turn != turnAssistant {
+			obj = container.NewVBox(
+				container.New(&padLayout{l: 0, r: 0, t: 0, b: 2}, turnCaption("Anneal", true)),
+				obj,
+			)
 		}
-		s.appendBlock(lbl)
+		s.appendBlock(obj)
+	}
+	s.turn = turnAssistant
+}
+
+// addNotice appends a system line. The level is inferred from the legacy
+// marker prefixes so old call sites keep working while they are migrated.
+func (s *shell) addNotice(text string) {
+	switch {
+	case strings.HasPrefix(text, "⚠"):
+		s.notice(noticeWarn, strings.TrimSpace(strings.TrimPrefix(text, "⚠")))
+	case strings.HasPrefix(text, "✖"):
+		s.notice(noticeError, strings.TrimSpace(strings.TrimPrefix(text, "✖")))
+	case strings.HasPrefix(text, "✔"):
+		s.notice(noticeSuccess, strings.TrimSpace(strings.TrimPrefix(text, "✔")))
+	default:
+		s.notice(noticeInfo, text)
 	}
 }
 
-func (s *shell) addNotice(text string) {
-	lbl := widget.NewLabel(text)
-	lbl.Wrapping = fyne.TextWrapWord
-	lbl.Importance = widget.LowImportance
-	lbl.Selectable = true
-	s.appendBlock(lbl)
+func (s *shell) notice(k noticeKind, text string) {
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	s.appendBlock(s.noticeBlock(k, text))
 }
 
-func (s *shell) addTool(text string) {
-	lbl := widget.NewLabel(text)
-	lbl.Wrapping = fyne.TextWrapWord
-	lbl.TextStyle = fyne.TextStyle{Monospace: true}
-	lbl.Importance = widget.LowImportance
-	lbl.Selectable = true
-	s.appendBlock(lbl)
+// addTool starts a tool row and remembers it by call id so the result can
+// update the same row.
+func (s *shell) addTool(id, name, input string) *toolRow {
+	row := newToolRow(name, toolSummary(input))
+	obj := fyne.CanvasObject(row)
+	if s.turn != turnAssistant {
+		obj = container.NewVBox(
+			container.New(&padLayout{l: 0, r: 0, t: 0, b: 2}, turnCaption("Anneal", true)),
+			row,
+		)
+	}
+	s.appendBlock(obj)
+	s.turn = turnAssistant
+	if id == "" {
+		// Replayed calls carry no id; results pair with them in order.
+		s.pendingTools = append(s.pendingTools, row)
+		return row
+	}
+	if s.toolRows == nil {
+		s.toolRows = map[string]*toolRow{}
+	}
+	s.toolRows[id] = row
+	return row
 }
 
+// finishTool updates the row created by addTool (by call id). A result with
+// no matching call (replay of an unusual transcript) gets its own row.
+func (s *shell) finishTool(id, name, preview string, isErr bool) *toolRow {
+	var row *toolRow
+	if id != "" {
+		row = s.toolRows[id]
+		delete(s.toolRows, id)
+	}
+	if row == nil && len(s.pendingTools) > 0 {
+		row = s.pendingTools[0]
+		s.pendingTools = s.pendingTools[1:]
+	}
+	if row == nil {
+		row = s.addTool("", name, "")
+		s.pendingTools = s.pendingTools[:len(s.pendingTools)-1]
+	}
+	row.finish(preview, isErr, time.Since(row.started))
+	return row
+}
+
+// progress returns a live line for key, creating it on first use. Repeated
+// improve/review steps update it in place.
+func (s *shell) progress(key, text string) *progressLine {
+	if s.progressLines == nil {
+		s.progressLines = map[string]*progressLine{}
+	}
+	line, ok := s.progressLines[key]
+	if !ok {
+		line = newProgressLine(text)
+		s.appendBlock(line.object)
+		s.progressLines[key] = line
+		return line
+	}
+	line.update(text, noticeProgress)
+	return line
+}
+
+// finishProgress turns a live line into a final notice and forgets it, so the
+// next pass starts a new line.
+func (s *shell) finishProgress(key string, k noticeKind, text string) {
+	if line, ok := s.progressLines[key]; ok {
+		line.update(text, k)
+		delete(s.progressLines, key)
+		return
+	}
+	if k == noticeInfo {
+		s.notice(noticeInfo, text)
+		return
+	}
+	s.notice(k, text)
+}
+
+// appendBlock adds a transcript block and keeps the streaming tail last.
 func (s *shell) appendBlock(obj fyne.CanvasObject) {
-	// The streaming tail is always visually last.
+	if s.welcome != nil {
+		s.welcome.Hide()
+	}
 	if s.tail != nil {
 		s.chatBox.Remove(s.tail)
 	}
+	for _, chunk := range s.streamBlocks {
+		s.chatBox.Remove(chunk)
+	}
 	s.visible = append(s.visible, obj)
 	s.chatBox.Add(obj)
+	for _, chunk := range s.streamBlocks {
+		s.chatBox.Add(chunk)
+	}
 	if s.tail != nil {
 		s.chatBox.Add(s.tail)
 	}
@@ -110,7 +200,7 @@ func (s *shell) updateEarlier() {
 		s.earlier.Hide()
 		return
 	}
-	s.earlier.SetText(fmt.Sprintf("show %d earlier messages", len(s.hidden)))
+	s.earlier.SetText(fmt.Sprintf("Show %d earlier messages", len(s.hidden)))
 	s.earlier.Show()
 }
 
@@ -127,6 +217,8 @@ func (s *shell) showEarlier() {
 	s.visible = append(append([]fyne.CanvasObject{}, restore...), s.visible...)
 	s.chatBox.RemoveAll()
 	for _, obj := range s.visible {
+		// Detached widgets missed the theme-change repaint; refresh them now.
+		obj.Refresh()
 		s.chatBox.Add(obj)
 	}
 	for _, obj := range s.streamBlocks {
@@ -148,18 +240,25 @@ func (s *shell) resetChat() {
 	s.streamBlocks = nil
 	s.visible = nil
 	s.hidden = nil
+	s.turn = turnNone
+	s.toolRows = map[string]*toolRow{}
+	s.pendingTools = nil
+	s.progressLines = map[string]*progressLine{}
 	s.chatBox.RemoveAll()
 	s.chatBox.Refresh()
 	if s.earlier != nil {
 		s.earlier.Hide()
 	}
-	s.perms.RemoveAll()
-	s.perms.Refresh()
+	s.pendingApprovals = nil
 	s.permRows = map[string]fyne.CanvasObject{}
+	s.dock.clear()
 	s.todos.RemoveAll()
 	s.todos.Refresh()
 	if s.todoPane != nil {
 		s.todoPane.Hide()
+	}
+	if s.welcome != nil {
+		s.welcome.Show()
 	}
 }
 
@@ -168,6 +267,7 @@ func (s *shell) ensureTail() {
 		s.tailBuf = ""
 		s.tail = widget.NewLabel("")
 		s.tail.Wrapping = fyne.TextWrapWord
+		s.tail.Selectable = true
 		s.chatBox.Add(s.tail)
 		s.chatBox.Refresh()
 	}
@@ -240,6 +340,7 @@ func (s *shell) closeTail(final string) {
 	}
 }
 
+// renderBlock replays one stored transcript block.
 func (s *shell) renderBlock(b map[string]any) {
 	switch str(b["kind"]) {
 	case "user":
@@ -247,12 +348,28 @@ func (s *shell) renderBlock(b map[string]any) {
 	case "assistant":
 		s.addMarkdown(str(b["text"]))
 	case "tool":
-		s.addTool("🔧 " + str(b["name"]) + " " + oneLine(str(b["input"])))
+		s.addTool("", str(b["name"]), str(b["input"]))
 	case "toolres":
-		mark := "✔"
-		if boolean(b["error"]) {
-			mark = "✖"
-		}
-		s.addTool("  " + mark + " " + str(b["name"]) + ": " + oneLine(str(b["text"])))
+		// Stored results carry no call id, so replay pairs them with the
+		// oldest open tool call (the order they were produced in).
+		s.finishTool("", str(b["name"]), str(b["text"]), boolean(b["error"]))
 	}
+}
+
+// welcomeView is the empty-session state: product name, a hint, and the few
+// keys worth learning first.
+func (s *shell) welcomeView() fyne.CanvasObject {
+	title := newThemedText("Anneal", theme.ColorNameForeground)
+	title.size = theme.SizeNameHeadingText
+	title.bold = true
+	sub := newThemedText("Describe a task to get started, or type / for commands.", colorMuted)
+	hints := newThemedText("Ctrl+N new session · Ctrl+B sessions · Ctrl+I improve harness", colorMuted)
+	hints.size = theme.SizeNameCaptionText
+	body := container.NewVBox(
+		container.NewCenter(title),
+		container.NewCenter(sub),
+		vgap(spaceS),
+		container.NewCenter(hints),
+	)
+	return container.NewCenter(body)
 }

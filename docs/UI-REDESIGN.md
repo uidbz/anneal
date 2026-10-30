@@ -118,33 +118,33 @@ Decisions (agreed with the user):
 
 ## Phase 4 — transcript
 
-- Centered column capped at `820 × textScale` px.
-- User turns: "You" caption + raised card. Assistant turns: "Anneal" caption
+- [x] Centered column capped at `820 × textScale` px.
+- [x] User turns: "You" caption + raised card. Assistant turns: "Anneal" caption
   (once per turn) + prose; code/table segments on a code surface.
-- Tool calls: one compact row (status marker, tool name, argument summary,
+- [x] Tool calls: one compact row (status marker, tool name, argument summary,
   elapsed time); `tool.result` updates the row by `id` (replay pairs FIFO);
   click expands the result preview (built lazily).
-- Notices: muted system lines with an optional marker (`✔ ⚠ ✖`); errors in
+- [x] Notices: muted system lines with an optional marker (`✔ ⚠ ✖`); errors in
   the error color.
-- Improve/review progress updates one live line (`●`) in place, then turns
+- [x] Improve/review progress updates one live line (`●`) in place, then turns
   into a final notice.
-- Empty state: centered welcome (title, hint, shortcuts) instead of the
+- [x] Empty state: centered welcome (title, hint, shortcuts) instead of the
   "welcome —" notices.
-- Block cap / "Show N earlier messages" and stream chunking unchanged.
-- Tests: tool row by id, replay pairing, single progress line, welcome,
+- [x] Block cap / "Show N earlier messages" and stream chunking unchanged.
+- [x] Tests: tool row by id, replay pairing, single progress line, welcome,
   captions once per turn; existing cap/stream tests stay green.
 
 ## Phase 5 — composer and approval dock
 
-- Composer on a raised surface: multi-line entry (Enter sends,
+- [x] Composer on a raised surface: multi-line entry (Enter sends,
   Shift+Enter newline, grows 2→8 rows), toolbar with Plan | Build switch,
   model button, hint (hidden when narrow), single Send/Stop primary button.
-- Approval dock between transcript and composer (scrolls beyond ~320 px):
+- [x] Approval dock between transcript and composer (scrolls beyond ~320 px):
   warn-washed cards with accent bar, title, details on a code surface,
   right-aligned buttons (Reject / Always allow / Allow once; Reject /
   Approve). Ctrl+Enter allows the oldest card once and Ctrl+Backspace rejects
   it when the composer is empty.
-- Tests: Enter/Shift+Enter, Send/Stop state, dock placement + removal, mode
+- [x] Tests: Enter/Shift+Enter, Send/Stop state, dock placement + removal, mode
   switch follows `mode.changed`.
 
 ## Phase 6 — inspector and status bar

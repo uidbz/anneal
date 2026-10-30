@@ -36,7 +36,7 @@ active follow-ups (see [progress.md](progress.md)).
 | Memory | `MEMORY.md`/`USER.md` with caps, dup-guard, injection scan, optional write approval |
 | Skills | SKILL.md authoring (`skill_manage`), auto-discovery via dive skill loader, staging |
 | Self-review | background reviewer mines finished sessions while idle; ledger-backed notifications |
-| Harness improvement | Propose→Probe→Compose, evidence-gated library, session overlay, explicit promote |
+| Harness improvement | Propose→Probe→Compose, evidence-gated library, session overlay, explicit promote; automatic once-per-session pass after idle (`improve.auto`), manual via header button / Ctrl+I / `/improve` |
 | Compaction | mid-turn + pre-generation summarization at 82% of context window |
 | MCP | stdio/HTTP servers, `mcp__server__tool` names, permission action per tool |
 | Subagents | `Agent` tool (general-purpose/explore/plan) inheriting permission hooks |

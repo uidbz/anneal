@@ -51,6 +51,30 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-10-30 — GUI polish pass + automatic improve (M17 follow-up)
+- Goal: visual polish of the desktop shell and making harness improvement
+  fully automatic in a sensible way (the button was only on the Harness tab).
+- Shell: brand theme (teal accent for focus/selection/tab indicator), header
+  rebuilt (brand, mode, actions, improve button with Ctrl+I), run-state +
+  health chips moved to a bottom status bar (narrow windows no longer
+  overflow), transcript padding, user-turn accent bars, todo sidebar card,
+  amber wash for permission/approval cards with buttons on their own row.
+- Transcript rendering: pipe tables reflow into column-aligned monospace
+  grids and fenced code renders monospace (segmented labels); the improve
+  tables that motivated this pass are now readable.
+- Activity tab: journey entries are human lines ("review · 4 lessons")
+  instead of raw attr maps; right-aligned refresh; better empty states.
+- Harness pane (Risor): bold section heads, low-emphasis hints, separators.
+- Improve automation (core): `improve.auto` (on) + `improve.auto_idle_s`
+  (300): after a clean run, one pass is armed and fires only when
+  runner/improve/reviewer are all idle; at most once per session (manual
+  passes count). Same path serves GUI/headless/anneald; emits
+  `improve.auto` then the normal improve stream.
+- New helpers (cmd/anneal): rowLayout/padLayout/statusDot; markdown
+  segmentation tests; app-level arm/fire/guard tests for auto-improve;
+  live-verified end-to-end over Xephyr screenshots (run → idle → auto pass
+  visible in transcript + button state).
+
 ### 2026-10-30 — M17 review round (issues #2–#12)
 - Post-implementation review (self + fresh-eyes pass) found 11 corrections;
   one GitHub issue each under tracking issue #1, fixed one by one.

@@ -104,7 +104,7 @@ on missing keys is a hard error. The Go shell consumes the same values as maps
 | `mcp.state` | per-server connection/tool counts |
 | `review.start` / `review.done` / `review.skipped` | background review (done carries the ledger) |
 | `review.flag` | reviewer queued a harness deficiency (M16 → improve hints) |
-| `improve.start/propose/probe/compose/iterdone/library/selector/budget/done/error` | improvement step (selector/budget only k>1) |
+| `improve.auto` + `improve.start/propose/probe/compose/iterdone/library/selector/budget/done/error` | improvement step (`auto` = scheduled pass began; selector/budget only k>1) |
 | `harness.warn` / `harness.warning` / `harness.promoted` / `harness.overlay` | component save re-validation, bad subagent file, library promote result, session overlay installed |
 | `compaction.done` | context compaction (before/after tokens, msgs) |
 | `server.shutting_down` | anneald idle/quit shutdown started (reason, eta_s) |

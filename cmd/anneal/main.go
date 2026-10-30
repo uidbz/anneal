@@ -23,6 +23,7 @@ import (
 	coreapp "github.com/uidbz/anneal/core/app"
 	"github.com/uidbz/anneal/core/config"
 	"github.com/uidbz/anneal/core/improve"
+	"github.com/uidbz/anneal/core/journey"
 	"github.com/uidbz/anneal/core/paths"
 
 	"fyne.io/fyne/v2"
@@ -545,14 +546,17 @@ func (s *shell) refreshActivity() {
 		return
 	}
 	s.activity.RemoveAll()
-	s.activity.Add(widget.NewButton("refresh", s.refreshActivity))
+	s.activity.Add(container.NewBorder(nil, nil, nil,
+		widget.NewButton("refresh", s.refreshActivity), nil))
 	s.activity.Add(widget.NewLabelWithStyle("Journey (newest last)", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 	journey := s.a.Journey.Tail(40)
 	if len(journey) == 0 {
-		s.activity.Add(widget.NewLabel("empty"))
+		empty := widget.NewLabel("empty — memory/skill/review/improve events land here")
+		empty.Importance = widget.LowImportance
+		s.activity.Add(empty)
 	}
 	for _, e := range journey {
-		lbl := widget.NewLabel(fmt.Sprintf("%s  %s  %v", e.TS, e.Kind, e.Attrs))
+		lbl := widget.NewLabel(journeyLine(e))
 		lbl.Wrapping = fyne.TextWrapWord
 		lbl.Selectable = true
 		s.activity.Add(lbl)
@@ -561,7 +565,9 @@ func (s *shell) refreshActivity() {
 	s.activity.Add(widget.NewLabelWithStyle("Improvement runs", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 	runs := loadImprovementRuns(20)
 	if len(runs) == 0 {
-		s.activity.Add(widget.NewLabel("none yet — /improve creates records under ~/.anneal/improvements/"))
+		hint := widget.NewLabel("none yet — improve runs are recorded under " + paths.Improvements())
+		hint.Importance = widget.LowImportance
+		s.activity.Add(hint)
 	}
 	for _, r := range runs {
 		title := fmt.Sprintf("%s — k=%d mode=%s", r.RunID, r.K, r.Mode)
@@ -598,6 +604,43 @@ func (s *shell) refreshActivity() {
 		s.activity.Add(widget.NewSeparator())
 	}
 	s.activity.Refresh()
+}
+
+// journeyLine formats one journey record as a readable line for the
+// Activity tab (raw attr maps become kind-specific phrasing).
+func journeyLine(e journey.Entry) string {
+	ts := e.TS
+	if len(ts) >= 16 {
+		ts = ts[:10] + " " + ts[11:16]
+	}
+	txt := ts + "  " + e.Kind
+	switch e.Kind {
+	case "review":
+		if v, ok := e.Attrs["lessons"]; ok {
+			txt += fmt.Sprintf(" · %v lessons", v)
+		}
+	case "improve":
+		if e.Attrs["successor"] == true {
+			txt += " · successor applied"
+		} else {
+			txt += " · kept current harness"
+		}
+		if r, ok := e.Attrs["run"]; ok {
+			txt += " (run " + fmt.Sprint(r) + ")"
+		}
+	case "review-flag":
+		txt += " · " + shortText(oneLine(str(e.Attrs["gap"])), 120)
+	default:
+		var parts []string
+		for k, v := range e.Attrs {
+			parts = append(parts, fmt.Sprintf("%s=%v", k, v))
+		}
+		sort.Strings(parts)
+		if len(parts) > 0 {
+			txt += " · " + strings.Join(parts, " ")
+		}
+	}
+	return txt
 }
 
 // loadImprovementRuns reads step.json records, newest first. Corrupt or
@@ -1079,6 +1122,7 @@ func (s *shell) handleEvent(e map[string]any) {
 		}
 	case "session.started":
 		s.resetChat()
+		s.addNotice("new session — describe a task below, or /help for commands")
 		s.win.SetTitle("Anneal")
 		s.entry.SetText("")
 		s.win.Canvas().Focus(s.entry)
@@ -1320,9 +1364,16 @@ func (s *shell) addApprovalCard(id, info string, buttons ...fyne.CanvasObject) {
 	lbl := widget.NewLabel(info)
 	lbl.Wrapping = fyne.TextWrapWord
 	lbl.Selectable = true
-	row := container.NewBorder(nil, nil, nil, container.NewHBox(buttons...), lbl)
-	s.permRows[id] = row
-	s.perms.Add(row)
+	// Card with an amber wash (attention) and the buttons on their own row.
+	card := canvas.NewRectangle(color.NRGBA{R: 0xf5, G: 0x9e, B: 0x0b, A: 0x14})
+	card.CornerRadius = 8
+	body := container.NewBorder(nil,
+		container.New(&rowLayout{gap: 8}, buttons...), nil, nil, lbl)
+	stack := container.NewStack(card, container.New(&padLayout{l: 12, r: 12, t: 8, b: 8}, body))
+	gap := canvas.NewRectangle(color.Transparent)
+	gap.SetMinSize(fyne.NewSize(0, 8))
+	s.permRows[id] = container.NewVBox(stack, gap)
+	s.perms.Add(s.permRows[id])
 	s.perms.Refresh()
 }
 

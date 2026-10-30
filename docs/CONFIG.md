@@ -358,12 +358,19 @@ Check with `anneal -check-harness` or `/harness`.
 
 | key | default | meaning |
 |-----|---------|---------|
-| `enabled` | true | `/improve`, `-improve`, headless `/improve` |
+| `enabled` | true | `/improve`, `-improve`, headless `/improve`, header improve button |
+| `auto` | true | one automatic pass per session: armed when a run finishes cleanly, fires `auto_idle_s` later if nothing else is using the model |
+| `auto_idle_s` | 300 | quiet period before the automatic pass; it also stands down (re-arms next run) if a run, an improve, or the reviewer is active when it fires |
 | `library` | true | reflection + `~/.anneal/harness-lib/` improvement library |
 | `k` | 1 | recursion depth (iterations under `improvements/<run>/iter<i>/`) |
 | `mode` | `sequential` | `sequential` chains each probed successor into the next iteration; `parallel` runs k independent steps and an anonymized selector picks the winner |
 | `total_wall_s` | 0 | whole-step wall budget (0 = unbounded) |
 | `max_total_tokens` | 0 | stop before starting an iteration past this usage |
+
+Auto-improve is deliberately conservative: at most one pass per session
+(a manual pass counts), never while anything is active, and it emits the
+normal `improve.*` event stream (plus `improve.auto` when it starts) so
+every surface — GUI, headless, anneald clients — sees it the same way.
 
 One step = Propose (invariant + domain editors) → Probe (sandboxed replay +
 behavioral contrast) → Compose (evidence-tied successor + `decisions.md`).

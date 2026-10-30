@@ -151,6 +151,11 @@ method, `-32602` bad params, `-32000` handler error, `-32001` shutting down.
 * Permission cards are global: any client may answer any `perm.request`
   (watch `perm.resolved` to retire cards answered elsewhere).
 * Run-scoped events carry the numeric `run` id assigned by `agent.send`.
+* Auto-improve (`improve.auto` config, on by default) runs server-side
+  after a clean run settles: clients see an `improve.auto` event, then
+  the ordinary `improve.start/…/done` stream. It never starts while a
+  run, another improve, or the reviewer is active, and at most once per
+  session.
 
 ## Versioning
 

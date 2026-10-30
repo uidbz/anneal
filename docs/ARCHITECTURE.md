@@ -1,16 +1,22 @@
 # Anneal architecture
 
-Anneal was renamed from `fyagent`; the hybrid UI migration is complete
-(follow-ups: deeper accessibility, optional virtualization benchmark).
-The stable shell is Go/Fyne; scripted `CanvasObject` panes use fynerisor.
+The hybrid UI migration is complete (follow-ups: deeper accessibility,
+optional virtualization benchmark). The stable shell is Go/Fyne; scripted
+`CanvasObject` panes use fynerisor. `anneald` adds the remote split: the
+same core behind a WebSocket protocol (docs/PROTOCOL.md).
 
 ```
                     ┌────────────────────────────────────────────────┐
                     │ cmd/anneal (hybrid)      cmd/anneal-headless   │
                     │  Go/Fyne shell            terminal sink        │
-                    │  + harness.risor pane     (-p/-i/-json)        │
-                    │  -script-ui for e2e drivers                    │
-                    └──────────┬────────────────────────┬────────────┘
+                    │  + harness.risor pane     (-p/-i/-json,        │
+                    │  -script-ui for e2e        -server = remote)   │
+                    ├────────────────────────────────────────────────┤
+                    │ cmd/anneald  backend server (docs/PROTOCOL.md) │
+                    │  core/server: hello+auth, JSON-RPC table,      │
+                    │  one bus tap fanned out per connection         │
+                    │  core/client: protocol client (both -server)   │
+                    └──────────┬────────────────────────────────────┘
                                │        core/app (wiring)
                     ┌──────────┴────────────────────────────────────┐
                     │ core/events.Bus (UI-agnostic fan-out)         │
@@ -63,6 +69,16 @@ The stable shell is Go/Fyne; scripted `CanvasObject` panes use fynerisor.
   `anneal -check-ui`; `-script-ui -check-script-ui` compiles a driver/full
   script UI. A broken script fails fast instead of producing an empty
   pane/window.
+- **Backend/frontend split (anneald).** `cmd/anneald` wraps `app.New()` +
+  `StartBlocking` and serves docs/PROTOCOL.md: hello handshake (proto +
+  optional bearer token), JSON-RPC commands mapped one-to-one onto the
+  AgentAPI/Runner surface, and raw bus events per connection. Exactly one
+  `Bus.AddTap` is added; per-connection queues are bounded (1024) and a
+  slow consumer is disconnected rather than blocking the bus. Idle
+  shutdown (`server.idle_timeout_s`, never during a run) + the single
+  bind-mount container layout make environments disposable
+  (docs/CONTAINERS.md). `core/client` is the client side (currently
+  `anneal-headless -server`; the GUI remote mode will use it).
 
 ## Events (Go → UI)
 
@@ -91,6 +107,7 @@ on missing keys is a hard error. The Go shell consumes the same values as maps
 | `improve.start/propose/probe/compose/iterdone/library/selector/budget/done/error` | improvement step (selector/budget only k>1) |
 | `harness.warn` / `harness.warning` / `harness.promoted` / `harness.overlay` | component save re-validation, bad subagent file, library promote result, session overlay installed |
 | `compaction.done` | context compaction (before/after tokens, msgs) |
+| `server.shutting_down` | anneald idle/quit shutdown started (reason, eta_s) |
 
 ## Permissions
 

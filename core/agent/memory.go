@@ -34,8 +34,7 @@ func (r *Runner) memoryReminderHook() dive.PreGenerationHook {
 		if r.mem == nil || !r.cfg.Memory.Enabled {
 			return nil
 		}
-		if hasReminder(hctx.Messages, "anneal-memory") ||
-			hasReminder(hctx.Messages, "fyagent-memory") { // pre-rename sessions
+		if hasReminder(hctx.Messages, "anneal-memory") {
 			return nil
 		}
 		snap := r.mem.Snapshot()

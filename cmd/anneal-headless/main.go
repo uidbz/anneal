@@ -23,8 +23,73 @@ import (
 
 	"github.com/uidbz/anneal/core/agent"
 	"github.com/uidbz/anneal/core/app"
+	"github.com/uidbz/anneal/core/client"
 	"github.com/uidbz/anneal/core/improve"
 )
+
+// backend abstracts "drive the core": the local App (embedded core) or the
+// protocol client (anneald over -server). Commands go through these methods;
+// events arrive on the shared sink channel either way.
+type backend interface {
+	startTask(text string) (int, bool)
+	interrupt()
+	newSession()
+	openSession(id string)
+	respondPerm(id, action string)
+	setMode(mode string)
+	learnNow()
+	isRemote() bool
+	call(method string, params any) error // remote RPC passthrough (no-op locally)
+}
+
+type localBackend struct{ a *app.App }
+
+func (l *localBackend) startTask(t string) (int, bool) { return l.a.Runner.StartTask(t) }
+func (l *localBackend) interrupt()                     { l.a.Runner.Interrupt() }
+func (l *localBackend) newSession()                    { l.a.Runner.NewSession() }
+func (l *localBackend) openSession(id string)          { l.a.Runner.OpenSession(id) }
+func (l *localBackend) respondPerm(id, a string)       { l.a.Runner.RespondPerm(id, a) }
+func (l *localBackend) setMode(m string)               { l.a.Runner.SetMode(m) }
+func (l *localBackend) learnNow()                      { l.a.Review.LearnNow() }
+func (l *localBackend) isRemote() bool                 { return false }
+func (l *localBackend) call(string, any) error         { return fmt.Errorf("remote call from local mode") }
+
+type remoteBackend struct{ c *client.Client }
+
+func (r *remoteBackend) startTask(t string) (int, bool) {
+	var res struct {
+		ID int  `json:"id"`
+		OK bool `json:"ok"`
+	}
+	if err := r.callJSON("agent.send", map[string]any{"text": t}, &res); err != nil {
+		fmt.Fprintln(os.Stderr, "anneal-headless: send:", err)
+		return 0, false
+	}
+	return res.ID, res.OK
+}
+func (r *remoteBackend) interrupt()            { r.call("agent.interrupt", nil) }
+func (r *remoteBackend) newSession()           { r.call("sessions.new", nil) }
+func (r *remoteBackend) openSession(id string) { r.call("sessions.open", map[string]any{"id": id}) }
+func (r *remoteBackend) respondPerm(id, a string) {
+	r.call("perm.respond", map[string]any{"id": id, "action": a})
+}
+func (r *remoteBackend) setMode(m string) { r.call("mode.set", map[string]any{"mode": m}) }
+func (r *remoteBackend) learnNow()        { r.call("learn.now", nil) }
+func (r *remoteBackend) isRemote() bool   { return true }
+func (r *remoteBackend) call(method string, params any) error {
+	_, err := r.callRaw(method, params)
+	return err
+}
+func (r *remoteBackend) callRaw(method string, params any) (json.RawMessage, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	return r.c.Call(ctx, method, params)
+}
+func (r *remoteBackend) callJSON(method string, params, out any) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	return r.c.CallInto(ctx, method, params, out)
+}
 
 type runResult struct {
 	ok    bool
@@ -39,7 +104,8 @@ type sink struct {
 	streamed bool
 	done     chan runResult
 	learn    chan struct{}
-	app      *app.App
+	improve  chan struct{}
+	be       backend
 	allow    map[string]bool
 	denyAll  bool
 
@@ -206,7 +272,19 @@ func (s *sink) handle(v any) {
 		} else {
 			fmt.Printf("🔧 improve: library entry failed: %v\n", e["error"])
 		}
+	case "improve.error":
+		if !s.jsonMode {
+			fmt.Printf("🔧 improve failed: %v\n", e["error"])
+		}
+		select {
+		case s.improve <- struct{}{}:
+		default:
+		}
 	case "improve.done":
+		select {
+		case s.improve <- struct{}{}:
+		default:
+		}
 		if s.jsonMode {
 			return
 		}
@@ -244,7 +322,7 @@ func (s *sink) decidePerm(e map[string]any) {
 		fmt.Printf("🔐 %s → %s (headless policy)\n", action, answer)
 	}
 	// respondPerm re-enters Emit; keep off the tap's lock path
-	go s.app.Runner.RespondPerm(id, answer)
+	go s.be.respondPerm(id, answer)
 }
 
 func clip(s string, n int) string {
@@ -269,6 +347,7 @@ func main() {
 	improveK := flag.Int("k", 0, "recursion depth for -improve (0 = config, default 1)")
 	improveMode := flag.String("improve-mode", "", "improve recursion mode: sequential (default) | parallel")
 	improveResume := flag.String("improve-resume", "", "resume a prior improve run by id, skipping completed iterations")
+	serverAddr := flag.String("server", "", "drive a remote anneald (ws://host:port, host:port, or unix:/path) instead of the local core")
 	flag.Parse()
 
 	if *prompt == "" && !*interactive {
@@ -276,15 +355,45 @@ func main() {
 		os.Exit(2)
 	}
 
-	a, err := app.New()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "anneal-headless:", err)
-		os.Exit(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var a *app.App // local mode only (improve/results printing)
+	var be backend
+	events := make(chan any, 1024)
+
+	if *serverAddr != "" {
+		c, err := client.Dial(ctx, *serverAddr, os.Getenv("ANNEAL_AUTH_TOKEN"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "anneal-headless: server:", err)
+			os.Exit(1)
+		}
+		defer c.Close()
+		be = &remoteBackend{c: c}
+		go func() {
+			for e := range c.Events() {
+				events <- e
+			}
+		}()
+		fmt.Fprintf(os.Stderr, "anneal-headless: connected to %s (server %s)\n", *serverAddr, c.ServerVersion())
+	} else {
+		var aerr error
+		a, aerr = app.New()
+		if aerr != nil {
+			fmt.Fprintln(os.Stderr, "anneal-headless:", aerr)
+			os.Exit(1)
+		}
+		be = &localBackend{a: a}
+		// One ordered consumer: a goroutine per event would reorder text deltas
+		// and could deliver run.finished before message.final/tool.result.
+		a.Bus.AddTap(func(v any) { events <- v })
+		a.StartBlocking(ctx) // monitor + review async; tie/MCP connected inline
 	}
 
 	s := &sink{jsonMode: *jsonMode, verbose: *verbose,
 		done: make(chan runResult, 1), learn: make(chan struct{}, 1),
-		app: a, denyAll: !*yolo && *allowList == "", allow: map[string]bool{}}
+		improve: make(chan struct{}, 1), be: be,
+		denyAll: !*yolo && *allowList == "", allow: map[string]bool{}}
 	for _, t := range strings.Split(*allowList, ",") {
 		if t != "" {
 			s.allow[t] = true
@@ -292,45 +401,33 @@ func main() {
 	}
 	if *yolo {
 		s.allow["*"] = true
-		a.Runner.SetMode("bypassPermissions")
+		be.setMode("bypassPermissions")
 	}
-	// One ordered consumer: a goroutine per event would reorder text deltas
-	// and could deliver run.finished before message.final/tool.result.
-	events := make(chan any, 1024)
-	a.Bus.AddTap(func(v any) { events <- v })
 	go func() {
 		for v := range events {
 			s.handle(v)
 		}
 	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	a.StartBlocking(ctx) // monitor + review async; tie/MCP connected inline
-
 	if *newSess {
-		a.Runner.NewSession()
+		be.newSession()
 	} else if *session != "" {
-		a.Runner.OpenSession(*session)
+		be.openSession(*session)
 	}
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sig
-		if a.Runner.Busy() {
-			a.Runner.Interrupt()
-		} else {
-			cancel()
-			os.Exit(130)
-		}
+		be.interrupt()
+		fmt.Fprintln(os.Stderr, "(interrupt sent; Ctrl-C again to quit)")
 		<-sig // second signal: hard exit
 		cancel()
 		os.Exit(130)
 	}()
 
 	runTask := func(task string) int {
-		id, ok := a.Runner.StartTask(task)
+		id, ok := be.startTask(task)
 		if !ok {
 			fmt.Fprintln(os.Stderr, "anneal-headless: a run is already active")
 			return 1
@@ -340,7 +437,7 @@ func main() {
 		case res := <-s.done:
 			s.setAwait(0)
 			if *learn {
-				a.Review.LearnNow()
+				be.learnNow()
 				select {
 				case <-s.learn:
 				case <-time.After(3 * time.Minute):
@@ -352,15 +449,7 @@ func main() {
 				code = 1
 			}
 			if *improveFlag && res.ok {
-				fmt.Fprintln(os.Stderr, "🔧 harness improvement: propose → probe → compose …")
-				ictx, icancel := context.WithTimeout(context.Background(), 25*time.Minute)
-				defer icancel()
-				ires, ierr := a.ImproveWith(ictx, *improveK, *improveMode, *improveResume)
-				if ierr != nil {
-					fmt.Fprintf(os.Stderr, "anneal-headless: improve: %v\n", ierr)
-				} else {
-					printImprove(ires)
-				}
+				code = finishImprove(be, *improveK, *improveMode, *improveResume, s.improve)
 			}
 			return code
 		case <-ctx.Done():
@@ -368,7 +457,7 @@ func main() {
 			return 130
 		case <-time.After(60 * time.Minute):
 			s.discardRun(id)
-			a.Runner.Interrupt()
+			be.interrupt()
 			return 124
 		}
 	}
@@ -391,15 +480,45 @@ func main() {
 			case "/quit", "/exit":
 				os.Exit(code)
 			case "/new":
-				a.Runner.NewSession()
+				be.newSession()
 				fmt.Fprintln(os.Stderr, "(new session)")
 				continue
 			case "/interrupt":
-				a.Runner.Interrupt()
+				be.interrupt()
 				continue
 			}
 			if strings.HasPrefix(line, "/harness") {
 				fields := strings.Fields(line)
+				if be.isRemote() {
+					rb := be.(*remoteBackend)
+					switch {
+					case len(fields) >= 3 && fields[1] == "promote":
+						raw, err := rb.callRaw("harness.lib_promote", map[string]any{"id": fields[2]})
+						if err != nil {
+							fmt.Fprintln(os.Stderr, "promote:", err)
+						} else {
+							fmt.Fprintln(os.Stderr, string(raw))
+						}
+					case len(fields) >= 2 && fields[1] == "list":
+						raw, err := rb.callRaw("harness.lib", nil)
+						if err != nil {
+							fmt.Fprintln(os.Stderr, "library:", err)
+						} else {
+							fmt.Fprintln(os.Stderr, string(raw))
+						}
+					default:
+						raw, err := rb.callRaw("harness.info", nil)
+						if err != nil {
+							fmt.Fprintln(os.Stderr, "harness:", err)
+						} else {
+							fmt.Fprintln(os.Stderr, string(raw))
+						}
+						if raw, err := rb.callRaw("flags.peek", map[string]any{"n": 5}); err == nil {
+							fmt.Fprintln(os.Stderr, "reviewer flags:", string(raw))
+						}
+					}
+					continue
+				}
 				switch {
 				case len(fields) >= 3 && fields[1] == "promote":
 					backup, perr := a.Libs.Promote(fields[2])
@@ -432,6 +551,14 @@ func main() {
 				continue
 			}
 			if strings.HasPrefix(line, "/improve") {
+				if rb, ok := be.(*remoteBackend); ok {
+					fmt.Fprintln(os.Stderr, "🔧 harness improvement started on the server (progress streams below)")
+					if err := rb.call("improve.start", map[string]any{
+						"k": *improveK, "mode": *improveMode, "resume": *improveResume}); err != nil {
+						fmt.Fprintln(os.Stderr, "anneal-headless: improve:", err)
+					}
+					continue
+				}
 				fmt.Fprintln(os.Stderr, "🔧 harness improvement: propose → probe → compose …")
 				ictx, icancel := context.WithTimeout(context.Background(), 25*time.Minute)
 				ires, ierr := a.ImproveWith(ictx, *improveK, *improveMode, *improveResume)
@@ -447,6 +574,36 @@ func main() {
 		}
 	}
 	os.Exit(code)
+}
+
+// finishImprove runs the -improve tail: locally (returns the structured
+// result) or remotely (start RPC, then wait for the improve.done/error
+// event that the sink forwards on done).
+func finishImprove(be backend, k int, mode, resume string, done chan struct{}) int {
+	fmt.Fprintln(os.Stderr, "🔧 harness improvement: propose → probe → compose …")
+	if lb, ok := be.(*localBackend); ok {
+		ictx, icancel := context.WithTimeout(context.Background(), 25*time.Minute)
+		defer icancel()
+		ires, ierr := lb.a.ImproveWith(ictx, k, mode, resume)
+		if ierr != nil {
+			fmt.Fprintf(os.Stderr, "anneal-headless: improve: %v\n", ierr)
+			return 1
+		}
+		printImprove(ires)
+		return 0
+	}
+	rb := be.(*remoteBackend)
+	if err := rb.call("improve.start", map[string]any{"k": k, "mode": mode, "resume": resume}); err != nil {
+		fmt.Fprintln(os.Stderr, "anneal-headless: improve:", err)
+		return 1
+	}
+	select {
+	case <-done:
+		return 0
+	case <-time.After(25 * time.Minute):
+		fmt.Fprintln(os.Stderr, "anneal-headless: improve timed out")
+		return 1
+	}
 }
 
 func printImprove(res *improve.Result) {

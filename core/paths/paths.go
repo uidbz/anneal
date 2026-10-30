@@ -6,9 +6,7 @@ import (
 	"path/filepath"
 )
 
-// Root returns the anneal state directory (override with ANNEAL_HOME). On
-// first run after the rename, an existing ~/.fyagent directory is renamed to
-// ~/.anneal so sessions, memory, skills, harnesses, and logs move together.
+// Root returns the anneal state directory (override with ANNEAL_HOME).
 func Root() string {
 	if h := os.Getenv("ANNEAL_HOME"); h != "" {
 		return h
@@ -17,16 +15,7 @@ func Root() string {
 	if err != nil {
 		return ".anneal"
 	}
-	newDir := filepath.Join(home, ".anneal")
-	oldDir := filepath.Join(home, ".fyagent")
-	if _, err := os.Stat(newDir); os.IsNotExist(err) {
-		if _, err := os.Stat(oldDir); err == nil {
-			if os.Rename(oldDir, newDir) != nil {
-				return oldDir // keep the old location if the rename fails
-			}
-		}
-	}
-	return newDir
+	return filepath.Join(home, ".anneal")
 }
 
 func Config() string        { return filepath.Join(Root(), "config.json") }

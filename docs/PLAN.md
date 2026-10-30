@@ -1,7 +1,7 @@
 # Anneal — original plan (historical)
 
 > **Historical document.** This is the original all-Risor design, kept for
-> context. The project is now **Anneal** (formerly fyagent), and the UI is
+> context. The project is now **Anneal**, and the UI is
 > migrating to a Go/Fyne shell with embedded fynerisor `CanvasObject` panes.
 > See [ARCHITECTURE.md](ARCHITECTURE.md) and [progress.md](../progress.md).
 

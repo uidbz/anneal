@@ -1,6 +1,6 @@
 # progress.md
 
-Running status log for **Anneal** (formerly fyagent). Keep this updated at every commit: tick milestones,
+Running status log for **Anneal**. Keep this updated at every commit: tick milestones,
 add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 
 ## Milestones
@@ -22,6 +22,7 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 - [x] **M14** k-step recursion with governors and resume
 - [x] **M15** Go harness panel (now a scripted `CanvasObject` pane)
 - [x] **M16** review→improve bridge via `harness_flag`
+- [x] **M17** backend/frontend split: `anneald` + wire protocol, remote headless, container image with idle lifecycle
 - [~] **H1** hybrid Go shell + scripted panes (rename to Anneal)
 
 Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes below).
@@ -49,6 +50,42 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - [ ] (nice) constants exposure for `fyne.TextWrap*` instead of raw ints
 
 ## Notes (newest first)
+
+### 2026-10-30 — M17: backend/frontend split (anneald + protocol + containers)
+- New backend binary `cmd/anneald` hosts the core behind a WebSocket JSON-RPC
+  protocol (`core/server`): hello handshake (`proto` + optional bearer token
+  via `server.auth_token_env`), a method table mapping 1:1 onto the
+  AgentAPI/Runner surface, and one `Bus.AddTap` fanned out per connection
+  (bounded queue 1024; slow consumers are disconnected, never blocking the
+  bus). Events are the raw bus objects — identical to what the GUI/headless
+  sinks render. Normative spec: docs/PROTOCOL.md.
+- `core/client`: protocol client (dial unix:/ws URLs, Call/CallInto, ordered
+  event channel with newest-shed backpressure). Validated by
+  `anneal-headless -server <addr>`: local vs remote core behind a small
+  `backend` interface; sink/run-correlation unchanged.
+- Config gains the `server` group (listen/auth/idle_timeout_s/drain_grace_s/
+  work_dir) + env overrides (`ANNEAL_LISTEN`, `ANNEAL_IDLE_TIMEOUT_S`,
+  `ANNEAL_WORK_DIR`, `ANNEAL_AUTH_TOKEN`). Idle shutdown: no client frame
+  and no run/improve activity for N s → `server.shutting_down` → exit after
+  drain grace; a run in flight defers the timer.
+- Containers: Dockerfile (dropreplace fynerisor — server binary needs only
+  its GUI-free core; CGO-free static build) + default dev toolchain; one
+  bind mount (`state/` = ANNEAL_HOME, `work/` = agent cwd). One project/user
+  per instance is the scoping model; idle-exit makes instances disposable.
+  Guide: docs/CONTAINERS.md. `make docker`, `make anneald`.
+- Decisions: single foreground run per server (unchanged), permission cards
+  global across clients (any client may answer), session/project scoping by
+  *instance-per-scope* — no in-server project registry (would force
+  FileStore/cwd hot-swaps for no benefit given cheap idle-exit instances).
+  GUI remote mode deliberately deferred: its ~30 direct call sites need the
+  RPC surface proven stable first.
+- Codename cleanup: the pre-release codename's migration shims (state-dir
+  rename, legacy reminder detection) removed — never shipped, no legacy
+  state exists.
+- Verified: `make test` + new `core/server` tests (ping/auth/fanout/idle/
+  quit), live smoke: anneald ↔ headless -server (send → provider-unreachable
+  error path, exit 1), Docker run with token auth (bad token rejected),
+  healthz, and idle self-exit of the container.
 
 ### 2026-10-27 — OpenCode-style permission system
 - Reimplemented OpenCode v2's permission model in `core/permission`: ordered
@@ -125,11 +162,10 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - Renamed module/imports (`anneal`), binaries (`anneal`, `anneal-headless`),
   and docs; initially added `anneal-legacy` for the original all-Risor UI and
   e2e drivers (later removed in Phase 6).
-- Compatibility at rename: `~/.fyagent` → `~/.anneal` one-time directory
-  rename; `FYAGENT_*` env aliases, `.fyagent/skills` read path, and
-  `bin/fyagent*` symlinks (the env aliases/symlinks were removed in Phase 6);
-  old `fyagent-memory` reminder detection and the `agent` script global stay
-  for historical sessions/scripts; existing tie collection values preserved.
+- Rename hygiene: the pre-release codename was never shipped, so no
+  compatibility shims are kept (no state-directory migration, no env
+  aliases, no legacy reminder detection; the `agent` script global and
+  existing tie collection values stay).
 - New hybrid shell (`cmd/anneal`): Go/Fyne transcript/composer/permission
   inbox/todos/status/session picker, plus the harness editor/library as an
   embedded `gui.NewCanvasObject` pane (`assets/ui/harness.risor`).
@@ -157,9 +193,10 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
   License added: BSD 3-Clause (same as tie).
 - Phase 6 cleanup: removed `anneal-legacy` and the embedded full UI; full
   scripted UIs run via `anneal -script-ui` (e2e/custom hacking). Removed
-  `FYAGENT_*` env aliases, `.fyagent/skills`, old binary symlinks, and the
-  root build artifact. The `~/.fyagent` one-time state-directory migration and
-  historical `fyagent-memory` detection remain.
+  the codename's env aliases, legacy skills read path, old binary symlinks,
+  and the root build artifact. (The one-time state-directory migration and
+  legacy reminder-detection shims were also removed later — the codename
+  never shipped, so there is no legacy state to migrate.)
 - Activity tab: journey timeline + improvement-run records with candidate
   outcomes/decisions/successor/library entry; Ctrl+1/2/3 switch tabs.
 - Local checkout renamed `fynerisor-agent` → `~/src/anneal`; GitHub remote is

@@ -1,8 +1,6 @@
 # Anneal configuration
 
-State lives under `~/.anneal/` (override with `ANNEAL_HOME`). On first run
-after the rename, an existing `~/.fyagent` directory is renamed to `~/.anneal`
-if the new directory does not exist.
+State lives under `~/.anneal/` (override with `ANNEAL_HOME`).
 
 | path | what |
 |------|------|
@@ -26,6 +24,23 @@ if the new directory does not exist.
 | `ANNEAL_UI_DIR` | full-window script UI directory (`main.risor`, `-script-ui`) |
 | `ANNEAL_PANE_DIR` | scripted-pane directory (`harness.risor`) |
 | `ANNEAL_TEXT_SCALE` | UI text-size multiplier (clamped to 0.6–2.5) |
+| `ANNEAL_LISTEN` | anneald listen addresses (comma-separated: `unix:/path`, `host:port`) |
+| `ANNEAL_IDLE_TIMEOUT_S` | anneald idle auto-shutdown seconds (0 = off) |
+| `ANNEAL_WORK_DIR` | anneald agent working directory |
+| `ANNEAL_AUTH_TOKEN` | anneald bearer token (see `server.auth_token_env`) |
+
+## `server` — anneald backend (server only; GUI/headless ignore it)
+
+Full contract in [PROTOCOL.md](PROTOCOL.md); container guide in
+[CONTAINERS.md](CONTAINERS.md).
+
+| key | default | meaning |
+|-----|---------|---------|
+| `listen` | `["127.0.0.1:7777"]` | listeners: `unix:/path` (0600 socket) and/or `host:port` |
+| `auth_token_env` | `"ANNEAL_AUTH_TOKEN"` | env var holding the bearer token; set + non-empty ⇒ hello must carry it |
+| `idle_timeout_s` | `0` | seconds without client frames/run activity → clean shutdown (0 = never) |
+| `drain_grace_s` | `20` | grace after shutdown start before connections close |
+| `work_dir` | `""` | agent cwd ("" = process cwd; containers use `/anneal/work`) |
 
 ## `ui`
 

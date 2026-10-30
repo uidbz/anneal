@@ -11,17 +11,24 @@ DATADIR ?= $(PREFIX)/share
 APPDIR  ?= $(DATADIR)/applications
 ICONDIR ?= $(DATADIR)/icons/hicolor/scalable/apps
 
-.PHONY: all build test vet fmt check-ui check-script-ui headless clean install uninstall live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke live-m16-test
+.PHONY: all build test vet fmt check-ui check-script-ui headless anneald docker clean install uninstall live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke live-m16-test
 
 all: build
 
-build: anneal headless
+build: anneal headless anneald
 
 anneal:
 	$(GO) build -o $(BIN)/anneal ./cmd/anneal
 
 headless:
 	$(GO) build -o $(BIN)/anneal-headless ./cmd/anneal-headless
+
+anneald:
+	$(GO) build -o $(BIN)/anneald ./cmd/anneald
+
+# Container image (docs/CONTAINERS.md): backend + default dev toolchain.
+docker:
+	docker build -t anneal:dev --build-arg VERSION=$(shell git describe --always --dirty 2>/dev/null || echo dev) .
 
 # Hermetic tests (no network; live-infrastructure tests skip unless opted in)
 test:
@@ -74,6 +81,7 @@ install: build
 	$(INSTALL) -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(APPDIR) $(DESTDIR)$(ICONDIR)
 	$(INSTALL) -m 0755 $(BIN)/anneal $(DESTDIR)$(BINDIR)/anneal
 	$(INSTALL) -m 0755 $(BIN)/anneal-headless $(DESTDIR)$(BINDIR)/anneal-headless
+	$(INSTALL) -m 0755 $(BIN)/anneald $(DESTDIR)$(BINDIR)/anneald
 	$(INSTALL) -m 0644 assets/anneal.desktop $(DESTDIR)$(APPDIR)/anneal.desktop
 	$(INSTALL) -m 0644 assets/anneal.svg $(DESTDIR)$(ICONDIR)/anneal.svg
 	@if [ -z "$(DESTDIR)" ] && command -v update-desktop-database >/dev/null 2>&1; then \
@@ -86,7 +94,7 @@ install: build
 	@echo "desktop entry -> $(APPDIR)/anneal.desktop"
 
 uninstall:
-	rm -f $(DESTDIR)$(BINDIR)/anneal $(DESTDIR)$(BINDIR)/anneal-headless
+	rm -f $(DESTDIR)$(BINDIR)/anneal $(DESTDIR)$(BINDIR)/anneal-headless $(DESTDIR)$(BINDIR)/anneald
 	rm -f $(DESTDIR)$(APPDIR)/anneal.desktop $(DESTDIR)$(ICONDIR)/anneal.svg
 	@echo "uninstalled anneal"
 

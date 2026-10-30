@@ -1,7 +1,6 @@
 # Anneal
 
 A self-improving, opencode-style desktop coding agent in Go.
-**Anneal** is the former **fyagent** (renamed in 2026; see [Migration](#migration)).
 
 - **Agent runtime:** [dive](https://github.com/deepnoodle-ai/dive)
 - **UI:** a plain Go/[Fyne](https://fyne.io) shell for the stable surfaces
@@ -42,6 +41,7 @@ active follow-ups (see [progress.md](progress.md)).
 | MCP | stdio/HTTP servers, `mcp__server__tool` names, permission action per tool |
 | Subagents | `Agent` tool (general-purpose/explore/plan) inheriting permission hooks |
 | Headless | `anneal-headless -p … / -i / -json` with permission policy flags |
+| Backend/frontend split | `anneald` server + WebSocket protocol ([docs/PROTOCOL.md](docs/PROTOCOL.md)); `anneal-headless -server <addr>` drives it remotely; container deployment with idle auto-shutdown ([docs/CONTAINERS.md](docs/CONTAINERS.md)) |
 | Scripted panes | `CanvasObject`-embedded Risor (harness editor now; more panes later) |
 | Script tool | sandboxed Risor v2 data glue for the agent (fynerisor headless `core`; confined fs, no exec/net) |
 
@@ -52,7 +52,8 @@ active follow-ups (see [progress.md](progress.md)).
   Fyne app.
 - `anneal-headless` does not import Fyne (the event bus is UI-agnostic and
   the `script` tool uses fynerisor's GUI-free `core` package), so it builds
-  and runs without GUI libraries.
+  and runs without GUI libraries. Same for `anneald` (the backend server) —
+  it is the CGO-free container binary.
 
 ## Build
 
@@ -86,30 +87,21 @@ unreleased fixes (issues #2–#6 and the `CanvasObject` embedding API, commit
 ./bin/anneal                       # hybrid Go shell + scripted harness pane
 ./bin/anneal-headless -p "…"       # one-shot task, exit 0/1
 ./bin/anneal-headless -i           # REPL
+./bin/anneald                      # backend server (docs/PROTOCOL.md)
+./bin/anneal-headless -server 127.0.0.1:7777 -p "…"   # drive a remote anneald
 ./bin/anneal -rebuild-index        # rebuild the tie session index
 ./bin/anneal -check-ui             # compile-check the scripted pane
 ./bin/anneal -script-ui -check-script-ui  # compile-check a driver UI
 ./bin/anneal -send "task" -quit-after-run   # developer UI smoke
 ```
 
+Container deployment (image carries the runtime + dev toolchain; config and
+state come from one bind mount; server idles itself out): see
+[docs/CONTAINERS.md](docs/CONTAINERS.md). `make docker` builds `anneal:dev`.
+
 Model endpoint: `~/.anneal/config.json` or `ANNEAL_ENDPOINT` /
 `ANNEAL_MODEL`. Everything degrades gracefully: tie down ⇒ session search
 disabled (`index: offline`); Strata cold ⇒ health status and auto-reconnect.
-
-## Migration
-
-Anneal was previously `fyagent`. On first run:
-
-- an existing `~/.fyagent` state directory is renamed to `~/.anneal` if the new
-  one does not exist (sessions, memory, skills, harnesses, logs move together);
-- the script global remains `agent`, so existing `.risor` scripts keep working;
-- existing tie collection names in `config.json` are preserved (new installs
-  default to `anneal`);
-- `fyagent-memory` blocks in historical sessions are still recognized, so they
-  are not re-injected.
-
-The `FYAGENT_*` environment variables and `fyagent` binary symlinks were
-removed with the legacy UI. Use `ANNEAL_*` and `anneal`.
 
 ## Docs
 
@@ -118,6 +110,8 @@ removed with the legacy UI. Use `ANNEAL_*` and `anneal`.
 | [docs/USING.md](docs/USING.md) | GUI tour, slash commands, shortcuts, headless CLI, learning-loop operations |
 | [docs/CONFIG.md](docs/CONFIG.md) | every config key, defaults, env overrides, state dir layout |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | packages, hybrid UI/threading rules, event table, permission/learning/MCP design |
+| [docs/PROTOCOL.md](docs/PROTOCOL.md) | anneald wire protocol (normative) |
+| [docs/CONTAINERS.md](docs/CONTAINERS.md) | containerized backend, mount layout, idle lifecycle |
 | [docs/PLAN.md](docs/PLAN.md) | original design + milestones (historical) |
 | [docs/FYNERISOR-GAPS.md](docs/FYNERISOR-GAPS.md) | fynerisor gaps hit + issue/fix status |
 | [testing/e2e/README.md](testing/e2e/README.md) | Risor driver scripts: live end-to-end gates |
@@ -131,8 +125,11 @@ BSD 3-Clause. See [LICENSE](LICENSE).
 
 ```
 cmd/anneal             hybrid Go/Fyne shell + embedded scripted harness pane
-cmd/anneal-headless    terminal entry (same core, no GUI deps)
+cmd/anneal-headless    terminal entry (same core, no GUI deps; -server drives a remote anneald)
+cmd/anneald            backend server (WebSocket protocol, idle auto-shutdown)
 core/app               wiring + bus API surface + journey tap + MCP connect
+core/server            protocol server: hello/RPC/event fan-out over the bus
+core/client            protocol client (used by -server modes, future GUI remote)
 core/agent             Runner: dive agent per run, tools, hooks, transcripts
 core/events            UI-agnostic event bus (Go shell, journey, headless)
 core/uiapi             script adapter (queue/Ready/vmguard) for fynerisor

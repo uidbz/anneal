@@ -1,11 +1,10 @@
 # Anneal code review
 
-> **Post-review note (2026-10-25):** the project has been renamed from
-> `fyagent` to **Anneal**. The hybrid UI migration (Go/Fyne shell + fynerisor
-> `CanvasObject` panes) and the rename are tracked in the maintainer plan
+> **Post-review note (2026-10-25):** the project is now **Anneal**. The
+> hybrid UI migration (Go/Fyne shell + fynerisor
+> `CanvasObject` panes) is tracked in the maintainer plan
 > `~/.opencode/plan/anneal-hybrid-migration.md` and in `progress.md`. This
-> document is the historical review; product references were updated by the
-> rename.
+> document is the historical review; product references were updated.
 
 **Date:** 2026-10-25
 **Scope:** all first-party Go (`core/`, `cmd/`, `assets/`) and the Risor UI

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/uidbz/anneal/core/fsutil"
@@ -124,6 +125,25 @@ type Improve struct {
 	MaxTotalTokens int    `json:"max_total_tokens"`
 }
 
+// Server configures the anneald backend (docs/PROTOCOL.md). It is only
+// consumed by cmd/anneald; GUI/headless ignore it.
+type Server struct {
+	// Listen addresses: "unix:/path/to/sock" or "host:port" (TCP).
+	Listen []string `json:"listen"`
+	// AuthTokenEnv names the env var whose value clients must present in the
+	// hello frame. "" disables auth; a set env var enables it.
+	AuthTokenEnv string `json:"auth_token_env"`
+	// IdleTimeoutS shuts the server down (clean exit) after this many seconds
+	// without any client frame or run activity. 0 = never.
+	IdleTimeoutS int `json:"idle_timeout_s"`
+	// DrainGraceS is the grace window after a shutdown signal (idle timer,
+	// SIGTERM, or server.quit) before connections are closed.
+	DrainGraceS int `json:"drain_grace_s"`
+	// WorkDir is the agent working directory for this instance (the project
+	// root the server operates on). "" = process cwd.
+	WorkDir string `json:"work_dir"`
+}
+
 type Config struct {
 	// Permission is the global OpenCode-style ruleset:
 	//
@@ -146,6 +166,7 @@ type Config struct {
 	Harness     Harness           `json:"harness"`
 	Improve     Improve           `json:"improve"`
 	UI          UI                `json:"ui"`
+	Server      Server            `json:"server"`
 
 	path string `json:"-"`
 }
@@ -182,6 +203,12 @@ func Default() *Config {
 		Harness:    Harness{Enabled: true, CharLimit: 6000},
 		Improve:    Improve{Enabled: true, Library: true, K: 1, Mode: "sequential"},
 		UI:         UI{TextScale: 1.0},
+		Server: Server{
+			Listen:       []string{"127.0.0.1:7777"},
+			AuthTokenEnv: "ANNEAL_AUTH_TOKEN",
+			IdleTimeoutS: 0,
+			DrainGraceS:  20,
+		},
 	}
 }
 
@@ -224,6 +251,26 @@ func Load() (*Config, error) {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			cfg.UI.TextScale = f
 		}
+	}
+	// Server overrides (container-oriented).
+	if v := os.Getenv("ANNEAL_LISTEN"); v != "" {
+		var ls []string
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				ls = append(ls, p)
+			}
+		}
+		if len(ls) > 0 {
+			cfg.Server.Listen = ls
+		}
+	}
+	if v := os.Getenv("ANNEAL_IDLE_TIMEOUT_S"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Server.IdleTimeoutS = n
+		}
+	}
+	if v := os.Getenv("ANNEAL_WORK_DIR"); v != "" {
+		cfg.Server.WorkDir = v
 	}
 	cfg.normalize()
 	return cfg, nil
@@ -294,6 +341,15 @@ func (c *Config) normalize() {
 	}
 	if c.Review.MaxAgeS <= 0 {
 		c.Review.MaxAgeS = d.Review.MaxAgeS
+	}
+	if len(c.Server.Listen) == 0 {
+		c.Server.Listen = d.Server.Listen
+	}
+	if c.Server.IdleTimeoutS < 0 {
+		c.Server.IdleTimeoutS = 0
+	}
+	if c.Server.DrainGraceS <= 0 {
+		c.Server.DrainGraceS = d.Server.DrainGraceS
 	}
 	c.UI.TextScale = ClampTextScale(c.UI.TextScale)
 }

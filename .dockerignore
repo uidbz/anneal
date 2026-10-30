@@ -1,0 +1,8 @@
+.git
+bin
+testing
+docs
+*.md
+Dockerfile
+.dockerignore
+assets

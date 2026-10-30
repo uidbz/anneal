@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -31,6 +32,7 @@ type inspectorPanel struct {
 	ctxTokens *themedText
 	ctxComp   *themedText
 	sessID    *themedText
+	sessCwd   *themedText
 	sessMode  *themedText
 	harness   *themedText
 
@@ -59,6 +61,7 @@ func newInspectorPanel(s *shell) *inspectorPanel {
 	)
 
 	p.sessID = newThemedText("", colorMuted)
+	p.sessCwd = newThemedText("", colorMuted)
 	p.sessMode = newThemedText("", colorMuted)
 	p.harness = newThemedText("", colorMuted)
 	copyBtn := iconButton(theme.ContentCopyIcon(), func() {
@@ -70,8 +73,16 @@ func newInspectorPanel(s *shell) *inspectorPanel {
 	})
 	copyBtn.Importance = widget.LowImportance
 	idRow := container.NewBorder(nil, nil, nil, copyBtn, p.sessID)
+
+	cwdCopy := iconButton(theme.ContentCopyIcon(), func() {
+		s.win.Clipboard().SetContent(s.a.Runner.Cwd())
+		s.notice(noticeSuccess, "Working directory copied.")
+	})
+	cwdCopy.Importance = widget.LowImportance
+	cwdRow := container.NewBorder(nil, nil,
+		container.New(&padLayout{l: 0, r: spaceS, t: 0, b: 0}, newSectionLabel("CWD")), cwdCopy, p.sessCwd)
 	p.session = container.NewVBox(
-		newSectionLabel("SESSION"), idRow, p.sessMode, p.harness,
+		newSectionLabel("SESSION"), idRow, cwdRow, p.sessMode, p.harness,
 	)
 
 	body := container.New(&columnLayout{gap: 0}, p.tasksSection, dividerBlock(),
@@ -105,6 +116,7 @@ func (p *inspectorPanel) refresh() {
 		p.ctxComp.SetText("")
 	}
 	p.sessID.SetText(shortSessionID(p.s.sessionID))
+	p.sessCwd.SetText(shortPath(p.s.a.Runner.Cwd(), 34))
 	p.sessMode.SetText(modeLabel(p.s.mode))
 	p.harness.SetText(harnessLabel(p.s))
 	p.object.Refresh()
@@ -118,6 +130,18 @@ func shortSessionID(id string) string {
 		return id[:18] + "…"
 	}
 	return id
+}
+
+// shortPath keeps the tail of a path readable in the narrow inspector.
+func shortPath(path string, max int) string {
+	if len(path) <= max {
+		return path
+	}
+	tail := path[len(path)-max+1:]
+	if i := strings.IndexByte(tail, '/'); i >= 0 {
+		tail = tail[i+1:]
+	}
+	return "…/" + tail
 }
 
 func modeLabel(mode string) string {

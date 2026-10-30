@@ -44,7 +44,10 @@ small IDE.
   once**; Ctrl+Enter (with an empty composer) allows the oldest card once.
 - **Inspector** (right, Ctrl+J): task checklist with progress count, a context
   meter (amber at 70 %, red at 82 %), token totals, compaction count, session
-  ID (copy button), mode, and whether an improvement overlay is active.
+  ID and **working directory** (both copyable), mode, and whether an
+  improvement overlay is active. The working directory is the process cwd:
+  where you launched `anneal`, or the `server.work_dir`/process cwd for
+  `anneald`; sessions do not store their own cwd.
 - **Status bar**: run state and elapsed time on the left; model, index, MCP,
   and token/context chips on the right (the model and MCP chips open Settings;
   the index chip asks before re-indexing).
@@ -72,6 +75,7 @@ small IDE.
 | `/new`, `/sessions` | session control |
 | `/plan`, `/build` | permission mode |
 | `/textsize [120%\|+10%\|1.2\|reset]` | show/change the UI text size |
+| `/cwd`, `/pwd` | show the agent's working directory (also in the inspector) |
 | `/skills` | list installed skills |
 | `/memory` | show MEMORY.md / USER.md with usage vs caps |
 | `/journey` | self-improvement timeline |

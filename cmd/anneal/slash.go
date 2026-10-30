@@ -33,6 +33,8 @@ func (s *shell) slash(line string) {
 			return
 		}
 		s.setThemeMode(fields[1])
+	case "/cwd", "/pwd":
+		s.notice(noticeInfo, "Working directory: "+s.a.Runner.Cwd())
 	case "/memory":
 		m, _ := s.a.Mem.Read("memory")
 		u, _ := s.a.Mem.Read("user")

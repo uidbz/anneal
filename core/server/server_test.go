@@ -282,6 +282,55 @@ func TestTokenlessBindPolicy(t *testing.T) {
 	}
 }
 
+// TestNotificationNoReply: a request frame without an id must never be
+// answered, even for unknown methods; a following normal request works.
+func TestNotificationNoReply(t *testing.T) {
+	s, _ := startTest(t, nil)
+	addr := s.Addrs()[0]
+	ws, _, err := websocket.DefaultDialer.Dial("ws://"+addr+"/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	if err := ws.WriteJSON(map[string]any{"type": "hello", "proto": ProtoVersion}); err != nil {
+		t.Fatal(err)
+	}
+	var ack map[string]any
+	if err := ws.ReadJSON(&ack); err != nil || ack["type"] != "hello.ack" {
+		t.Fatalf("ack: %v %v", ack, err)
+	}
+	// Notifications first, then a normal request; collect frames until the
+	// ping reply. Any jsonrpc frame with a foreign id means the server
+	// wrongly answered a notification. (Do not drain via read-timeout:
+	// gorilla marks the conn permanently bad after an i/o timeout.)
+	for _, note := range []any{
+		map[string]any{"jsonrpc": "2.0", "method": "mode.get"},
+		map[string]any{"jsonrpc": "2.0", "method": "no.such"},
+	} {
+		if err := ws.WriteJSON(note); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ws.WriteJSON(map[string]any{"jsonrpc": "2.0", "id": "9", "method": "server.ping"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		ws.SetReadDeadline(deadline)
+		var f map[string]any
+		if err := ws.ReadJSON(&f); err != nil {
+			t.Fatalf("waiting for ping reply: %v", err)
+		}
+		if _, isReply := f["jsonrpc"]; !isReply {
+			continue // replay/bus events
+		}
+		if f["id"] == "9" {
+			return
+		}
+		t.Fatalf("server replied to a notification: %v", f)
+	}
+}
+
 func TestQuitRPC(t *testing.T) {
 	s, c := startTest(t, nil)
 	callOK(t, c, "server.quit", map[string]any{"reason": "test"})

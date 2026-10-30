@@ -249,12 +249,19 @@ func (s *Server) touch() {
 
 // fanout is the single bus tap: marshal once, queue per connection. Blocking
 // a tap is forbidden by the bus contract, so a full queue kills the client.
+// With no connections it returns before marshalling — the tap outlives Run
+// (the bus has no unsubscribe), and closeConns empties the map.
 func (s *Server) fanout(v any) {
-	data, err := json.Marshal(v)
-	if err != nil {
+	s.mu.Lock()
+	if len(s.conns) == 0 {
+		s.mu.Unlock()
 		return
 	}
-	s.mu.Lock()
+	data, err := json.Marshal(v)
+	if err != nil {
+		s.mu.Unlock()
+		return
+	}
 	var dead []*conn
 	for c := range s.conns {
 		select {
@@ -275,6 +282,7 @@ func (s *Server) closeConns() {
 	for c := range s.conns {
 		conns = append(conns, c)
 	}
+	s.conns = map[*conn]struct{}{} // stop fanout work for dead connections
 	s.mu.Unlock()
 	for _, c := range conns {
 		c.close()

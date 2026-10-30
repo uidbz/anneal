@@ -8,10 +8,10 @@ existing frame shape or method semantic bumps `proto`.
 
 ## Transport
 
-One WebSocket connection per client. HTTP upgrade on path `/ws` (any path is
-upgraded today; `/ws` is the documented default). Also served: `GET
-/healthz` → `{"ok":true,"version":"…","reason":""}` for container health
-probes (plain HTTP, no auth).
+One WebSocket connection per client. HTTP upgrade on path `/ws` only (other
+paths 404). Also served: `GET /healthz` →
+`{"ok":true,"version":"…","reason":""}` for container health probes
+(plain HTTP, no auth).
 
 Listeners (config `server.listen`, comma-separated):
 
@@ -127,7 +127,7 @@ accepted — their effects arrive as events).
 | `tie.state` | – | index state |
 | `index.rebuild` | – | null (progress via `tie.rebuilt`) |
 | `config.get` | – | full config document |
-| `config.set` | `{doc}` (full document; omitted keys = defaults) | `{"ok":true}` |
+| `config.set` | `{doc}` (full document; omitted keys = defaults; the `server` group takes effect only on restart) | `{"ok":true}` |
 | `learn.now` | – | null (result via `review.done`) |
 | `memory.view` / `memory.pending` | – | store views |
 | `memory.respond` | `{id,action}` `approve\|reject` | null |

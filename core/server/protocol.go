@@ -126,30 +126,32 @@ func (s *Server) serve(ws *websocket.Conn, h *helloFrame) {
 	})
 	c := &conn{srv: s, ws: ws, send: make(chan []byte, connQueue), die: make(chan struct{})}
 
-	// ack before registering so the client knows replay events are coming;
-	// register before replaying so the replay reaches this connection.
-	_ = ws.WriteJSON(map[string]any{
-		"type": "hello.ack", "proto": ProtoVersion, "server": s.Version,
-		"idle_timeout_s": s.cfg.IdleTimeoutS, "drain_grace_s": s.cfg.DrainGraceS,
-	})
 	s.mu.Lock()
-	if s.reason != "" { // raced with shutdown
+	if s.reason != "" { // raced with shutdown: refuse instead of a silent close
+		reason := s.reason
 		s.mu.Unlock()
-		c.close()
+		_ = ws.WriteJSON(map[string]any{"type": "hello.reject", "proto": ProtoVersion,
+			"error": "server is shutting down (" + reason + ")"})
+		ws.Close()
 		return
 	}
 	s.conns[c] = struct{}{}
 	s.mu.Unlock()
-
-	go c.writeLoop()
-	s.App.ReplayState() // idempotent state replay: session.opened/mode/todo
-
+	// Cleanup installed before anything else can fail on this path.
 	defer func() {
 		s.mu.Lock()
 		delete(s.conns, c)
 		s.mu.Unlock()
 		c.close()
 	}()
+
+	_ = ws.WriteJSON(map[string]any{
+		"type": "hello.ack", "proto": ProtoVersion, "server": s.Version,
+		"idle_timeout_s": s.cfg.IdleTimeoutS, "drain_grace_s": s.cfg.DrainGraceS,
+	})
+
+	go c.writeLoop()
+	s.App.ReplayState() // idempotent state replay: session.opened/mode/todo
 
 	methods := s.methods()
 	for {
@@ -189,27 +191,40 @@ func (c *conn) writeLoop() {
 	}
 }
 
-// dispatch parses one frame and answers it (unless it is a notification).
+// dispatch parses one frame and answers it. Per spec, notifications (no id)
+// never receive a reply; their failures surface as events. Parse errors are
+// replyable with id null because the id cannot be extracted.
 func (s *Server) dispatch(c *conn, methods map[string]handler, data []byte) {
 	var r rpcReq
-	if err := json.Unmarshal(data, &r); err != nil || r.JSONRPC != "2.0" || r.Method == "" {
-		s.reply(c, nil, &rpcErr{codeParse, "invalid request"})
+	if err := json.Unmarshal(data, &r); err != nil {
+		s.reply(c, json.RawMessage("null"), &rpcErr{codeParse, "invalid request"})
+		return
+	}
+	notif := isNotification(r.ID)
+	if r.JSONRPC != "2.0" || r.Method == "" {
+		if !notif {
+			s.reply(c, r.ID, &rpcErr{codeInvalid, "request must carry jsonrpc 2.0 and a method"})
+		}
 		return
 	}
 	s.mu.Lock()
 	shutting := s.reason != ""
 	s.mu.Unlock()
 	if shutting && r.Method != "server.quit" {
-		s.reply(c, r.ID, &rpcErr{codeShutting, "server is shutting down"})
+		if !notif {
+			s.reply(c, r.ID, &rpcErr{codeShutting, "server is shutting down"})
+		}
 		return
 	}
 	h, ok := methods[r.Method]
 	if !ok {
-		s.reply(c, r.ID, &rpcErr{codeNoMethod, "unknown method: " + r.Method})
+		if !notif {
+			s.reply(c, r.ID, &rpcErr{codeNoMethod, "unknown method: " + r.Method})
+		}
 		return
 	}
 	result, err := h(r.Params)
-	if isNotification(r.ID) {
+	if notif {
 		return // notifications get no reply, errors surface as events
 	}
 	if err != nil {

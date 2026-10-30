@@ -32,7 +32,8 @@ State lives under `~/.anneal/` (override with `ANNEAL_HOME`).
 ## `server` — anneald backend (server only; GUI/headless ignore it)
 
 Full contract in [PROTOCOL.md](PROTOCOL.md); container guide in
-[CONTAINERS.md](CONTAINERS.md).
+[CONTAINERS.md](CONTAINERS.md). These keys are read when anneald starts:
+changing them (via file edit or `config.set`) requires a restart.
 
 | key | default | meaning |
 |-----|---------|---------|

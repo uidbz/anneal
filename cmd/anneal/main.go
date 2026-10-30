@@ -244,8 +244,8 @@ func (s *shell) build() {
 	s.todos = container.NewVBox()
 	s.activity = container.NewVBox()
 
-	sendBtn := widget.NewButton("send", s.submit)
-	stopBtn := widget.NewButton("stop", func() {
+	sendBtn := widget.NewButtonWithIcon("send", theme.MailSendIcon(), s.submit)
+	stopBtn := widget.NewButtonWithIcon("stop", theme.MediaStopIcon(), func() {
 		s.status.SetText("stopping…")
 		s.a.Runner.Interrupt()
 	})
@@ -1130,6 +1130,9 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.resetChat()
 		for _, raw := range list(e["blocks"]) {
 			s.renderBlock(obj(raw))
+		}
+		if len(list(e["blocks"])) == 0 {
+			s.addNotice("welcome — describe a task below, or /help for commands")
 		}
 		title := str(e["title"])
 		if title != "" {

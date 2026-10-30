@@ -396,7 +396,11 @@ func (s *Server) methods() map[string]handler {
 	}
 	m["tie.state"] = func(json.RawMessage) (any, error) { return a.Tie.State(), nil }
 	m["index.rebuild"] = func(json.RawMessage) (any, error) {
+		if !s.rebuilding.CompareAndSwap(false, true) {
+			return nil, &wrapped{codeHandler, fmt.Errorf("index: rebuild already running")}
+		}
 		go func() {
+			defer s.rebuilding.Store(false)
 			n, err := a.Runner.RebuildIndex(context.Background())
 			msg := map[string]any{"type": "tie.rebuilt", "sessions": n, "error": ""}
 			if err != nil {
@@ -404,7 +408,7 @@ func (s *Server) methods() map[string]handler {
 			}
 			a.Bus.Emit(msg)
 		}()
-		return nil, nil
+		return map[string]any{"started": true}, nil
 	}
 
 	// config
@@ -521,12 +525,10 @@ func (s *Server) methods() map[string]handler {
 			return nil, err
 		}
 		err := a.Harness.SaveFile(p.Name, p.Content)
-		warns := a.Harness.Validate(a.Cfg.Harness.CharLimit)
-		if warns == nil {
-			warns = []string{}
-		}
+		warns := nzs(a.Harness.Validate(a.Cfg.Harness.CharLimit))
 		a.Bus.Emit(map[string]any{"type": "harness.warn", "warns": warns, "saved": p.Name})
-		return map[string]any{"error": errStr(err), "warns": warns}, nil
+		return map[string]any{"error": errStr(err), "warns": warns,
+			"restart_for_rules": true}, nil
 	}
 	m["harness.lib"] = func(json.RawMessage) (any, error) {
 		if l := a.Libs.List(); l != nil {
@@ -548,9 +550,11 @@ func (s *Server) methods() map[string]handler {
 			return nil, err
 		}
 		backup, err := a.Libs.Promote(p.ID)
+		warns := nzs(a.Harness.Validate(a.Cfg.Harness.CharLimit))
 		a.Bus.Emit(map[string]any{"type": "harness.promoted", "entry": p.ID,
-			"backup": backup, "error": errStr(err)})
-		return map[string]any{"entry": p.ID, "backup": backup, "error": errStr(err)}, nil
+			"backup": backup, "error": errStr(err), "warns": warns})
+		a.Journey.Append("harness-promote", map[string]any{"entry": p.ID, "backup": backup})
+		return map[string]any{"entry": p.ID, "backup": backup, "error": errStr(err), "warns": warns}, nil
 	}
 	m["improve.start"] = func(params json.RawMessage) (any, error) {
 		var p pImprove
@@ -578,4 +582,13 @@ func errStr(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// nzs normalizes nil string slices to [] so JSON payloads keep the core's
+// "empty lists are [], never null" rule (see ARCHITECTURE.md events table).
+func nzs(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }

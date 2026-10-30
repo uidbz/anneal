@@ -125,7 +125,7 @@ accepted — their effects arrive as events).
 | `provider.state` | – | health struct |
 | `provider.probe` | – | health struct (probe async) |
 | `tie.state` | – | index state |
-| `index.rebuild` | – | null (progress via `tie.rebuilt`) |
+| `index.rebuild` | – | `{"started":true}`; `-32000` if a rebuild is already running (progress via `tie.rebuilt`) |
 | `config.get` | – | full config document |
 | `config.set` | `{doc}` (full document; omitted keys = defaults; the `server` group takes effect only on restart) | `{"ok":true}` |
 | `learn.now` | – | null (result via `review.done`) |
@@ -137,8 +137,8 @@ accepted — their effects arrive as events).
 | `flags.peek` | `{n}` | reviewer flags |
 | `harness.info` / `harness.files` / `harness.lib` | – | harness views |
 | `harness.get` / `harness.lib_experience` | `{id}` / `{name}` | content |
-| `harness.save` | `{name,content}` | `{error,warns}` |
-| `harness.lib_promote` | `{id}` | `{entry,backup,error}` |
+| `harness.save` | `{name,content}` | `{error,warns,restart_for_rules}` |
+| `harness.lib_promote` | `{id}` | `{entry,backup,error,warns}` |
 | `improve.start` | `{k,mode,resume}` | `{"started":true}` (progress via `improve.*` events) |
 
 Errors: JSON-RPC codes `-32700` parse, `-32600` invalid, `-32601` unknown

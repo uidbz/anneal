@@ -2,17 +2,19 @@
 #
 # The image carries everything an agent run needs (anneald + toolchains);
 # all configuration and state come from a single bind mount at /anneal
-# (docs/CONTAINERS.md). Built with -mod handling for the local fynerisor
-# replace: the server binary only needs the public module (its GUI-free
-# core package), so the replace is dropped before download.
+# (docs/CONTAINERS.md).
 
-ARG VERSION=dev
 FROM golang:1.27 AS build
+# Re-declare after FROM: ARGs before the first FROM are not visible in
+# build stages.
+ARG VERSION=dev
 WORKDIR /src
 COPY . .
-# The local go.mod replaces fynerisor with a sibling checkout (unreleased GUI
-# fixes). The server binary only needs fynerisor's public GUI-free core, so
-# the replace is dropped and the pinned public pseudo-version is used.
+# Defensive: development trees sometimes carry a local `replace` for
+# fynerisor (unreleased GUI fixes). The server binary only needs
+# fynerisor's public GUI-free core, so any such replace is dropped and
+# the pinned public pseudo-version from go.mod is used. No-op on the
+# committed module, which already pins the public version.
 RUN go mod edit -dropreplace github.com/uidbz/fynerisor && go mod download
 RUN CGO_ENABLED=0 go build -trimpath \
 		-ldflags "-s -w -X main.version=${VERSION}-container" \

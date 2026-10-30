@@ -49,7 +49,12 @@ changing them (via file edit or `config.set`) requires a restart.
 |-----|---------|---------|
 | `ui_dir` | `""` | full-window script UI override (`ANNEAL_UI_DIR`) |
 | `pane_dir` | `""` | scripted harness-pane override (`ANNEAL_PANE_DIR`) |
-| `text_scale` | 1.0 | text-size multiplier, clamped to `0.6`–`2.5`; also `A-` / `A+`, Ctrl+= / Ctrl+- / Ctrl+0, or `/textsize` |
+| `text_scale` | 1.0 | text-size multiplier, clamped to `0.6`–`2.5`; also Ctrl+= / Ctrl+- / Ctrl+0, Settings → Appearance, or `/textsize` |
+| `theme` | `"system"` | `system`, `light`, or `dark`; also View ▸ Theme in the menu bar; `ANNEAL_THEME` env overrides |
+| `sidebar_open` | `true` | sessions sidebar visible (Ctrl+B) |
+| `inspector_open` | `true` | tasks/context inspector visible (Ctrl+J) |
+| `sidebar_width` | 240 | sidebar width in px, clamped to 180–480; saved when the split handle is dragged |
+| `inspector_width` | 280 | inspector width in px, clamped to 180–480 |
 
 ## `provider`
 
@@ -387,6 +392,9 @@ only via explicit `/harness promote <id>` (headless REPL; backups under
 |-----|---------|---------|
 | `ui_dir` | `""` | full-window script UI directory (`main.risor`, `-script-ui`); `ANNEAL_UI_DIR` env does the same |
 | `pane_dir` | `""` | scripted-pane directory (`harness.risor`); `ANNEAL_PANE_DIR` env does the same |
+| `theme` | `"system"` | window/theme mode: `system`, `light`, or `dark`; `ANNEAL_THEME` env does the same |
+| `sidebar_open` / `inspector_open` | `true` | panel visibility, toggled with Ctrl+B / Ctrl+J |
+| `sidebar_width` / `inspector_width` | 240 / 280 | panel widths in px (180–480), persisted from the split handles |
 
 ## Live-DB test opt-ins
 

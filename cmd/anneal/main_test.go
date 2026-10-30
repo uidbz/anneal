@@ -43,7 +43,7 @@ func TestEventHelpers(t *testing.T) {
 }
 
 func TestPaneEventFilter(t *testing.T) {
-	for _, typ := range []string{"improve.done", "harness.promoted", "review.flag", "config.changed"} {
+	for _, typ := range []string{"improve.done", "harness.promoted", "review.flag", "config.changed", "harness.refresh"} {
 		if !paneEvent(map[string]any{"type": typ}) {
 			t.Errorf("%s filtered out", typ)
 		}

@@ -177,7 +177,11 @@ func (b *Bridge) deliver(jsonStr string, attempt int) {
 				fmt.Fprintf(os.Stderr, "uiapi: recovered panic in script handler: %v\n%s\n", r, debug.Stack())
 			}
 		}()
-		_, err := vmguard.Call(callFunc, context.Background(), cb, []object.Object{object.NewString(jsonStr)})
+		// Event handlers run outside a builtin, but they may create widgets
+		// (a rebuild): widget constructors need the VM's call func via
+		// object.GetCallFunc, so hand them the one captured at on() time.
+		ctx := object.WithCallFunc(context.Background(), callFunc)
+		_, err := vmguard.Call(callFunc, ctx, cb, []object.Object{object.NewString(jsonStr)})
 		if err == nil {
 			return
 		}

@@ -67,6 +67,7 @@ type shell struct {
 	clockStop  chan struct{}
 	runStarted time.Time
 	ctxWindow  int
+	mcpServers []map[string]any
 
 	// Navigation and frame.
 	frame     *chromeframe
@@ -216,17 +217,25 @@ func (s *shell) harnessView() fyne.CanvasObject {
 }
 
 func (s *shell) activityView() fyne.CanvasObject {
+	body := newSurface(colorSidebar, container.New(&padLayout{l: spaceXL, r: spaceXL, t: spaceM, b: spaceM}, s.activity))
 	return container.NewBorder(s.activityHeader.object, nil, nil, nil,
-		container.NewVScroll(newSurface(colorSidebar, container.New(&padLayout{l: spaceXL, r: spaceXL, t: spaceM, b: spaceM}, s.activity))))
+		container.NewVScroll(container.New(&padLayout{l: 0, r: 0, t: 0, b: 0},
+			container.New(&maxWidthLayout{max: 900}, body))))
 }
 
 func (s *shell) settingsView() fyne.CanvasObject {
-	return container.NewBorder(s.settingsHeader.object, nil, nil, nil, s.settingsPage())
+	s.settingsForm = newSettingsPanel(s)
+	return container.NewBorder(s.settingsHeader.object, nil, nil, nil, s.settingsForm.Object())
 }
 
 // showView switches the main content view and updates the rail.
 func (s *shell) showView(v viewID) {
 	if _, ok := s.views[v]; !ok {
+		return
+	}
+	// Leaving Settings with unsaved edits asks first.
+	if s.view == viewSettings && v != viewSettings && s.settingsForm != nil && s.settingsForm.dirty {
+		s.settingsForm.confirmDiscard(func() { s.showView(v) })
 		return
 	}
 	for id, view := range s.views {

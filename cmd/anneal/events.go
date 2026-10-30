@@ -58,6 +58,10 @@ func (s *shell) handleEvent(e map[string]any) {
 		}
 	case "mcp.state":
 		servers := list(e["servers"])
+		s.mcpServers = nil
+		for _, raw := range servers {
+			s.mcpServers = append(s.mcpServers, obj(raw))
+		}
 		up, tools := 0, 0
 		for _, raw := range servers {
 			srv := obj(raw)

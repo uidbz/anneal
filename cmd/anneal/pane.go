@@ -83,7 +83,7 @@ func paneEvent(v any) bool {
 		return false
 	}
 	switch m["type"] {
-	case "harness.warn", "harness.warning", "harness.promoted",
+	case "harness.warn", "harness.warning", "harness.promoted", "harness.refresh",
 		"improve.done", "improve.library", "improve.error",
 		"review.flag", "config.changed":
 		return true

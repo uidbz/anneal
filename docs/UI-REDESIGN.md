@@ -160,43 +160,43 @@ Decisions (agreed with the user):
 
 ## Phase 7 — secondary views
 
-- Settings form (Appearance, Model, Agent, Learning, Context,
+- [x] Settings form (Appearance, Model, Agent, Learning, Context,
   Integrations, Permissions): edits a deep copy of the config, Save goes
   through `App.SaveConfig` (same validation), Revert, inline numeric
   validation (Save disabled while invalid), "Edit JSON…" fallback, discard
   confirm when leaving dirty, "changed elsewhere" banner on external
   `config.changed`. Appearance applies (and persists) immediately.
-- Activity: header + Refresh; journey rows (timestamp column, kind badge,
+- [x] Activity: header + Refresh; journey rows (timestamp column, kind badge,
   readable text, newest first); improvement-run cards (outcome, task, note,
   overlay, library entry, candidates, collapsible decisions).
-- Harness view: Go header (title, root path, Refresh, Improve); the Risor
+- [x] Harness view: Go header (title, root path, Refresh, Improve); the Risor
   pane renders only content (see below).
-- Dialogs: shared monospace text dialog with Copy; Help → Commands /
+- [x] Dialogs: shared monospace text dialog with Copy; Help → Commands /
   Keyboard shortcuts tables; About.
 
 ### Risor (harness pane) constraints
 
-- The pane draws with the host app theme; it must not draw its own colored
+- [x] The pane draws with the host app theme; it must not draw its own colored
   backgrounds (`canvas.NewRectangle` takes fixed colors and cannot follow a
   theme switch). Styling = `Card`, `Separator`, `Accordion`, label/button
   `Importance` (via `constants.*`), `TextStyle`.
-- Risor v2 rules: no loops (recursion with pre-declared slots), closures see
+- [x] Risor v2 rules: no loops (recursion with pre-declared slots), closures see
   only earlier definitions, `} else {` on one line, `sprintf` for numbers,
   every JSON key always present and lists `[]` (never `null`), no keyword
   keys.
-- No host-window capability (no dialogs/shortcuts) — unchanged.
-- Go header Refresh emits `harness.refresh` (added to the pane event
+- [x] No host-window capability (no dialogs/shortcuts) — unchanged.
+- [x] Go header Refresh emits `harness.refresh` (added to the pane event
   filter); the script rebuilds unless an editor has unsaved changes (second
   Refresh forces). Improve uses the Go `improveNow()`; `agent.improveStart`
   stays for compatibility.
-- Pane layout: Overview card (root, DISABLED badge, components, guardrail
+- [x] Pane layout: Overview card (root, DISABLED badge, components, guardrail
   counts, hint) → Accordion of files (editor, per-file status, Save) →
   Improvement library card (id, situation, Experience / Promote with
   `WarningImportance` confirm) → Reviewer flags card → Experience card →
   notice label. Open accordion items survive rebuilds.
-- Gap: MultiLineEntry has no `SetMinRowsVisible` binding — logged in
+- [x] Gap: MultiLineEntry has no `SetMinRowsVisible` binding — logged in
   `docs/FYNERISOR-GAPS.md`.
-- Tests: pane execution test in light and dark; unsaved-changes guard;
+- [x] Tests: pane execution test in light and dark; unsaved-changes guard;
   promote two-step; `harness.refresh` passes `paneEvent`; `-check-ui`.
 
 ## Phase 8 — polish, docs, verification

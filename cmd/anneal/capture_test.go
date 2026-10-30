@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/test"
 
 	coreapp "github.com/uidbz/anneal/core/app"
+	"github.com/uidbz/anneal/core/paths"
 )
 
 // TestUICapture renders the shell with a representative session through the
@@ -32,6 +33,7 @@ func TestUICapture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedHarnessFiles(t, a)
 	fyneApp := test.NewApp()
 	t.Cleanup(fyneApp.Quit)
 	mode := os.Getenv("ANNEAL_UI_CAPTURE_THEME")
@@ -52,8 +54,9 @@ func TestUICapture(t *testing.T) {
 	win.SetContent(sh.root)
 	win.Resize(fyne.NewSize(1280, 800))
 	feedSampleSession(sh)
+	seedActivity(t, a)
+	sh.refreshActivity()
 	win.Canvas().Unfocus() // show the composer placeholder
-	t.Logf("entry text=%q placeholder=%q", sh.entry.Text, sh.entry.PlaceHolder)
 	// The harness pane is a scripted view; run it so the capture shows it.
 	sh.harness.Execute()
 	waitPaneReady(t, sh)
@@ -179,5 +182,25 @@ func waitPaneReady(t *testing.T, sh *shell) {
 			t.Fatalf("pane did not finish; status %q", st)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// seedActivity gives the Activity view a journey and one improvement run.
+func seedActivity(t *testing.T, a *coreapp.App) {
+	t.Helper()
+	a.Journey.Append("review", map[string]any{"session": "s1", "lessons": 3})
+	a.Journey.Append("memory-add", map[string]any{"target": "user"})
+	a.Journey.Append("improve", map[string]any{"run": "20261030-101500", "successor": true})
+	dir := filepath.Join(paths.Improvements(), "20261030-101500")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	step := `{"run_id":"20261030-101500","task":"fix the CRLF parser bug","k":2,"mode":"sequential",
+		"candidates":[{"kind":"skills","probe":{"steps":[{"name":"Read"},{"name":"Write"}]}},
+		{"kind":"prompt","skipped":"no measurable gain"}],
+		"decisions":"Adopt the skills change; prompt edit was not evidence-backed.",
+		"successor":"/tmp/overlay","library_entry":"lib-20261030"}`
+	if err := os.WriteFile(filepath.Join(dir, "step.json"), []byte(step), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

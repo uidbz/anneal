@@ -2,9 +2,15 @@
 // shell. Pull-based by design: the pane refreshes after each action; live
 // improve/review events are rendered by the Go transcript.
 //
+// Styling rules for scripted panes: use standard widgets (Card, Separator,
+// Label/Button Importance, TextStyle) so the pane follows the host app's
+// light/dark theme and text scale. Never draw colored rectangles here — a
+// fixed color cannot follow a theme switch.
+//
 // Risor v2 constraints: no loops, no ternary, if conditions need parentheses,
 // else must hug the closing brace, arrays concatenate with +, and closures see
-// free variables at compile time (placeholders first).
+// free variables at compile time (placeholders first). Map index reads on a
+// missing key are hard errors, so state that needs looking up uses lists.
 require(["v0.9", "@gui", "@json"])
 
 let label = (text) => {
@@ -13,15 +19,15 @@ let label = (text) => {
     return l
 }
 
-// section heading (bold) and hint (low-emphasis gray) for hierarchy
-let head = (text) => {
-    let l = label(text)
-    l.TextStyle.Bold = true
-    return l
-}
 let hint = (text) => {
     let l = label(text)
-    l.Importance = 2
+    l.Importance = constants.ImportanceLow
+    return l
+}
+
+let bold = (text) => {
+    let l = label(text)
+    l.TextStyle.Bold = true
     return l
 }
 
@@ -30,94 +36,151 @@ let short = (s, n) => {
     return s[0:n] + "…"
 }
 
+// --- state -----------------------------------------------------------------
 let msg = ""
-let pendingPromote = ""
+let forceRefresh = false
 let openExp = ""
+let pendingPromote = ""
+let unsaved = []
 let notice = label("")
 let build = () => {}
-let refresh = () => { build() }
+let requestRefresh = () => {}
+let requestRefreshForce = () => {}
 
+// --- list helpers (no map lookups: missing keys are hard errors) -----------
+let contains = (arr, i, name) => false
+contains = (arr, i, name) => {
+    if (i >= len(arr)) { return false }
+    if (arr[i] == name) { return true }
+    return contains(arr, i + 1, name)
+}
+
+let without = (arr, i, name, acc) => acc
+without = (arr, i, name, acc) => {
+    if (i >= len(arr)) { return acc }
+    if (arr[i] == name) { return without(arr, i + 1, name, acc) }
+    return without(arr, i + 1, name, acc + [arr[i]])
+}
+
+let withName = (arr, name) => {
+    if (contains(arr, 0, name)) { return arr }
+    return arr + [name]
+}
+
+// --- text helpers ----------------------------------------------------------
 let compText = (arr, i, acc) => acc
 compText = (arr, i, acc) => {
     if (i >= len(arr)) { return acc }
     let c = arr[i]
-    return compText(arr, i + 1, acc + " " + c.name + "(" + sprintf("%d", c.chars) + ")")
+    return compText(arr, i + 1, acc + " " + c.name + "(" + sprintf("%.0f", c.chars) + ")")
 }
 
 let warnText = (arr, i, acc) => acc
 warnText = (arr, i, acc) => {
     if (i >= len(arr)) { return acc }
-    return warnText(arr, i + 1, acc + "\n  warn: " + arr[i])
+    return warnText(arr, i + 1, acc + "\n  " + arr[i])
 }
 
-let fileRows = (files, i, acc) => acc
-fileRows = (files, i, acc) => {
-    if (i >= len(files)) { return acc }
-    let name = files[i]
-    let got = agent.harnessGet(name)
+// --- cards -----------------------------------------------------------------
+let fileCard = (name) => {
+    let got = json.parse(agent.harnessGet(name))
     if (got.error != "") {
-        return fileRows(files, i + 1, acc + [label("⚠ " + name + ": " + got.error)])
+        return widget.NewCard("", "", container.NewVBox([bold(name), label("⚠ " + got.error)]))
     }
     let ed = widget.NewMultiLineEntry()
     ed.Text = got.content
-    let row = container.NewVBox([
-        head("—" + name + "—"),
+    let original = got.content
+    ed.OnChanged((t) => {
+        if (t == original) {
+            unsaved = without(unsaved, 0, name, [])
+            notice.Text = ""
+        } else {
+            unsaved = withName(unsaved, name)
+            notice.Text = "● unsaved changes in " + name + " — save or refresh again to discard"
+        }
+    })
+    let save = widget.NewButton("Save " + name, () => {
+        let r = json.parse(agent.harnessSave(name, ed.Text))
+        if (r.error != "") {
+            notice.Text = "⚠ save " + name + " failed: " + r.error
+            return
+        }
+        unsaved = without(unsaved, 0, name, [])
+        original = ed.Text
+        msg = "saved " + name + " — prose applies next run; rule lines need a restart"
+        if (len(r.warns) > 0) { msg = msg + " | warn: " + r.warns[0] }
+        notice.Text = "✔ " + msg
+    })
+    save.Importance = constants.ImportanceMedium
+    let body = container.NewVBox([
+        bold(name),
+        hint("prose applies next run · rule lines need a restart"),
         ed,
-        container.NewHBox([widget.NewButton("save " + name, () => {
-            let r = agent.harnessSave(name, ed.Text)
-            if (r.error != "") {
-                msg = "save " + name + " failed: " + r.error
-            } else {
-                msg = "saved " + name + " (prose next run; rule lines need restart)"
-            }
-            if (r.warns != []) { msg = msg + " | warn: " + r.warns[0] }
-            refresh()
-        })])
+        container.NewHBox([save])
     ])
-    return fileRows(files, i + 1, acc + [row])
+    return widget.NewCard("", "", body)
+}
+
+let fileCards = (files, i, acc) => acc
+fileCards = (files, i, acc) => {
+    if (i >= len(files)) { return acc }
+    return fileCards(files, i + 1, acc + [container.NewPadded(fileCard(files[i]))])
+}
+
+let libEntry = (e) => {
+    let eid = e.id
+    let plabel = "Promote…"
+    let importance = constants.ImportanceMedium
+    if (pendingPromote == eid) {
+        plabel = "Confirm promote"
+        importance = constants.WarningImportance
+    }
+    let promote = widget.NewButton(plabel, () => {
+        if (pendingPromote != eid) {
+            pendingPromote = eid
+            requestRefreshForce()
+            return
+        }
+        let r = json.parse(agent.libPromote(eid))
+        pendingPromote = ""
+        if (r.error != "") {
+            msg = "promote failed: " + r.error
+            notice.Text = "⚠ " + msg
+        } else {
+            msg = "promoted " + eid + " — restart to re-read rule lines"
+            if (r.backup != "") { msg = msg + " (backup: " + r.backup + ")" }
+            notice.Text = "✔ " + msg
+        }
+        build()
+    })
+    promote.Importance = importance
+
+    let toggle = widget.NewButton("Experience", () => {
+        if (openExp == eid) { openExp = "" } else { openExp = eid }
+        build()
+    })
+    toggle.Importance = constants.ImportanceLow
+
+    let head = container.NewBorder(nil, nil, bold(eid), container.NewHBox([toggle, promote]))
+    return container.NewPadded(container.NewVBox([
+        head,
+        hint(e.situation)
+    ]))
 }
 
 let libRows = (arr, i, acc) => acc
 libRows = (arr, i, acc) => {
     if (i >= len(arr)) { return acc }
-    let e = arr[i]
-    let eid = e.id
-    let plabel = "promote"
-    if (pendingPromote == eid) { plabel = "promote — sure? click again" }
-    let row = container.NewVBox([
-        label(eid + " — " + e.situation),
-        container.NewHBox([
-            widget.NewButton("experience", () => {
-                if (openExp == eid) { openExp = "" } else { openExp = eid }
-                refresh()
-            }),
-            widget.NewButton(plabel, () => {
-                if (pendingPromote == eid) {
-                    let r = agent.libPromote(eid)
-                    pendingPromote = ""
-                    if (r.error != "") {
-                        msg = "promote failed: " + r.error
-                    } else {
-                        msg = "promoted " + eid
-                        if (r.backup != "") { msg = msg + " — backup: " + r.backup }
-                        msg = msg + " (restart to re-read rules)"
-                    }
-                } else {
-                    pendingPromote = eid
-                }
-                refresh()
-            })
-        ])
-    ])
-    return libRows(arr, i + 1, acc + [row])
+    return libRows(arr, i + 1, acc + [libEntry(arr[i])])
 }
 
 let flagRows = (arr, i, acc) => acc
 flagRows = (arr, i, acc) => {
     if (i >= len(arr)) { return acc }
-    return flagRows(arr, i + 1, acc + [label("🪧 " + arr[i].gap)])
+    return flagRows(arr, i + 1, acc + [hint("⚠ " + arr[i].gap)])
 }
 
+// --- build -----------------------------------------------------------------
 build = () => {
     let h = json.parse(agent.harnessInfo())
     let files = json.parse(agent.harnessFiles())
@@ -125,46 +188,83 @@ build = () => {
     let fl = json.parse(agent.flagPeek(8))
 
     let en = ""
-    if (h.enabled == false) { en = "  (DISABLED)" }
+    if (h.enabled == false) { en = "  ·  DISABLED" }
     let cs = compText(h.components, 0, "")
     if (cs == "") { cs = " none (base harness)" }
     let r = h.rules
-    let rows = [
-        head("harness — " + h.root + en),
-        label("components:" + cs),
-        label("guardrail rules: allow=" + sprintf("%d", len(r.allow)) + "  ask=" + sprintf("%d", len(r.ask)) + "  deny=" + sprintf("%d", len(r.deny))),
-        hint("prose edits apply next run; edit guardrails.md rule lines then restart Anneal"),
-        container.NewHBox([
-            widget.NewButton("refresh", () => { refresh() }),
-            widget.NewButton("improve last task", () => {
-                agent.improveStart()
-                msg = "harness improvement started — watch the chat transcript"
-                refresh()
-            })
-        ]),
-        widget.NewSeparator()
-    ]
-    rows = rows + fileRows(files, 0, [])
-    if (h.warnings != []) { rows = rows + [label("⚠" + warnText(h.warnings, 0, ""))] }
-    let lt = "none yet — evidence-backed improve steps create entries"
-    if (lb != []) { lt = sprintf("%d entries — promote is the only route into the global harness", len(lb)) }
-    rows = rows + [widget.NewSeparator(), head("improvement library"), hint(lt)]
-    rows = rows + libRows(lb, 0, [])
-    if (fl != []) {
-        rows = rows + [widget.NewSeparator(), head("reviewer flags"), hint("the next improve pass consumes these as hints")]
-        rows = rows + flagRows(fl, 0, [])
+    let overview = container.NewPadded(widget.NewCard(
+        "",
+        "",
+        container.NewVBox([
+            hint("Harness" + en + " · " + h.root),
+            label("Components:" + cs),
+            hint(sprintf("Guardrails: allow=%d  ask=%d  deny=%d", len(r.allow), len(r.ask), len(r.deny))),
+            hint("Edit the files below; prose applies next run and rule lines need a restart.")
+        ])
+    ))
+
+    let rows = [overview]
+    rows = rows + fileCards(files, 0, [])
+    if (h.warnings != []) {
+        rows = rows + [container.NewPadded(label("⚠" + warnText(h.warnings, 0, "")))]
     }
+
+    let lt = "No entries yet — evidence-backed improve steps create them."
+    if (lb != []) { lt = sprintf("%d entries — promote is the only route into the global harness.", len(lb)) }
+    let libContent = libRows(lb, 0, [hint(lt)])
+    let lib = widget.NewCard("", "",
+        container.NewVBox([bold("Improvement library"), hint("Promote copies an entry into the global harness.")] + libContent))
+    rows = rows + [container.NewPadded(lib)]
+
     if (openExp != "") {
         let ex = json.parse(agent.libExperience(openExp))
         if (ex.error != "") {
-            rows = rows + [label("⚠ experience: " + ex.error)]
+            rows = rows + [container.NewPadded(widget.NewCard("", "",
+                container.NewVBox([bold("Experience — " + openExp), label("⚠ " + ex.error)])))]
         } else {
-            rows = rows + [widget.NewSeparator(), head("experience — " + openExp), label(ex.content)]
+            rows = rows + [container.NewPadded(widget.NewCard("", "",
+                container.NewVBox([bold("Experience — " + openExp), hint("recorded evidence"), label(ex.content)])))]
         }
     }
-    if (msg != "") { rows = rows + [label(msg)] }
-    rows = rows + [notice]
+
+    if (fl != []) {
+        let flagContent = flagRows(fl, 0, [hint("The next improve pass consumes these as hints.")])
+        let flagCard = widget.NewCard("", "",
+            container.NewVBox([bold("Reviewer flags"), hint(sprintf("%d pending", len(fl)))] + flagContent))
+        rows = rows + [container.NewPadded(flagCard)]
+    }
+
+    // Always part of the layout so live notices can update without a rebuild
+    // (a rebuild would discard unsaved editor text).
+    rows = rows + [container.NewPadded(notice)]
     window.SetContent(container.NewScroll(container.NewVBox(rows)))
+}
+
+// requestRefresh rebuilds unless an editor has unsaved changes; a second
+// request (or the pane's Refresh after saving) discards them deliberately.
+requestRefresh = () => {
+    if (len(unsaved) > 0) {
+        if (forceRefresh) {
+            forceRefresh = false
+            unsaved = []
+            notice.Text = ""
+            build()
+        } else {
+            forceRefresh = true
+            notice.Text = "⚠ unsaved changes — refresh again to discard"
+        }
+        return
+    }
+    forceRefresh = false
+    build()
+}
+
+// requestRefreshForce is used by pane-local actions that own the state change
+// (promote): it always rebuilds.
+requestRefreshForce = () => {
+    forceRefresh = false
+    unsaved = []
+    build()
 }
 
 // Narrow live feed from the Go shell (harness/improve lifecycle only). We
@@ -172,14 +272,15 @@ build = () => {
 agent.on((evtJson) => {
     let e = json.parse(evtJson)
     let t = e.type
+    if (t == "harness.refresh") { requestRefresh() }
     if (t == "harness.promoted") { notice.Text = "✔ promoted — restart for rule lines; click refresh" }
     if (t == "harness.warn") { notice.Text = "⚠ harness files changed — click refresh" }
     if (t == "harness.warning") { notice.Text = "⚠ " + e.message }
-    if (t == "improve.done") { notice.Text = "🔧 improve finished — click refresh" }
-    if (t == "improve.library") { notice.Text = "🔧 library entry updated — click refresh" }
+    if (t == "improve.done") { notice.Text = "✔ improve finished — click refresh" }
+    if (t == "improve.library") { notice.Text = "✔ library entry updated — click refresh" }
     if (t == "improve.error") { notice.Text = "⚠ improve: " + e.error }
-    if (t == "review.flag") { notice.Text = "🪧 reviewer flagged a gap — refresh to see it" }
-    if (t == "config.changed") { notice.Text = "⚙ configuration changed" }
+    if (t == "review.flag") { notice.Text = "⚠ reviewer flagged a gap — refresh to see it" }
+    if (t == "config.changed") { notice.Text = "⚙ configuration changed — refresh to see it" }
 })
 
 build()

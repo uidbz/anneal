@@ -6,3 +6,6 @@
 .DS_Store
 coverage.out
 vendor/
+
+# local build artifacts (go build ./cmd/anneal run inside the package dir)
+/cmd/anneal/anneal

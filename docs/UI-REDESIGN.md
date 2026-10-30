@@ -149,13 +149,13 @@ Decisions (agreed with the user):
 
 ## Phase 6 — inspector and status bar
 
-- Inspector: Tasks (count badge, markers, in-progress bold, "No tasks"),
+- [x] Inspector: Tasks (count badge, markers, in-progress bold, "No tasks"),
   Context (meter: warn ≥ 70 %, err ≥ 82 %; tokens; compactions), Session
   (short id + copy, mode, harness base/overlay).
-- Status bar (rail surface, caption text): run dot + state + elapsed time
+- [x] Status bar (rail surface, caption text): run dot + state + elapsed time
   while running; clickable chips for model (→ Settings · Model), index
   (→ rebuild after confirm), MCP (→ Settings · Integrations); token totals.
-- Tests: chip text/color per state, meter thresholds, elapsed ticker
+- [x] Tests: chip text/color per state, meter thresholds, elapsed ticker
   start/stop.
 
 ## Phase 7 — secondary views

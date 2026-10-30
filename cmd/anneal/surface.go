@@ -308,18 +308,23 @@ func (r *meterRenderer) MinSize() fyne.Size {
 
 func (r *meterRenderer) Objects() []fyne.CanvasObject { return r.objects }
 
-func (r *meterRenderer) Refresh() {
-	token := colorOK
+// meterToken picks the fill color for a usage fraction: accent while
+// comfortable, amber at 70%, red at the compaction threshold (82%).
+func meterToken(v float64) fyne.ThemeColorName {
 	switch {
-	case r.meter.value >= 0.82:
-		token = colorErr
-	case r.meter.value >= 0.70:
-		token = colorWarn
-	case r.meter.value > 0:
-		token = theme.ColorNamePrimary
+	case v >= 0.82:
+		return colorErr
+	case v >= 0.70:
+		return colorWarn
+	case v > 0:
+		return theme.ColorNamePrimary
 	}
+	return colorBorder
+}
+
+func (r *meterRenderer) Refresh() {
 	r.track.FillColor = theme.Color(colorBorder)
-	r.fill.FillColor = theme.Color(token)
+	r.fill.FillColor = theme.Color(meterToken(r.meter.value))
 	r.track.Refresh()
 	r.fill.Refresh()
 }

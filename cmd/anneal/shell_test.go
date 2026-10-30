@@ -89,8 +89,8 @@ func TestShellEventRendering(t *testing.T) {
 		"type":   "provider.state",
 		"health": map[string]any{"state": "online", "model": "m", "ctx_window": 1000},
 	}))
-	if got := sh.status.Text; got == "" || got == "model server: connecting…" {
-		t.Fatalf("status not updated: %q", got)
+	if got := sh.modelChip.Text(); got != "m" {
+		t.Fatalf("model chip = %q", got)
 	}
 
 	sh.handleEvent(normalizeEvent(map[string]any{"type": "run.started", "run": 1}))
@@ -157,7 +157,7 @@ func TestShellEventRendering(t *testing.T) {
 		"type": "run.finished", "run": 1, "ok": true, "text": "**hello**", "error": "",
 		"usage": map[string]any{"tin": 10, "tout": 5}, "ctx_pct": 7,
 	}))
-	if got := sh.usage.Text; got == "" || got == "running…" {
+	if got := sh.usage.Text(); got == "" || got == "running…" {
 		t.Fatalf("usage not updated: %q", got)
 	}
 

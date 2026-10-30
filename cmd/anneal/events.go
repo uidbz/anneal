@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/widget"
+	"fyne.io/fyne/v2/theme"
 )
 
 func (s *shell) handleEvent(e map[string]any) {
@@ -23,36 +23,38 @@ func (s *shell) handleEvent(e map[string]any) {
 		state := str(h["state"])
 		switch state {
 		case "online":
-			s.modelLbl.SetText(fmt.Sprintf("%s · %s ctx",
-				trunc(str(h["model"]), 22), humanK(int(num(h["ctx_window"])))))
-			s.modelDot.setToken(colorOK)
-			s.cmp.setModel(str(h["model"]), int(num(h["ctx_window"])))
+			ctx := int(num(h["ctx_window"]))
+			s.ctxWindow = ctx
+			s.modelChip.SetText(trunc(str(h["model"]), 22))
+			s.modelChip.dot.setToken(colorOK)
+			s.cmp.setModel(str(h["model"]), ctx)
+			s.inspector.refresh()
 		case "connecting", "probing":
-			s.modelLbl.SetText("model: " + state + "…")
-			s.modelDot.setToken(colorWarn)
+			s.modelChip.SetText(state + "…")
+			s.modelChip.dot.setToken(colorWarn)
 		default:
 			msg := str(h["error"])
+			text := state
 			if msg != "" {
-				s.modelLbl.SetText("model: " + state + " — " + msg)
-			} else {
-				s.modelLbl.SetText("model: " + state)
+				text += " — " + trunc(msg, 40)
 			}
-			s.modelDot.setToken(colorErr)
+			s.modelChip.SetText(text)
+			s.modelChip.dot.setToken(colorErr)
 		}
-		s.chipModel.Show()
+		s.modelChip.Show()
 	case "tie.state":
 		st := obj(e["state"])
 		switch {
 		case !boolean(st["enabled"]):
-			s.chipTie.Hide()
+			s.tieChip.Hide()
 		case boolean(st["online"]):
-			s.tie.SetText("index: " + str(st["collection"]))
-			s.tieDot.setToken(colorOK)
-			s.chipTie.Show()
+			s.tieChip.SetText("index " + str(st["collection"]))
+			s.tieChip.dot.setToken(colorOK)
+			s.tieChip.Show()
 		default:
-			s.tie.SetText("index: offline")
-			s.tieDot.setToken(colorErr)
-			s.chipTie.Show()
+			s.tieChip.SetText("index offline")
+			s.tieChip.dot.setToken(colorErr)
+			s.tieChip.Show()
 		}
 	case "mcp.state":
 		servers := list(e["servers"])
@@ -65,23 +67,24 @@ func (s *shell) handleEvent(e map[string]any) {
 			tools += int(num(srv["tools"]))
 		}
 		if len(servers) > 0 {
-			s.mcp.SetText(fmt.Sprintf("mcp: %d/%d · %d tools", up, len(servers), tools))
+			s.mcpChip.SetText(fmt.Sprintf("MCP %d/%d · %d tools", up, len(servers), tools))
 			switch {
 			case up == len(servers):
-				s.mcpDot.setToken(colorOK)
+				s.mcpChip.dot.setToken(colorOK)
 			case up > 0:
-				s.mcpDot.setToken(colorWarn)
+				s.mcpChip.dot.setToken(colorWarn)
 			default:
-				s.mcpDot.setToken(colorErr)
+				s.mcpChip.dot.setToken(colorErr)
 			}
-			s.chipMCP.Show()
+			s.mcpChip.Show()
 		} else {
-			s.chipMCP.Hide()
+			s.mcpChip.Hide()
 		}
 	case "run.started":
 		s.setRunState("Running…", colorWarn, false)
-		s.usage.SetText("")
+		s.setUsageText(0, 0, 0)
 		s.cmp.setRunning(true)
+		s.startRunClock()
 	case "run.busy":
 		s.status.SetText("A run is already active")
 	case "text.delta":
@@ -101,11 +104,13 @@ func (s *shell) handleEvent(e map[string]any) {
 	case "run.finished":
 		s.closeTail("")
 		u := obj(e["usage"])
-		s.usage.SetText(fmt.Sprintf("in %s · out %s · ctx %d%%",
-			humanK(int(num(u["tin"]))), humanK(int(num(u["tout"]))), int(num(e["ctx_pct"]))))
-		s.inspector.tin = int(num(u["tin"]))
-		s.inspector.tout = int(num(u["tout"]))
-		s.inspector.ctxPct = int(num(e["ctx_pct"]))
+		tin, tout := int(num(u["tin"])), int(num(u["tout"]))
+		pct := int(num(e["ctx_pct"]))
+		s.setUsageText(tin, tout, pct)
+		s.stopRunClock()
+		s.inspector.tin = tin
+		s.inspector.tout = tout
+		s.inspector.ctxPct = pct
 		s.inspector.refresh()
 		s.refreshSessionMeta()
 		switch {
@@ -115,7 +120,6 @@ func (s *shell) handleEvent(e map[string]any) {
 			s.setRunState("Ready", colorOK, false)
 		default:
 			s.setRunState("Error", colorErr, true)
-			s.usage.SetText("")
 			if msg := str(e["error"]); msg != "" {
 				s.addNotice("⚠ " + msg)
 			}
@@ -306,19 +310,17 @@ func (s *shell) renderTodos(items []any) {
 	s.todos.RemoveAll()
 	for _, raw := range items {
 		it := obj(raw)
-		glyph := "☐"
-		switch str(it["status"]) {
+		glyph, token := "☐", colorMuted
+		status := str(it["status"])
+		switch status {
 		case "in_progress":
-			glyph = "▶"
+			glyph, token = "▶", theme.ColorNamePrimary
 		case "done":
-			glyph = "☑"
+			glyph, token = "☑", colorOK
 		case "cancelled":
-			glyph = "✖"
+			glyph, token = "✖", colorErr
 		}
-		lbl := widget.NewLabel(glyph + " " + str(it["content"]))
-		lbl.Wrapping = fyne.TextWrapWord
-		lbl.Selectable = true
-		s.todos.Add(lbl)
+		s.todos.Add(newTaskRow(glyph, token, str(it["content"]), status))
 	}
 	if s.todoPane != nil {
 		if len(items) == 0 {

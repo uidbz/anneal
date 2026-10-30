@@ -69,6 +69,8 @@ func capture(t *testing.T, win fyne.Window, path string) {
 	time.Sleep(50 * time.Millisecond)
 	// The software test canvas does not re-layout on MinSize changes the way
 	// the GLFW driver does every frame, so lay the whole tree out top-down.
+	// Refresh first (text sizes change badge/label minima), then lay out.
+	refreshTree(win.Content())
 	relayout(win.Content())
 	refreshTree(win.Content())
 	img := win.Canvas().Capture()

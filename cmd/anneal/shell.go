@@ -56,19 +56,17 @@ type shell struct {
 	win fyne.Window
 
 	// Global status bar.
-	status     *widget.Label // run state: ready/running…/improving…
+	status     *themedText // run state: Ready/Running…/Improving…
 	runDot     *statusDot
-	usage      *widget.Label
-	modelLbl   *widget.Label // model server chip
-	modelDot   *statusDot
-	chipModel  *fyne.Container
-	tie        *widget.Label
-	tieDot     *statusDot
-	chipTie    *fyne.Container
-	mcp        *widget.Label
-	mcpDot     *statusDot
-	chipMCP    *fyne.Container
+	usage      *themedText
+	elapsed    *themedText
+	modelChip  *chip
+	tieChip    *chip
+	mcpChip    *chip
 	improveBtn *widget.Button
+	clockStop  chan struct{}
+	runStarted time.Time
+	ctxWindow  int
 
 	// Navigation and frame.
 	frame     *chromeframe
@@ -149,44 +147,23 @@ func newShell(a *coreapp.App, app fyne.App, win fyne.Window, paneSrc string) (*s
 }
 
 func (s *shell) build() {
-	s.status = widget.NewLabel("Ready")
-	s.usage = widget.NewLabel("")
-	s.modelLbl = widget.NewLabel("model: connecting…")
-	s.tie = widget.NewLabel("")
-	s.mcp = widget.NewLabel("")
-	s.status.Wrapping = fyne.TextWrapOff // one short line; never wraps
-
 	s.improveBtn = labeledButton("Improve", theme.MoveUpIcon(), s.improveNow)
 	if !s.a.Cfg.Improve.Enabled {
 		s.improveBtn.Hide()
 	}
 
-	s.runDot = newStatusDot()
-	s.runDot.setToken(colorOK)
-	s.modelDot = newStatusDot()
-	s.tieDot = newStatusDot()
-	s.mcpDot = newStatusDot()
-	s.chipModel = newChip(s.modelDot, s.modelLbl)
-	s.chipTie = newChip(s.tieDot, s.tie)
-	s.chipMCP = newChip(s.mcpDot, s.mcp)
-	s.chipTie.Hide()
-	s.chipMCP.Hide()
-
-	s.chatBox = container.NewVBox()
+	s.chatBox = container.New(&columnLayout{gap: spaceS})
 	s.earlier = widget.NewButton("", s.showEarlier)
 	s.earlier.Importance = widget.LowImportance
 	s.earlier.Hide()
-	s.todos = container.NewVBox()
-	s.activity = container.NewVBox()
+	s.todos = container.New(&columnLayout{gap: spaceXS})
+	s.activity = container.New(&columnLayout{gap: spaceS})
 
 	s.cmp = newComposer(s)
 	s.entry = s.cmp.entry
 	s.dock = newApprovalDock()
 
-	// Status bar (bottom): run state + health chips + usage.
-	s.statusbar = newSurface(colorRail, container.New(&padLayout{l: spaceM, r: spaceM, t: 3, b: 3},
-		container.New(&rowLayout{gap: spaceM}, s.runDot, s.status, s.chipModel,
-			s.chipTie, s.chipMCP, s.usage)))
+	s.statusbar = s.buildStatusBar()
 
 }
 
@@ -312,21 +289,16 @@ func humanK(n int) string {
 	return strconv.Itoa(n)
 }
 
-// newChip packs a status dot with a caption-emphasis label.
-func newChip(d *statusDot, l *widget.Label) *fyne.Container {
-	l.Importance = widget.LowImportance
-	return container.New(&rowLayout{gap: 6}, d, l)
-}
-
 // setRunState updates the run-state label and its dot together.
 func (s *shell) setRunState(text string, dot fyne.ThemeColorName, alarm bool) {
 	s.status.SetText(text)
 	s.runDot.setToken(dot)
 	if alarm {
-		s.status.Importance = widget.HighImportance
+		s.status.token = colorErr
 	} else {
-		s.status.Importance = widget.MediumImportance
+		s.status.token = theme.ColorNameForeground
 	}
+	s.status.Refresh()
 }
 
 // improveNow runs one harness-improvement pass (header button, Ctrl+I, and

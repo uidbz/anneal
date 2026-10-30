@@ -2,13 +2,19 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
+
+	"github.com/uidbz/anneal/core/paths"
 )
 
-// inspectorPanel is the right-hand column: tasks and (live) context usage.
-// It hides sections that have nothing to say rather than showing empty boxes.
+// inspectorPanel is the right-hand column: tasks, context usage, and session
+// facts. Sections collapse themselves when they have nothing to say.
 type inspectorPanel struct {
 	s      *shell
 	object fyne.CanvasObject
@@ -23,6 +29,7 @@ type inspectorPanel struct {
 	ctxMeter  *meter
 	ctxLabel  *themedText
 	ctxTokens *themedText
+	ctxComp   *themedText
 	sessID    *themedText
 	sessMode  *themedText
 	harness   *themedText
@@ -30,7 +37,6 @@ type inspectorPanel struct {
 	// context values arrive with provider/run events
 	tin, tout int
 	ctxPct    int
-	ctxWindow int
 	compacted int
 }
 
@@ -45,22 +51,33 @@ func newInspectorPanel(s *shell) *inspectorPanel {
 	p.ctxMeter = newMeter(0, 6)
 	p.ctxLabel = newThemedText("No run yet", colorMuted)
 	p.ctxTokens = newThemedText("", colorMuted)
+	p.ctxComp = newThemedText("", colorMuted)
 	ctxSection := container.NewVBox(
 		newSectionLabel("CONTEXT"),
-		container.NewVBox(p.ctxMeter, p.ctxLabel, p.ctxTokens),
+		container.New(&padLayout{l: 0, r: 0, t: spaceXS, b: spaceXS}, p.ctxMeter),
+		p.ctxLabel, p.ctxTokens, p.ctxComp,
 	)
 
 	p.sessID = newThemedText("", colorMuted)
 	p.sessMode = newThemedText("", colorMuted)
 	p.harness = newThemedText("", colorMuted)
+	copyBtn := iconButton(theme.ContentCopyIcon(), func() {
+		if s.sessionID == "" {
+			return
+		}
+		s.win.Clipboard().SetContent(s.sessionID)
+		s.notice(noticeSuccess, "Session ID copied.")
+	})
+	copyBtn.Importance = widget.LowImportance
+	idRow := container.NewBorder(nil, nil, nil, copyBtn, p.sessID)
 	p.session = container.NewVBox(
-		newSectionLabel("SESSION"),
-		p.sessID, p.sessMode, p.harness,
+		newSectionLabel("SESSION"), idRow, p.sessMode, p.harness,
 	)
 
+	body := container.New(&columnLayout{gap: 0}, p.tasksSection, dividerBlock(),
+		ctxSection, dividerBlock(), p.session)
 	p.object = newSurface(colorSidebar, container.New(&padLayout{l: spaceM, r: spaceM, t: spaceM, b: spaceM},
-		container.NewVBox(p.tasksSection, dividerBlock(),
-			ctxSection, dividerBlock(), p.session)))
+		container.NewVScroll(body)))
 	s.todoPane = p.tasksSection
 	p.refresh()
 	return p
@@ -73,14 +90,19 @@ func (p *inspectorPanel) refresh() {
 	p.taskCount.SetText(fmt.Sprintf("%d", len(p.s.todos.Objects)))
 	p.ctxMeter.SetValue(float64(p.ctxPct) / 100)
 	if p.ctxPct > 0 {
-		p.ctxLabel.SetText(fmt.Sprintf("%d%% of %s", p.ctxPct, humanK(p.ctxWindow)))
+		p.ctxLabel.SetText(fmt.Sprintf("%d%% of %s tokens", p.ctxPct, humanK(p.s.ctxWindow)))
 	} else {
 		p.ctxLabel.SetText("No run yet")
 	}
 	if p.tin > 0 || p.tout > 0 {
-		p.ctxTokens.SetText(fmt.Sprintf("↑ %s · ↓ %s", humanK(p.tin), humanK(p.tout)))
+		p.ctxTokens.SetText(fmt.Sprintf("↑ %s in · ↓ %s out", humanK(p.tin), humanK(p.tout)))
 	} else {
 		p.ctxTokens.SetText("")
+	}
+	if p.compacted > 0 {
+		p.ctxComp.SetText(fmt.Sprintf("%d compaction(s) this session", p.compacted))
+	} else {
+		p.ctxComp.SetText("")
 	}
 	p.sessID.SetText(shortSessionID(p.s.sessionID))
 	p.sessMode.SetText(modeLabel(p.s.mode))
@@ -92,10 +114,10 @@ func shortSessionID(id string) string {
 	if id == "" {
 		return "No session"
 	}
-	if len(id) > 15 {
-		return "Session " + id[:15]
+	if len(id) > 18 {
+		return id[:18] + "…"
 	}
-	return "Session " + id
+	return id
 }
 
 func modeLabel(mode string) string {
@@ -105,7 +127,16 @@ func modeLabel(mode string) string {
 	return "Build mode"
 }
 
+// harnessLabel reports whether this session runs the base harness or an
+// improvement successor overlay.
 func harnessLabel(s *shell) string {
+	if s.sessionID == "" {
+		return "Harness: base"
+	}
+	dir := filepath.Join(paths.Overlays(), s.sessionID)
+	if _, err := os.Stat(dir); err == nil {
+		return "Harness: improvement overlay"
+	}
 	return "Harness: base"
 }
 

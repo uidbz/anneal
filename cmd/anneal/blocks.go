@@ -310,3 +310,61 @@ func toolSummary(input string) string {
 	}
 	return oneLine(input)
 }
+
+// taskRow is one todo line: a status marker whose top edge lines up with the
+// first text line, and a selectable label that wraps in the remaining width.
+type taskRow struct {
+	widget.BaseWidget
+	marker  *themedText
+	label   *widget.Label
+	markerW float32
+	padTop  float32
+}
+
+func newTaskRow(glyph string, token fyne.ThemeColorName, content string, status string) *taskRow {
+	r := &taskRow{
+		marker:  newThemedText(glyph, token),
+		label:   selectableLabel(content, false),
+		markerW: theme.Size(theme.SizeNameText) + spaceS,
+		padTop:  (theme.Size(theme.SizeNameText) - theme.Size(theme.SizeNameCaptionText)) / 2,
+	}
+	r.marker.bold = true
+	switch status {
+	case "done", "cancelled":
+		r.label.Importance = widget.LowImportance
+	case "in_progress":
+		r.label.TextStyle = fyne.TextStyle{Bold: true}
+	}
+	r.ExtendBaseWidget(r)
+	return r
+}
+
+func (r *taskRow) CreateRenderer() fyne.WidgetRenderer {
+	r.marker.Resize(r.marker.MinSize())
+	return &taskRowRenderer{row: r}
+}
+
+type taskRowRenderer struct{ row *taskRow }
+
+func (r *taskRowRenderer) Layout(size fyne.Size) {
+	r.row.marker.Move(fyne.NewPos(0, r.row.padTop))
+	r.row.marker.Resize(r.row.marker.MinSize())
+	r.row.label.Move(fyne.NewPos(r.row.markerW, 0))
+	r.row.label.Resize(fyne.NewSize(size.Width-r.row.markerW, size.Height))
+}
+
+func (r *taskRowRenderer) MinSize() fyne.Size {
+	ms := r.row.label.MinSize()
+	return fyne.NewSize(r.row.markerW+ms.Width, ms.Height)
+}
+
+func (r *taskRowRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.row.marker, r.row.label}
+}
+
+func (r *taskRowRenderer) Refresh() {
+	r.row.marker.Refresh()
+	r.row.label.Refresh()
+}
+
+func (r *taskRowRenderer) Destroy() {}

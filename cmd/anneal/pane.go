@@ -74,3 +74,20 @@ func (p *scriptPane) LoadScript(src string) error {
 	p.view.LoadScript(src)
 	return p.view.CompileScript()
 }
+
+// paneEvent keeps the scripted pane on a narrow event diet: harness/improve
+// lifecycle only, never chat deltas or permission traffic.
+func paneEvent(v any) bool {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return false
+	}
+	switch m["type"] {
+	case "harness.warn", "harness.warning", "harness.promoted",
+		"improve.done", "improve.library", "improve.error",
+		"review.flag", "config.changed":
+		return true
+	default:
+		return false
+	}
+}

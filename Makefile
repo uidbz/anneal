@@ -11,7 +11,7 @@ DATADIR ?= $(PREFIX)/share
 APPDIR  ?= $(DATADIR)/applications
 ICONDIR ?= $(DATADIR)/icons/hicolor/scalable/apps
 
-.PHONY: all build test vet fmt check-ui check-script-ui headless anneald docker clean install uninstall live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke live-m16-test
+.PHONY: all build test vet fmt check-ui check-script-ui anneal headless anneald docker clean install uninstall live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke live-m16-test
 
 all: build
 
@@ -82,7 +82,12 @@ install: build
 	$(INSTALL) -m 0755 $(BIN)/anneal $(DESTDIR)$(BINDIR)/anneal
 	$(INSTALL) -m 0755 $(BIN)/anneal-headless $(DESTDIR)$(BINDIR)/anneal-headless
 	$(INSTALL) -m 0755 $(BIN)/anneald $(DESTDIR)$(BINDIR)/anneald
-	$(INSTALL) -m 0644 assets/anneal.desktop $(DESTDIR)$(APPDIR)/anneal.desktop
+	@# Point the launcher at the installed binary: a bare Exec=anneal resolves
+	@# through the desktop session's PATH, which may find an older install.
+	@sed -e 's|^Exec=.*|Exec=$(BINDIR)/anneal|' \
+		-e 's|^TryExec=.*|TryExec=$(BINDIR)/anneal|' \
+		assets/anneal.desktop > $(DESTDIR)$(APPDIR)/anneal.desktop
+	@chmod 0644 $(DESTDIR)$(APPDIR)/anneal.desktop
 	$(INSTALL) -m 0644 assets/anneal.svg $(DESTDIR)$(ICONDIR)/anneal.svg
 	@if [ -z "$(DESTDIR)" ] && command -v update-desktop-database >/dev/null 2>&1; then \
 		update-desktop-database $(APPDIR); \

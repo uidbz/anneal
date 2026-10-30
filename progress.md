@@ -51,6 +51,17 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-10-30 — launcher refresh fix
+- `make install` copied `bin/anneal` without rebuilding: the `anneal`/`headless`/
+  `anneald` targets had no prerequisites, so an existing binary looked current.
+  They are `.PHONY` now and always run `go build` (go's build cache keeps it cheap).
+- The installed desktop entry now uses the absolute `Exec=/…/.local/bin/anneal`
+  (and matching `TryExec`) instead of `Exec=anneal`, which resolved through the
+  desktop session's PATH and could pick an older install (e.g. `/go/bin/anneal`).
+- Reinstalled and verified: the installed binary contains the redesigned pane/
+  shell strings, `-check-ui` and the e2e `-check-script-ui` both compile, and
+  the desktop database was refreshed.
+
 ### 2026-10-30 — desktop shell redesign (docs/UI-REDESIGN.md)
 - Goal: replace the widget-demo feel with a professional IDE-style shell, in
   eight phases, each committed and test-covered.

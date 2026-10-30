@@ -9,7 +9,7 @@ func TestInspectorShowsWorkingDirectory(t *testing.T) {
 	sh := newTestShell(t)
 	sh.inspector.refresh()
 	want := shortPath(sh.a.Runner.Cwd(), 34)
-	if got := sh.inspector.sessCwd.Text(); got != want {
+	if got := sh.inspector.sessCwd.Text; got != want {
 		t.Fatalf("cwd label = %q, want %q", got, want)
 	}
 	if !strings.Contains(want, "…/") && len(sh.a.Runner.Cwd()) > 34 {

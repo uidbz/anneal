@@ -90,8 +90,9 @@ Decisions (agreed with the user):
   `nav.show(view)` (replaces `AppTabs`).
 - [x] Chat view = sessions sidebar | chat column | inspector, with draggable
   handles (widths in px, clamped 180–480, persisted). Narrow windows hide the
-  inspector below 1180 px and the sidebar below 900 px without changing the
-  saved preference.
+  inspector below 1000 px and the sidebar below 820 px without changing the
+  saved preference; the window re-applies its intended 1280×800 size after
+  mapping (some Wayland compositors ignore pre-show resize hints).
 - [x] Activity rail (56 px): logo, Chat / Harness / Activity, Settings pinned at
   the bottom; icon + caption, accent bar + raised background on the active
   item.

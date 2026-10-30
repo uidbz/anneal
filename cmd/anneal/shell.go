@@ -407,6 +407,20 @@ func (s *shell) start(ctx context.Context) {
 	s.harness.Execute()
 	s.a.Start(ctx)
 	fyne.Do(func() { s.win.Canvas().Focus(s.entry) })
+	// Some Wayland compositors ignore pre-show resize hints and open at a
+	// smaller size, which would auto-collapse the panels. Re-apply the
+	// intended size and lay the frame out once the window is mapped.
+	time.AfterFunc(500*time.Millisecond, func() {
+		fyne.Do(func() {
+			// Only correct an undersized first map; a deliberate user size
+			// (>= the inspector threshold) is left alone.
+			if sz := s.win.Canvas().Size(); sz.Width < narrowInspectorW || sz.Height < 600 {
+				s.win.Resize(fyne.NewSize(1280, 800))
+			}
+			s.frame.relayout()
+			s.updateCompact()
+		})
+	})
 	if s.autoSend != "" {
 		time.AfterFunc(700*time.Millisecond, func() {
 			fyne.Do(func() {

@@ -31,8 +31,8 @@ type inspectorPanel struct {
 	ctxLabel  *themedText
 	ctxTokens *themedText
 	ctxComp   *themedText
-	sessID    *themedText
-	sessCwd   *themedText
+	sessID    *widget.Label
+	sessCwd   *widget.Label
 	sessMode  *themedText
 	harness   *themedText
 
@@ -60,8 +60,8 @@ func newInspectorPanel(s *shell) *inspectorPanel {
 		p.ctxLabel, p.ctxTokens, p.ctxComp,
 	)
 
-	p.sessID = newThemedText("", colorMuted)
-	p.sessCwd = newThemedText("", colorMuted)
+	p.sessID = newEllipsisLabel("")
+	p.sessCwd = newEllipsisLabel("")
 	p.sessMode = newThemedText("", colorMuted)
 	p.harness = newThemedText("", colorMuted)
 	copyBtn := iconButton(theme.ContentCopyIcon(), func() {

@@ -51,6 +51,18 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-10-30 — first-launch panel visibility + inspector fit
+- The inspector could stay hidden until the window was resized: some Wayland
+  compositors ignore pre-show resize hints, so the window mapped narrower than
+  the 1180 px inspector threshold. The shell now re-applies 1280×800 and
+  re-lays-out the frame 500 ms after start; thresholds are 1000 px (inspector)
+  and 820 px (sidebar).
+- Inspector content is padded inside the scroll viewport (padding the scroll
+  itself left content flush with the panel edge), and the session ID/CWD are
+  ellipsizing labels so long paths no longer push the copy buttons off-panel.
+- `/cwd` (alias `/pwd`) plus a copyable CWD row in the inspector show the
+  agent's working directory.
+
 ### 2026-10-30 — launcher refresh fix
 - `make install` copied `bin/anneal` without rebuilding: the `anneal`/`headless`/
   `anneald` targets had no prerequisites, so an existing binary looked current.

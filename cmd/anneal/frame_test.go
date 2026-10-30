@@ -63,16 +63,20 @@ func TestNarrowWindowCollapsesPanels(t *testing.T) {
 	if !sh.side.Object().Visible() || !sh.inspector.Object().Visible() {
 		t.Fatal("wide window hides panels")
 	}
-	sh.frame.Layout(fyne.NewSize(1000, 800))
+	sh.frame.Layout(fyne.NewSize(1001, 800))
+	if !sh.side.Object().Visible() || !sh.inspector.Object().Visible() {
+		t.Fatal("both panels should stay visible just above 1000px")
+	}
+	sh.frame.Layout(fyne.NewSize(999, 800))
 	if !sh.side.Object().Visible() {
-		t.Fatal("sidebar should stay visible at 1000px")
+		t.Fatal("sidebar should stay visible at 999px")
 	}
 	if sh.inspector.Object().Visible() {
-		t.Fatal("inspector should collapse below 1180px")
+		t.Fatal("inspector should collapse below 1000px")
 	}
-	sh.frame.Layout(fyne.NewSize(820, 800))
+	sh.frame.Layout(fyne.NewSize(819, 800))
 	if sh.side.Object().Visible() {
-		t.Fatal("sidebar should collapse below 900px")
+		t.Fatal("sidebar should collapse below 820px")
 	}
 	// Preferences are untouched by the automatic collapse.
 	if !sh.a.Cfg.UI.SidebarOpen || !sh.a.Cfg.UI.InspectorOpen {

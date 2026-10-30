@@ -552,3 +552,15 @@ func (l *columnLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	}
 	return fyne.NewSize(w, h)
 }
+
+// newEllipsisLabel is one-line caption text that clips with an ellipsis
+// instead of overflowing (paths, ids). Color follows the theme's muted token
+// via LowImportance.
+func newEllipsisLabel(text string) *widget.Label {
+	l := widget.NewLabel(text)
+	l.Wrapping = fyne.TextWrapOff
+	l.Truncation = fyne.TextTruncateEllipsis
+	l.SizeName = theme.SizeNameCaptionText
+	l.Importance = widget.LowImportance
+	return l
+}

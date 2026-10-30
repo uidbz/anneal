@@ -11,8 +11,8 @@ import (
 // Auto-collapse thresholds (window width, px). The saved user preference is
 // untouched; the panels reappear when the window grows again.
 const (
-	narrowSidebarW   float32 = 900
-	narrowInspectorW float32 = 1180
+	narrowSidebarW   float32 = 820
+	narrowInspectorW float32 = 1000
 )
 
 // chromeframe lays out the sidebar, the main column, and the inspector around

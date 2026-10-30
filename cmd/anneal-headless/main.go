@@ -38,6 +38,8 @@ type backend interface {
 	respondPerm(id, action string)
 	setMode(mode string)
 	learnNow()
+	busy() bool
+	dead() <-chan struct{} // nil channel = never fires (local)
 	isRemote() bool
 	call(method string, params any) error // remote RPC passthrough (no-op locally)
 }
@@ -51,6 +53,8 @@ func (l *localBackend) openSession(id string)          { l.a.Runner.OpenSession(
 func (l *localBackend) respondPerm(id, a string)       { l.a.Runner.RespondPerm(id, a) }
 func (l *localBackend) setMode(m string)               { l.a.Runner.SetMode(m) }
 func (l *localBackend) learnNow()                      { l.a.Review.LearnNow() }
+func (l *localBackend) busy() bool                     { return l.a.Runner.Busy() }
+func (l *localBackend) dead() <-chan struct{}          { return nil }
 func (l *localBackend) isRemote() bool                 { return false }
 func (l *localBackend) call(string, any) error         { return fmt.Errorf("remote call from local mode") }
 
@@ -67,15 +71,29 @@ func (r *remoteBackend) startTask(t string) (int, bool) {
 	}
 	return res.ID, res.OK
 }
-func (r *remoteBackend) interrupt()            { r.call("agent.interrupt", nil) }
+func (r *remoteBackend) interrupt() {
+	if err := r.call("agent.interrupt", nil); err != nil {
+		fmt.Fprintln(os.Stderr, "anneal-headless: interrupt:", err)
+	}
+}
 func (r *remoteBackend) newSession()           { r.call("sessions.new", nil) }
 func (r *remoteBackend) openSession(id string) { r.call("sessions.open", map[string]any{"id": id}) }
 func (r *remoteBackend) respondPerm(id, a string) {
 	r.call("perm.respond", map[string]any{"id": id, "action": a})
 }
-func (r *remoteBackend) setMode(m string) { r.call("mode.set", map[string]any{"mode": m}) }
-func (r *remoteBackend) learnNow()        { r.call("learn.now", nil) }
-func (r *remoteBackend) isRemote() bool   { return true }
+func (r *remoteBackend) setMode(m string)      { r.call("mode.set", map[string]any{"mode": m}) }
+func (r *remoteBackend) learnNow()             { r.call("learn.now", nil) }
+func (r *remoteBackend) isRemote() bool        { return true }
+func (r *remoteBackend) dead() <-chan struct{} { return r.c.Dead() }
+func (r *remoteBackend) busy() bool {
+	var res struct {
+		Busy bool `json:"busy"`
+	}
+	if err := r.callJSON("run.status", nil, &res); err != nil {
+		return false
+	}
+	return res.Busy
+}
 func (r *remoteBackend) call(method string, params any) error {
 	_, err := r.callRaw(method, params)
 	return err
@@ -104,7 +122,7 @@ type sink struct {
 	streamed bool
 	done     chan runResult
 	learn    chan struct{}
-	improve  chan struct{}
+	improve  chan bool // true = improve.done ok; false = improve.error
 	be       backend
 	allow    map[string]bool
 	denyAll  bool
@@ -277,18 +295,19 @@ func (s *sink) handle(v any) {
 			fmt.Printf("🔧 improve failed: %v\n", e["error"])
 		}
 		select {
-		case s.improve <- struct{}{}:
+		case s.improve <- false:
 		default:
 		}
 	case "improve.done":
+		ok, _ := e["ok"].(bool)
 		select {
-		case s.improve <- struct{}{}:
+		case s.improve <- ok:
 		default:
 		}
 		if s.jsonMode {
 			return
 		}
-		if e["ok"] == true {
+		if ok {
 			if e["successor"] == true {
 				fmt.Println("🔧 improve: successor harness composed (session overlay applied)")
 			} else {
@@ -392,7 +411,7 @@ func main() {
 
 	s := &sink{jsonMode: *jsonMode, verbose: *verbose,
 		done: make(chan runResult, 1), learn: make(chan struct{}, 1),
-		improve: make(chan struct{}, 1), be: be,
+		improve: make(chan bool, 1), be: be,
 		denyAll: !*yolo && *allowList == "", allow: map[string]bool{}}
 	for _, t := range strings.Split(*allowList, ",") {
 		if t != "" {
@@ -419,6 +438,10 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sig
+		if !be.busy() {
+			cancel()
+			os.Exit(130) // idle: quit immediately (pre-split semantics)
+		}
 		be.interrupt()
 		fmt.Fprintln(os.Stderr, "(interrupt sent; Ctrl-C again to quit)")
 		<-sig // second signal: hard exit
@@ -455,6 +478,10 @@ func main() {
 		case <-ctx.Done():
 			s.discardRun(id)
 			return 130
+		case <-be.dead(): // nil channel locally: never fires
+			s.discardRun(id)
+			fmt.Fprintln(os.Stderr, "anneal-headless: server connection lost")
+			return 1
 		case <-time.After(60 * time.Minute):
 			s.discardRun(id)
 			be.interrupt()
@@ -579,7 +606,7 @@ func main() {
 // finishImprove runs the -improve tail: locally (returns the structured
 // result) or remotely (start RPC, then wait for the improve.done/error
 // event that the sink forwards on done).
-func finishImprove(be backend, k int, mode, resume string, done chan struct{}) int {
+func finishImprove(be backend, k int, mode, resume string, done chan bool) int {
 	fmt.Fprintln(os.Stderr, "🔧 harness improvement: propose → probe → compose …")
 	if lb, ok := be.(*localBackend); ok {
 		ictx, icancel := context.WithTimeout(context.Background(), 25*time.Minute)
@@ -598,8 +625,14 @@ func finishImprove(be backend, k int, mode, resume string, done chan struct{}) i
 		return 1
 	}
 	select {
-	case <-done:
+	case ok := <-done:
+		if !ok {
+			return 1
+		}
 		return 0
+	case <-be.dead():
+		fmt.Fprintln(os.Stderr, "anneal-headless: server connection lost during improve")
+		return 1
 	case <-time.After(25 * time.Minute):
 		fmt.Fprintln(os.Stderr, "anneal-headless: improve timed out")
 		return 1

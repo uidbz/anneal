@@ -60,8 +60,6 @@ type shell struct {
 	paneSrc    string
 	permRows   map[string]fyne.CanvasObject
 
-	baseTheme fyne.Theme
-
 	header    fyne.CanvasObject
 	composer  fyne.CanvasObject
 	statusbar fyne.CanvasObject
@@ -86,9 +84,8 @@ func newShell(a *coreapp.App, app fyne.App, win fyne.Window, paneSrc string) (*s
 		mode:       a.Runner.Mode(),
 		paneSrc:    paneSrc,
 		maxVisible: defaultVisibleBlocks,
-		baseTheme:  &brandTheme{Theme: app.Settings().Theme()},
 	}
-	applyTextScale(app, s.baseTheme, a.Cfg.UI.TextScale)
+	applyTheme(app, a.Cfg.UI)
 	s.build()
 	if err := s.buildHarness(paneSrc); err != nil {
 		return nil, err
@@ -126,7 +123,7 @@ func (s *shell) build() {
 	}
 
 	s.runDot = newStatusDot()
-	s.runDot.setStatus(okColor)
+	s.runDot.setToken(colorOK)
 	s.modelDot = newStatusDot()
 	s.tieDot = newStatusDot()
 	s.mcpDot = newStatusDot()
@@ -155,8 +152,7 @@ func (s *shell) build() {
 
 	left := container.New(&rowLayout{gap: 8}, brand, s.modeBtn, newBtn, sessBtn,
 		settingsBtn, s.improveBtn, fontDownBtn, fontUpBtn)
-	rule := canvas.NewRectangle(color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x14})
-	rule.SetMinSize(fyne.NewSize(0, 1))
+	rule := newDivider()
 	s.header = container.New(&padLayout{l: 12, r: 12, t: 8, b: 6},
 		container.NewBorder(nil, rule, left, nil, nil))
 	s.composer = container.New(&padLayout{l: 12, r: 12, t: 6, b: 2},
@@ -168,13 +164,6 @@ func (s *shell) build() {
 	s.statusbar = container.New(&padLayout{l: 12, r: 12, t: 2, b: 8},
 		container.New(&rowLayout{gap: 14}, s.runDot, s.status, s.chipModel,
 			s.chipTie, s.chipMCP, s.usage))
-}
-
-// hgap is a transparent spacer (Fyne box layouts have no item spacing).
-func hgap(w float32) fyne.CanvasObject {
-	r := canvas.NewRectangle(color.Transparent)
-	r.SetMinSize(fyne.NewSize(w, 0))
-	return r
 }
 
 // trunc keeps header chips from forcing a huge window minimum width.
@@ -201,9 +190,9 @@ func newChip(d *statusDot, l *widget.Label) *fyne.Container {
 }
 
 // setRunState updates the run-state label and its dot together.
-func (s *shell) setRunState(text string, dot color.Color, alarm bool) {
+func (s *shell) setRunState(text string, dot fyne.ThemeColorName, alarm bool) {
 	s.status.SetText(text)
-	s.runDot.setStatus(dot)
+	s.runDot.setToken(dot)
 	if alarm {
 		s.status.Importance = widget.HighImportance
 	} else {
@@ -247,10 +236,8 @@ func (s *shell) wireLayout() {
 		s.todos,
 	)
 	// Faint card behind the todo list so the sidebar reads as one panel.
-	card := canvas.NewRectangle(color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x0a})
-	card.CornerRadius = 8
 	s.todoPane = container.NewStack(spacer,
-		container.NewStack(card, container.New(&padLayout{l: 10, r: 10, t: 8, b: 8}, todoBody)))
+		newSurface(colorRaised, container.New(&padLayout{l: 10, r: 10, t: 8, b: 8}, todoBody)))
 	s.todoPane.Hide()
 	chat := container.NewBorder(
 		container.NewVBox(s.perms),
@@ -343,7 +330,7 @@ func (s *shell) installShortcuts() {
 // user-facing notice.
 func (s *shell) setTextScale(scale float64) {
 	scale = s.a.SetTextScale(scale) // clamp + persist + config.changed
-	applyTextScale(s.app, s.baseTheme, scale)
+	applyTheme(s.app, s.a.Cfg.UI.WithTextScale(scale))
 }
 
 // nudgeTextScale steps the text size by delta (A-/A+ buttons, Ctrl+= / Ctrl+-).

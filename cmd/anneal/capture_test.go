@@ -9,7 +9,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/theme"
 
 	coreapp "github.com/uidbz/anneal/core/app"
 )
@@ -34,7 +33,12 @@ func TestUICapture(t *testing.T) {
 	}
 	fyneApp := test.NewApp()
 	t.Cleanup(fyneApp.Quit)
-	fyneApp.Settings().SetTheme(theme.DarkTheme())
+	mode := os.Getenv("ANNEAL_UI_CAPTURE_THEME")
+	if mode == "" {
+		mode = "dark"
+	}
+	// newShell applies ui.theme, so set it before constructing the shell.
+	a.Cfg.UI.Theme = mode
 	win := fyneApp.NewWindow("capture")
 	src, err := paneSource("")
 	if err != nil {
@@ -47,7 +51,7 @@ func TestUICapture(t *testing.T) {
 	win.SetContent(sh.root)
 	win.Resize(fyne.NewSize(1280, 800))
 	feedSampleSession(sh)
-	capture(t, win, filepath.Join(dir, "chat.png"))
+	capture(t, win, filepath.Join(dir, "chat-"+mode+".png"))
 }
 
 func capture(t *testing.T, win fyne.Window, path string) {

@@ -39,11 +39,9 @@ func (s *shell) addApprovalCard(id, info string, buttons ...fyne.CanvasObject) {
 	lbl.Wrapping = fyne.TextWrapWord
 	lbl.Selectable = true
 	// Card with an amber wash (attention) and the buttons on their own row.
-	card := canvas.NewRectangle(color.NRGBA{R: 0xf5, G: 0x9e, B: 0x0b, A: 0x14})
-	card.CornerRadius = 8
 	body := container.NewBorder(nil,
 		container.New(&rowLayout{gap: 8}, buttons...), nil, nil, lbl)
-	stack := container.NewStack(card, container.New(&padLayout{l: 12, r: 12, t: 8, b: 8}, body))
+	stack := newSurface(colorWarnWash, container.New(&padLayout{l: 12, r: 12, t: 8, b: 8}, body)).border(colorWarn, 1)
 	gap := canvas.NewRectangle(color.Transparent)
 	gap.SetMinSize(fyne.NewSize(0, 8))
 	s.permRows[id] = container.NewVBox(stack, gap)

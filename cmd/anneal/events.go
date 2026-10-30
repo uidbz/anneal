@@ -25,10 +25,10 @@ func (s *shell) handleEvent(e map[string]any) {
 		case "online":
 			s.modelLbl.SetText(fmt.Sprintf("%s · %s ctx",
 				trunc(str(h["model"]), 22), humanK(int(num(h["ctx_window"])))))
-			s.modelDot.setStatus(okColor)
+			s.modelDot.setToken(colorOK)
 		case "connecting", "probing":
 			s.modelLbl.SetText("model: " + state + "…")
-			s.modelDot.setStatus(warnColor)
+			s.modelDot.setToken(colorWarn)
 		default:
 			msg := str(h["error"])
 			if msg != "" {
@@ -36,7 +36,7 @@ func (s *shell) handleEvent(e map[string]any) {
 			} else {
 				s.modelLbl.SetText("model: " + state)
 			}
-			s.modelDot.setStatus(errColor)
+			s.modelDot.setToken(colorErr)
 		}
 		s.chipModel.Show()
 	case "tie.state":
@@ -46,11 +46,11 @@ func (s *shell) handleEvent(e map[string]any) {
 			s.chipTie.Hide()
 		case boolean(st["online"]):
 			s.tie.SetText("index: " + str(st["collection"]))
-			s.tieDot.setStatus(okColor)
+			s.tieDot.setToken(colorOK)
 			s.chipTie.Show()
 		default:
 			s.tie.SetText("index: offline")
-			s.tieDot.setStatus(errColor)
+			s.tieDot.setToken(colorErr)
 			s.chipTie.Show()
 		}
 	case "mcp.state":
@@ -67,18 +67,18 @@ func (s *shell) handleEvent(e map[string]any) {
 			s.mcp.SetText(fmt.Sprintf("mcp: %d/%d · %d tools", up, len(servers), tools))
 			switch {
 			case up == len(servers):
-				s.mcpDot.setStatus(okColor)
+				s.mcpDot.setToken(colorOK)
 			case up > 0:
-				s.mcpDot.setStatus(warnColor)
+				s.mcpDot.setToken(colorWarn)
 			default:
-				s.mcpDot.setStatus(errColor)
+				s.mcpDot.setToken(colorErr)
 			}
 			s.chipMCP.Show()
 		} else {
 			s.chipMCP.Hide()
 		}
 	case "run.started":
-		s.setRunState("running…", warnColor, false)
+		s.setRunState("running…", colorWarn, false)
 		s.usage.SetText("running…")
 	case "run.busy":
 		s.status.SetText("a run is already active")
@@ -88,7 +88,7 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.flushTail()
 	case "thinking.delta":
 		s.status.SetText("thinking…")
-		s.runDot.setStatus(warnColor)
+		s.runDot.setToken(colorWarn)
 	case "message.final":
 		s.closeTail(str(e["text"]))
 	case "tool.start":
@@ -107,11 +107,11 @@ func (s *shell) handleEvent(e map[string]any) {
 			humanK(int(num(u["tin"]))), humanK(int(num(u["tout"]))), int(num(e["ctx_pct"]))))
 		switch {
 		case boolean(e["stopped"]):
-			s.setRunState("stopped", warnColor, false)
+			s.setRunState("stopped", colorWarn, false)
 		case boolean(e["ok"]):
-			s.setRunState("ready", okColor, false)
+			s.setRunState("ready", colorOK, false)
 		default:
-			s.setRunState("error", errColor, true)
+			s.setRunState("error", colorErr, true)
 			s.usage.SetText("")
 			if msg := str(e["error"]); msg != "" {
 				s.addNotice("⚠ " + msg)
@@ -178,10 +178,10 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.addNotice(fmt.Sprintf("🗜 context compacted: %d → %d tokens (%d msgs)",
 			int(num(e["before"])), int(num(e["after"])), int(num(e["msgs"]))))
 	case "review.start":
-		s.setRunState("reviewing…", warnColor, false)
+		s.setRunState("reviewing…", colorWarn, false)
 		s.addNotice("🧠 background review started")
 	case "review.skipped":
-		s.setRunState("ready", okColor, false)
+		s.setRunState("ready", colorOK, false)
 		if str(e["reason"]) != "preempted by user" {
 			s.addNotice("🧠 review skipped: " + str(e["reason"]))
 		}
@@ -189,7 +189,7 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.addNotice("🪧 reviewer flagged a harness gap: " + str(e["gap"]))
 		s.refreshActivity()
 	case "review.done":
-		s.setRunState("ready", okColor, false)
+		s.setRunState("ready", colorOK, false)
 		ledger := list(e["ledger"])
 		switch {
 		case str(e["error"]) != "":
@@ -204,7 +204,7 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.improveAuto = true
 		s.addNotice("⚡ auto-improve: idle after a successful run — improving the harness once for this session")
 	case "improve.start":
-		s.setRunState("improving harness…", warnColor, false)
+		s.setRunState("improving harness…", colorWarn, false)
 		s.improveBtn.SetText("improving…")
 		tag := ""
 		if s.improveAuto {
@@ -219,7 +219,7 @@ func (s *shell) handleEvent(e map[string]any) {
 	case "improve.compose":
 		s.addNotice("🔧 composed successor")
 	case "improve.done":
-		s.setRunState("ready", okColor, false)
+		s.setRunState("ready", colorOK, false)
 		s.improveBtn.SetText("improve")
 		s.improveAuto = false
 		switch {
@@ -239,7 +239,7 @@ func (s *shell) handleEvent(e map[string]any) {
 		}
 		s.refreshActivity()
 	case "improve.error":
-		s.setRunState("ready", warnColor, false)
+		s.setRunState("ready", colorWarn, false)
 		s.improveBtn.SetText("improve")
 		s.improveAuto = false
 		s.addNotice("⚠ improve: " + str(e["error"]))
@@ -274,8 +274,8 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.refreshActivity()
 	case "config.changed":
 		// Covers edits from the settings dialog, scripts (agent.saveConfig),
-		// and setTextScale; re-applying the theme is idempotent.
-		applyTextScale(s.app, s.baseTheme, s.a.Cfg.UI.TextScale)
+		// and theme/text-size changes; re-applying the theme is idempotent.
+		applyTheme(s.app, s.a.Cfg.UI)
 		switch {
 		case str(e["error"]) != "":
 			s.addNotice("⚠ settings save: " + str(e["error"]))

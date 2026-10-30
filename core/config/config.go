@@ -104,9 +104,31 @@ type MCP struct {
 }
 
 type UI struct {
-	UIDir     string  `json:"ui_dir"`     // full-window script UI override (ANNEAL_UI_DIR)
-	PaneDir   string  `json:"pane_dir"`   // scripted-pane override
-	TextScale float64 `json:"text_scale"` // UI text size multiplier (0.6–2.5)
+	UIDir      string  `json:"ui_dir"`      // full-window script UI override (ANNEAL_UI_DIR)
+	PaneDir    string  `json:"pane_dir"`    // scripted-pane override
+	TextScale  float64 `json:"text_scale"`  // UI text size multiplier (0.6–2.5)
+	Theme      string  `json:"theme"`       // system (default) | light | dark
+	SidebarOpen   bool `json:"sidebar_open"`   // sessions sidebar visible
+	InspectorOpen bool `json:"inspector_open"` // tasks/context inspector visible
+	SidebarWidth   float64 `json:"sidebar_width"`   // px, clamped by the shell
+	InspectorWidth float64 `json:"inspector_width"` // px, clamped by the shell
+}
+
+// ThemeMode returns the normalized UI theme mode: system, light, or dark.
+func (u UI) ThemeMode() string {
+	switch u.Theme {
+	case "light", "dark":
+		return u.Theme
+	default:
+		return "system"
+	}
+}
+
+// WithTextScale returns a copy of the UI settings with a new text scale, so
+// callers can re-apply the theme without persisting first.
+func (u UI) WithTextScale(scale float64) UI {
+	u.TextScale = scale
+	return u
 }
 
 // Harness toggles the editable harness components (M10).
@@ -204,7 +226,14 @@ func Default() *Config {
 		MCP:        MCP{Enabled: true, AutoDetect: true, Servers: map[string]MCPServer{}},
 		Harness:    Harness{Enabled: true, CharLimit: 6000},
 		Improve:    Improve{Enabled: true, Auto: true, AutoIdleS: 300, Library: true, K: 1, Mode: "sequential"},
-		UI:         UI{TextScale: 1.0},
+		UI: UI{
+			TextScale:      1.0,
+			Theme:          "system",
+			SidebarOpen:    true,
+			InspectorOpen:  true,
+			SidebarWidth:   240,
+			InspectorWidth: 280,
+		},
 		Server: Server{
 			Listen:       []string{"127.0.0.1:7777"},
 			AuthTokenEnv: "ANNEAL_AUTH_TOKEN",
@@ -253,6 +282,9 @@ func Load() (*Config, error) {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			cfg.UI.TextScale = f
 		}
+	}
+	if v := os.Getenv("ANNEAL_THEME"); v != "" {
+		cfg.UI.Theme = v
 	}
 	// Server overrides (container-oriented).
 	if v := os.Getenv("ANNEAL_LISTEN"); v != "" {
@@ -354,6 +386,31 @@ func (c *Config) normalize() {
 		c.Server.DrainGraceS = d.Server.DrainGraceS
 	}
 	c.UI.TextScale = ClampTextScale(c.UI.TextScale)
+	c.UI.Theme = c.UI.ThemeMode()
+	c.UI.SidebarWidth = ClampPanelWidth(c.UI.SidebarWidth, 240)
+	c.UI.InspectorWidth = ClampPanelWidth(c.UI.InspectorWidth, 280)
+}
+
+// Panel width bounds and defaults for the shell's sidebar and inspector.
+const (
+	MinPanelWidth     = 180.0
+	MaxPanelWidth     = 480.0
+	DefaultSidebarW   = 240.0
+	DefaultInspectorW = 280.0
+)
+
+// ClampPanelWidth bounds a persisted panel width; non-positive means def.
+func ClampPanelWidth(w, def float64) float64 {
+	if w <= 0 {
+		return def
+	}
+	if w < MinPanelWidth {
+		return MinPanelWidth
+	}
+	if w > MaxPanelWidth {
+		return MaxPanelWidth
+	}
+	return w
 }
 
 // ClampTextScale bounds a text-scale multiplier; non-positive (unset) means 1.0.

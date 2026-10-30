@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -28,7 +29,7 @@ func (s *shell) addUser(text string) {
 	lbl.TextStyle = fyne.TextStyle{Italic: true}
 	lbl.Selectable = true
 	// Thin accent bar marks the user's own turns in the transcript.
-	bar := canvas.NewRectangle(accent)
+	bar := canvas.NewRectangle(theme.Color(theme.ColorNamePrimary))
 	bar.SetMinSize(fyne.NewSize(3, 0))
 	s.appendBlock(container.NewBorder(nil, nil, bar, nil, lbl))
 }

@@ -38,7 +38,7 @@ func TestEventsChannelClosesOnClose(t *testing.T) {
 func stubDial(t *testing.T) *Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ws, err := websocket.Upgrader{}.Upgrade(w, r)
+		ws, err := (&websocket.Upgrader{}).Upgrade(w, r)
 		if err != nil {
 			return
 		}
@@ -61,7 +61,7 @@ func TestProtoMismatchRejected(t *testing.T) {
 	// Spin a stub WS that acks with proto 2; Dial must refuse it
 	// (PROTOCOL.md versioning rules).
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ws, err := websocket.Upgrader{}.Upgrade(w, r)
+		ws, err := (&websocket.Upgrader{}).Upgrade(w, r)
 		if err != nil {
 			return
 		}

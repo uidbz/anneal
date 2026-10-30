@@ -116,6 +116,10 @@ func Dial(ctx context.Context, addr, token string) (*Client, error) {
 	if p, ok := ack["proto"].(float64); ok {
 		c.proto = int(p)
 	}
+	if c.proto != ProtoVersion {
+		conn.Close()
+		return nil, fmt.Errorf("server protocol %d unsupported (client %d)", c.proto, ProtoVersion)
+	}
 	c.serverVer, _ = ack["server"].(string)
 	_ = conn.SetReadDeadline(time.Time{})
 
@@ -216,24 +220,29 @@ func (c *Client) ServerVersion() string { return c.serverVer }
 // Proto is the negotiated protocol revision.
 func (c *Client) Proto() int { return c.proto }
 
+// ProtoVersion is the protocol revision this client speaks.
+const ProtoVersion = 1
+
 // Dropped counts events discarded because the consumer fell behind.
 func (c *Client) Dropped() int64 { return c.dropped.Load() }
 
-// Close tears the connection down; pending calls get ErrClosed.
+// Close tears the connection down; pending calls get ErrClosed. Events()
+// closes too, so consumer range loops terminate.
 func (c *Client) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
-		close(c.closeCh)
-		_ = c.conn.WriteControl(websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
-			time.Now().Add(time.Second))
-		err = c.conn.Close()
 		c.mu.Lock()
+		close(c.closeCh)
 		for id, ch := range c.pending {
 			ch <- reply{err: &RPCError{Code: -1, Message: "connection closed"}}
 			delete(c.pending, id)
 		}
+		close(c.events) // guarded by mu together with deliver
 		c.mu.Unlock()
+		_ = c.conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
+			time.Now().Add(time.Second))
+		err = c.conn.Close()
 	})
 	return err
 }
@@ -292,10 +301,13 @@ func (c *Client) readLoop() {
 
 // deliver is non-blocking; a stalled consumer sheds the newest frame rather
 // than reordering the stream (the caller can resync with sessions.open).
+// The mu guard makes close(events) in Close race-free.
 func (c *Client) deliver(e Event) {
+	c.mu.Lock()
 	select {
 	case c.events <- e:
 	default:
 		c.dropped.Add(1)
 	}
+	c.mu.Unlock()
 }

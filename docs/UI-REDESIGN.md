@@ -1,6 +1,6 @@
 # Desktop shell redesign (professional layout)
 
-Status: in progress. One pass, split into phases; every phase leaves the app
+Status: complete (8 phases, all checks green). One pass, split into phases; every phase leaves the app
 building with `go test ./...` green and lands as its own commit.
 `-script-ui`, `anneal-headless`, and `anneald` are not touched.
 

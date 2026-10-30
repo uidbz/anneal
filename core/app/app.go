@@ -46,8 +46,11 @@ type App struct {
 
 	improveMu      sync.Mutex
 	improveRunning bool
-	healthMu       sync.Mutex // guards lastHealth (concurrent probes)
-	lastHealth     string     // dedupe provider.state events
+	autoMu         sync.Mutex
+	improved       map[string]bool // sessions with an improve pass already run (in-memory)
+	autoTimer      *time.Timer     // pending auto-improve pass (improve.auto)
+	healthMu       sync.Mutex      // guards lastHealth (concurrent probes)
+	lastHealth     string          // dedupe provider.state events
 }
 
 func New() (*App, error) {
@@ -84,6 +87,7 @@ func New() (*App, error) {
 		fmt.Fprintf(os.Stderr, "anneal: harness-lib seed: %v\n", err)
 	}
 	a.Journey = journey.New()
+	a.improved = map[string]bool{}
 	a.Bus.AddTap(a.journeyTap)
 	a.Review = review.NewManager(&cfg.Review, a.Mem, a.Skills, a.Tie,
 		a.Bus.Emit,
@@ -137,6 +141,10 @@ func (a *App) journeyTap(v any) {
 		if e["ok"] == true {
 			a.Journey.Append("improve", map[string]any{"run": toStr(e["run"]), "successor": e["successor"] == true})
 		}
+	case "run.finished":
+		if e["ok"] == true {
+			a.maybeArmAutoImprove()
+		}
 	}
 }
 
@@ -180,6 +188,74 @@ func (a *App) startCore(ctx context.Context) {
 	}
 }
 
+// maybeArmAutoImprove schedules one automatic harness-improvement pass
+// (improve.auto) AutoIdleS seconds after a successful run. It re-arms on
+// every such run but fires at most once per session; a pass skipped by
+// activity is simply re-armed by the next run. The manual path stays the
+// escape hatch (and the improved-set prevents double GPU work).
+func (a *App) maybeArmAutoImprove() {
+	if !a.Cfg.Improve.Enabled || !a.Cfg.Improve.Auto {
+		return
+	}
+	wait := a.Cfg.Improve.AutoIdleS
+	if wait <= 0 {
+		wait = 300
+	}
+	sid := a.Runner.SessionID()
+	if sid == "" {
+		return
+	}
+	a.autoMu.Lock()
+	defer a.autoMu.Unlock()
+	if a.improved[sid] {
+		return
+	}
+	if a.autoTimer != nil {
+		a.autoTimer.Stop()
+	}
+	a.autoTimer = time.AfterFunc(time.Duration(wait)*time.Second, func() { a.autoImprovePass(sid) })
+}
+
+// autoImprovePass runs the armed pass only when the GPU is otherwise idle;
+// the session must not have changed since arming.
+func (a *App) autoImprovePass(sid string) {
+	if sid == "" || sid != a.Runner.SessionID() {
+		return // session switched: the new session arms its own pass
+	}
+	if a.Runner.Busy() || a.ImproveBusy() || a.Review.Running() {
+		return // user/improve/reviewer owns the GPU; next run re-arms
+	}
+	a.autoMu.Lock()
+	if a.improved[sid] {
+		a.autoMu.Unlock()
+		return
+	}
+	if len(a.improved) > 256 {
+		a.improved = map[string]bool{sid: true}
+	} else {
+		a.improved[sid] = true
+	}
+	a.autoMu.Unlock()
+	a.Bus.Emit(map[string]any{"type": "improve.auto", "session": sid})
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+	defer cancel()
+	if _, err := a.ImproveWith(ctx, 0, "", ""); err != nil {
+		a.Bus.Emit(map[string]any{"type": "improve.error",
+			"error": "auto: " + err.Error(), "auto": true})
+	}
+}
+
+// noteImproved records that this session already had a pass (manual counts,
+// so an armed timer will not double up on it).
+func (a *App) noteImproved(sid string) {
+	a.autoMu.Lock()
+	defer a.autoMu.Unlock()
+	if a.improved == nil {
+		a.improved = map[string]bool{}
+	}
+	a.improved[sid] = true
+}
+
 // ImproveBusy reports whether an improvement step is running (GPU guard).
 func (a *App) ImproveBusy() bool {
 	a.improveMu.Lock()
@@ -221,6 +297,7 @@ func (a *App) ImproveWith(ctx context.Context, kOverride int, modeOverride, resu
 	if !a.Cfg.Improve.Enabled {
 		return nil, fmt.Errorf("improve: disabled in config")
 	}
+	a.noteImproved(sid)  // any pass (manual or auto) settles this session
 	a.Review.Interrupt() // improvement owns the GPU next; foreground semantics
 	digest := a.Runner.Digest(ctx, sid, a.Cfg.Review.MaxInputTokens*4)
 	var lib *harnesslib.Store

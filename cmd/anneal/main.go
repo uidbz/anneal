@@ -31,6 +31,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -126,36 +127,47 @@ type shell struct {
 	app fyne.App
 	win fyne.Window
 
-	status   *widget.Label
-	usage    *widget.Label
-	tie      *widget.Label
-	mcp      *widget.Label
-	modeBtn  *widget.Button
-	entry    *widget.Entry
-	scroll   *container.Scroll
-	chatBox  *fyne.Container // visible transcript blocks (append-only)
-	earlier  *widget.Button  // "show earlier messages" when the window is capped
-	visible  []fyne.CanvasObject
-	hidden   []fyne.CanvasObject
-	perms    *fyne.Container
-	todos    *fyne.Container
-	todoPane fyne.CanvasObject
-	activity *fyne.Container
-	tabs     *container.AppTabs
-	harness  *scriptPane
-	paneSrc  string
-	permRows map[string]fyne.CanvasObject
+	status     *widget.Label // run state: ready/running…/improving…
+	runDot     *statusDot
+	usage      *widget.Label
+	modelLbl   *widget.Label // model server chip
+	modelDot   *statusDot
+	chipModel  *fyne.Container
+	tie        *widget.Label
+	tieDot     *statusDot
+	chipTie    *fyne.Container
+	mcp        *widget.Label
+	mcpDot     *statusDot
+	chipMCP    *fyne.Container
+	improveBtn *widget.Button
+	modeBtn    *widget.Button
+	entry      *widget.Entry
+	scroll     *container.Scroll
+	chatBox    *fyne.Container // visible transcript blocks (append-only)
+	earlier    *widget.Button  // "show earlier messages" when the window is capped
+	visible    []fyne.CanvasObject
+	hidden     []fyne.CanvasObject
+	perms      *fyne.Container
+	todos      *fyne.Container
+	todoPane   fyne.CanvasObject
+	activity   *fyne.Container
+	tabs       *container.AppTabs
+	harness    *scriptPane
+	paneSrc    string
+	permRows   map[string]fyne.CanvasObject
 
 	baseTheme fyne.Theme
 
-	header   fyne.CanvasObject
-	composer fyne.CanvasObject
-	root     fyne.CanvasObject
+	header    fyne.CanvasObject
+	composer  fyne.CanvasObject
+	statusbar fyne.CanvasObject
+	root      fyne.CanvasObject
 
 	tail         *widget.Label
 	tailBuf      string
 	streamBlocks []fyne.CanvasObject // frozen chunks of the live message
 	mode         string
+	improveAuto  bool // current improve pass was auto-triggered (notice wording)
 	autoSend     string
 	autoQuit     bool
 	maxVisible   int
@@ -170,7 +182,7 @@ func newShell(a *coreapp.App, app fyne.App, win fyne.Window, paneSrc string) (*s
 		mode:       a.Runner.Mode(),
 		paneSrc:    paneSrc,
 		maxVisible: defaultVisibleBlocks,
-		baseTheme:  app.Settings().Theme(),
+		baseTheme:  &brandTheme{Theme: app.Settings().Theme()},
 	}
 	applyTextScale(app, s.baseTheme, a.Cfg.UI.TextScale)
 	s.build()
@@ -182,11 +194,14 @@ func newShell(a *coreapp.App, app fyne.App, win fyne.Window, paneSrc string) (*s
 }
 
 func (s *shell) build() {
-	s.status = widget.NewLabel("model server: connecting…")
+	s.status = widget.NewLabel("ready")
 	s.usage = widget.NewLabel("")
+	s.modelLbl = widget.NewLabel("model: connecting…")
 	s.tie = widget.NewLabel("")
 	s.mcp = widget.NewLabel("")
-	s.status.Wrapping = fyne.TextWrapWord
+	s.status.Wrapping = fyne.TextWrapOff // one short line; never wraps
+
+	brand := widget.NewLabelWithStyle("◆ anneal", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 
 	s.modeBtn = widget.NewButton(modeTitle(s.mode), func() {
 		if s.mode == "plan" {
@@ -200,6 +215,22 @@ func (s *shell) build() {
 	settingsBtn := widget.NewButton("settings", s.showSettings)
 	fontDownBtn := widget.NewButton("A-", func() { s.nudgeTextScale(-textScaleStep) })
 	fontUpBtn := widget.NewButton("A+", func() { s.nudgeTextScale(textScaleStep) })
+
+	s.improveBtn = widget.NewButtonWithIcon("improve", theme.MoveUpIcon(), s.improveNow)
+	if !s.a.Cfg.Improve.Enabled {
+		s.improveBtn.Hide()
+	}
+
+	s.runDot = newStatusDot()
+	s.runDot.setStatus(okColor)
+	s.modelDot = newStatusDot()
+	s.tieDot = newStatusDot()
+	s.mcpDot = newStatusDot()
+	s.chipModel = newChip(s.modelDot, s.modelLbl)
+	s.chipTie = newChip(s.tieDot, s.tie)
+	s.chipMCP = newChip(s.mcpDot, s.mcp)
+	s.chipTie.Hide()
+	s.chipMCP.Hide()
 
 	s.entry = widget.NewEntry()
 	s.entry.PlaceHolder = "describe a task — Enter to send"
@@ -218,12 +249,75 @@ func (s *shell) build() {
 		s.a.Runner.Interrupt()
 	})
 
-	s.header = container.NewVBox(
-		container.NewHBox(s.modeBtn, newBtn, sessBtn, settingsBtn, fontDownBtn, fontUpBtn, widget.NewSeparator(), s.status),
-		container.NewHBox(s.usage, s.tie, s.mcp),
-	)
-	s.composer = container.NewBorder(nil, nil, nil,
-		container.NewHBox(sendBtn, stopBtn), s.entry)
+	left := container.New(&rowLayout{gap: 8}, brand, s.modeBtn, newBtn, sessBtn,
+		settingsBtn, s.improveBtn, fontDownBtn, fontUpBtn)
+	rule := canvas.NewRectangle(color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x14})
+	rule.SetMinSize(fyne.NewSize(0, 1))
+	s.header = container.New(&padLayout{l: 12, r: 12, t: 8, b: 6},
+		container.NewBorder(nil, rule, left, nil, nil))
+	s.composer = container.New(&padLayout{l: 12, r: 12, t: 6, b: 2},
+		container.NewBorder(nil, nil, nil,
+			container.NewHBox(sendBtn, hgap(6), stopBtn), s.entry))
+	// Status bar (bottom, IDE-style): run state + health chips + usage.
+	// Keeping it out of the header keeps the header's minimum window
+	// width small enough for narrow windows.
+	s.statusbar = container.New(&padLayout{l: 12, r: 12, t: 2, b: 8},
+		container.New(&rowLayout{gap: 14}, s.runDot, s.status, s.chipModel,
+			s.chipTie, s.chipMCP, s.usage))
+}
+
+// hgap is a transparent spacer (Fyne box layouts have no item spacing).
+func hgap(w float32) fyne.CanvasObject {
+	r := canvas.NewRectangle(color.Transparent)
+	r.SetMinSize(fyne.NewSize(w, 0))
+	return r
+}
+
+// trunc keeps header chips from forcing a huge window minimum width.
+func trunc(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
+}
+
+// humanK formats token counts compactly (262144 → 262k).
+func humanK(n int) string {
+	if n >= 1000 {
+		return strconv.Itoa(n/1000) + "k"
+	}
+	return strconv.Itoa(n)
+}
+
+// newChip packs a status dot with a caption-emphasis label.
+func newChip(d *statusDot, l *widget.Label) *fyne.Container {
+	l.Importance = widget.LowImportance
+	return container.New(&rowLayout{gap: 6}, d, l)
+}
+
+// setRunState updates the run-state label and its dot together.
+func (s *shell) setRunState(text string, dot color.Color, alarm bool) {
+	s.status.SetText(text)
+	s.runDot.setStatus(dot)
+	if alarm {
+		s.status.Importance = widget.HighImportance
+	} else {
+		s.status.Importance = widget.MediumImportance
+	}
+}
+
+// improveNow runs one harness-improvement pass (header button, Ctrl+I, and
+// /improve). Guards live in ImproveWith; failures arrive as improve.error.
+func (s *shell) improveNow() {
+	s.addNotice("🔧 harness improvement started")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+		defer cancel()
+		if _, err := s.a.Improve(ctx); err != nil {
+			s.a.Bus.Emit(map[string]any{"type": "improve.error", "error": err.Error()})
+		}
+	}()
 }
 
 func (s *shell) buildHarness(src string) error {
@@ -253,7 +347,10 @@ func paneEvent(v any) bool {
 }
 
 func (s *shell) wireLayout() {
-	s.scroll = container.NewVScroll(container.NewVBox(s.earlier, s.chatBox))
+	// Breathing room: the transcript is inset from the window edges.
+	padded := container.New(&padLayout{l: 12, r: 12, t: 4, b: 2},
+		container.NewVBox(s.earlier, s.chatBox))
+	s.scroll = container.NewVScroll(padded)
 	// The transparent spacer only exists to give the Border east slot a
 	// readable minimum width; the todo pane itself is hidden while empty.
 	spacer := canvas.NewRectangle(color.Transparent)
@@ -262,7 +359,11 @@ func (s *shell) wireLayout() {
 		widget.NewLabelWithStyle("todos", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		s.todos,
 	)
-	s.todoPane = container.NewStack(spacer, todoBody)
+	// Faint card behind the todo list so the sidebar reads as one panel.
+	card := canvas.NewRectangle(color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x0a})
+	card.CornerRadius = 8
+	s.todoPane = container.NewStack(spacer,
+		container.NewStack(card, container.New(&padLayout{l: 10, r: 10, t: 8, b: 8}, todoBody)))
 	s.todoPane.Hide()
 	chat := container.NewBorder(
 		container.NewVBox(s.perms),
@@ -275,7 +376,8 @@ func (s *shell) wireLayout() {
 		container.NewTabItem("Harness", s.harness.view),
 		container.NewTabItem("Activity", container.NewVScroll(s.activity)),
 	)
-	s.root = container.NewBorder(s.header, s.composer, nil, nil, s.tabs)
+	s.root = container.NewBorder(s.header,
+		container.NewVBox(s.composer, s.statusbar), nil, nil, s.tabs)
 	s.refreshActivity()
 }
 
@@ -385,14 +487,7 @@ func (s *shell) slash(line string) {
 		s.a.Review.LearnNow()
 		s.addNotice("learning pass queued")
 	case "/improve":
-		s.addNotice("harness improvement started")
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
-			defer cancel()
-			if _, err := s.a.Improve(ctx); err != nil {
-				s.a.Bus.Emit(map[string]any{"type": "improve.error", "error": err.Error()})
-			}
-		}()
+		s.improveNow()
 	case "/harness":
 		s.tabs.SelectIndex(1)
 	case "/quit":
@@ -571,6 +666,7 @@ func (s *shell) installShortcuts() {
 	add(fyne.KeyN, fyne.KeyModifierControl, func() { s.a.Runner.NewSession() })
 	add(fyne.KeyB, fyne.KeyModifierControl, s.showSessions)
 	add(fyne.KeyD, fyne.KeyModifierControl, func() { s.a.Runner.Interrupt() })
+	add(fyne.KeyI, fyne.KeyModifierControl, s.improveNow)
 	add(fyne.KeyL, fyne.KeyModifierControl, func() { s.win.Canvas().Focus(s.entry) })
 	add(fyne.KeyR, fyne.KeyModifierControl, s.reloadPane)
 	add(fyne.KeyQ, fyne.KeyModifierControl, func() { s.app.Quit() })
@@ -659,19 +755,28 @@ func (s *shell) addUser(text string) {
 	lbl.Wrapping = fyne.TextWrapWord
 	lbl.TextStyle = fyne.TextStyle{Italic: true}
 	lbl.Selectable = true
-	s.appendBlock(lbl)
+	// Thin accent bar marks the user's own turns in the transcript.
+	bar := canvas.NewRectangle(accent)
+	bar.SetMinSize(fyne.NewSize(3, 0))
+	s.appendBlock(container.NewBorder(nil, nil, bar, nil, lbl))
 }
 
 func (s *shell) addMarkdown(text string) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
-	// RichText is not selectable in Fyne, so the transcript uses a plain
-	// selectable label with the markdown syntax stripped.
-	lbl := widget.NewLabel(markdownToPlain(text))
-	lbl.Wrapping = fyne.TextWrapWord
-	lbl.Selectable = true
-	s.appendBlock(lbl)
+	// RichText is not selectable in Fyne, so the transcript uses plain
+	// selectable labels: prose with markdown stripped, tables/code as
+	// monospace blocks with intact alignment.
+	for _, seg := range splitMarkdownSegments(text) {
+		lbl := widget.NewLabel(seg.text)
+		lbl.Wrapping = fyne.TextWrapWord
+		lbl.Selectable = true
+		if seg.mono {
+			lbl.TextStyle = fyne.TextStyle{Monospace: true}
+		}
+		s.appendBlock(lbl)
+	}
 }
 
 func (s *shell) addNotice(text string) {
@@ -872,22 +977,37 @@ func (s *shell) handleEvent(e map[string]any) {
 	case "provider.state":
 		h := obj(e["health"])
 		state := str(h["state"])
-		if state == "online" {
-			s.status.SetText(fmt.Sprintf("model: %s · ctx: %d", str(h["model"]), int(num(h["ctx_window"]))))
-		} else if str(h["error"]) != "" {
-			s.status.SetText(fmt.Sprintf("model server: %s — %s", state, str(h["error"])))
-		} else {
-			s.status.SetText("model server: " + state)
+		switch state {
+		case "online":
+			s.modelLbl.SetText(fmt.Sprintf("%s · %s ctx",
+				trunc(str(h["model"]), 22), humanK(int(num(h["ctx_window"])))))
+			s.modelDot.setStatus(okColor)
+		case "connecting", "probing":
+			s.modelLbl.SetText("model: " + state + "…")
+			s.modelDot.setStatus(warnColor)
+		default:
+			msg := str(h["error"])
+			if msg != "" {
+				s.modelLbl.SetText("model: " + state + " — " + msg)
+			} else {
+				s.modelLbl.SetText("model: " + state)
+			}
+			s.modelDot.setStatus(errColor)
 		}
+		s.chipModel.Show()
 	case "tie.state":
 		st := obj(e["state"])
 		switch {
 		case !boolean(st["enabled"]):
-			s.tie.SetText("")
+			s.chipTie.Hide()
 		case boolean(st["online"]):
 			s.tie.SetText("index: " + str(st["collection"]))
+			s.tieDot.setStatus(okColor)
+			s.chipTie.Show()
 		default:
 			s.tie.SetText("index: offline")
+			s.tieDot.setStatus(errColor)
+			s.chipTie.Show()
 		}
 	case "mcp.state":
 		servers := list(e["servers"])
@@ -900,10 +1020,21 @@ func (s *shell) handleEvent(e map[string]any) {
 			tools += int(num(srv["tools"]))
 		}
 		if len(servers) > 0 {
-			s.mcp.SetText(fmt.Sprintf("mcp: %d/%d up, %d tools", up, len(servers), tools))
+			s.mcp.SetText(fmt.Sprintf("mcp: %d/%d · %d tools", up, len(servers), tools))
+			switch {
+			case up == len(servers):
+				s.mcpDot.setStatus(okColor)
+			case up > 0:
+				s.mcpDot.setStatus(warnColor)
+			default:
+				s.mcpDot.setStatus(errColor)
+			}
+			s.chipMCP.Show()
+		} else {
+			s.chipMCP.Hide()
 		}
 	case "run.started":
-		s.status.SetText("running…")
+		s.setRunState("running…", warnColor, false)
 		s.usage.SetText("running…")
 	case "run.busy":
 		s.status.SetText("a run is already active")
@@ -913,6 +1044,7 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.flushTail()
 	case "thinking.delta":
 		s.status.SetText("thinking…")
+		s.runDot.setStatus(warnColor)
 	case "message.final":
 		s.closeTail(str(e["text"]))
 	case "tool.start":
@@ -927,15 +1059,15 @@ func (s *shell) handleEvent(e map[string]any) {
 	case "run.finished":
 		s.closeTail("")
 		u := obj(e["usage"])
-		s.usage.SetText(fmt.Sprintf("in: %d · out: %d · ctx: %d%%",
-			int(num(u["tin"])), int(num(u["tout"])), int(num(e["ctx_pct"]))))
+		s.usage.SetText(fmt.Sprintf("in %s · out %s · ctx %d%%",
+			humanK(int(num(u["tin"]))), humanK(int(num(u["tout"]))), int(num(e["ctx_pct"]))))
 		switch {
 		case boolean(e["stopped"]):
-			s.status.SetText("stopped")
+			s.setRunState("stopped", warnColor, false)
 		case boolean(e["ok"]):
-			s.status.SetText("ready")
+			s.setRunState("ready", okColor, false)
 		default:
-			s.status.SetText("error")
+			s.setRunState("error", errColor, true)
 			s.usage.SetText("")
 			if msg := str(e["error"]); msg != "" {
 				s.addNotice("⚠ " + msg)
@@ -998,10 +1130,10 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.addNotice(fmt.Sprintf("🗜 context compacted: %d → %d tokens (%d msgs)",
 			int(num(e["before"])), int(num(e["after"])), int(num(e["msgs"]))))
 	case "review.start":
-		s.status.SetText("reviewing…")
+		s.setRunState("reviewing…", warnColor, false)
 		s.addNotice("🧠 background review started")
 	case "review.skipped":
-		s.status.SetText("ready")
+		s.setRunState("ready", okColor, false)
 		if str(e["reason"]) != "preempted by user" {
 			s.addNotice("🧠 review skipped: " + str(e["reason"]))
 		}
@@ -1009,7 +1141,7 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.addNotice("🪧 reviewer flagged a harness gap: " + str(e["gap"]))
 		s.refreshActivity()
 	case "review.done":
-		s.status.SetText("ready")
+		s.setRunState("ready", okColor, false)
 		ledger := list(e["ledger"])
 		switch {
 		case str(e["error"]) != "":
@@ -1020,9 +1152,17 @@ func (s *shell) handleEvent(e map[string]any) {
 			s.addNotice(fmt.Sprintf("🧠 review saved %d lessons", len(ledger)))
 		}
 		s.refreshActivity()
+	case "improve.auto":
+		s.improveAuto = true
+		s.addNotice("⚡ auto-improve: idle after a successful run — improving the harness once for this session")
 	case "improve.start":
-		s.status.SetText("improving harness…")
-		s.addNotice("🔧 harness improvement started (run " + str(e["run"]) + ")")
+		s.setRunState("improving harness…", warnColor, false)
+		s.improveBtn.SetText("improving…")
+		tag := ""
+		if s.improveAuto {
+			tag = " (auto)"
+		}
+		s.addNotice("🔧 harness improvement started" + tag + " (run " + str(e["run"]) + ")")
 	case "improve.propose":
 		s.addNotice("🔧 propose: " + str(e["kind"]) + " editor drafting…")
 	case "improve.probe":
@@ -1031,7 +1171,9 @@ func (s *shell) handleEvent(e map[string]any) {
 	case "improve.compose":
 		s.addNotice("🔧 composed successor")
 	case "improve.done":
-		s.status.SetText("ready")
+		s.setRunState("ready", okColor, false)
+		s.improveBtn.SetText("improve")
+		s.improveAuto = false
 		switch {
 		case !boolean(e["ok"]):
 			s.addNotice("⚠ improve: " + str(e["error"]))
@@ -1049,7 +1191,9 @@ func (s *shell) handleEvent(e map[string]any) {
 		}
 		s.refreshActivity()
 	case "improve.error":
-		s.status.SetText("ready")
+		s.setRunState("ready", warnColor, false)
+		s.improveBtn.SetText("improve")
+		s.improveAuto = false
 		s.addNotice("⚠ improve: " + str(e["error"]))
 		s.refreshActivity()
 	case "memory.updated":

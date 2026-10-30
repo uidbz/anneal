@@ -117,10 +117,12 @@ type Harness struct {
 
 // Improve configures contrastive harness improvement (M12+).
 type Improve struct {
-	Enabled        bool   `json:"enabled"` // /improve, -improve
-	Library        bool   `json:"library"` // improvement library + reflection
-	K              int    `json:"k"`       // recursion depth (1 = single step)
-	Mode           string `json:"mode"`    // sequential (default) | parallel
+	Enabled        bool   `json:"enabled"`     // /improve, -improve
+	Auto           bool   `json:"auto"`        // one automatic pass per session after idle following a successful run
+	AutoIdleS      int    `json:"auto_idle_s"` // idle seconds before the automatic pass fires (<=0 = default)
+	Library        bool   `json:"library"`     // improvement library + reflection
+	K              int    `json:"k"`           // recursion depth (1 = single step)
+	Mode           string `json:"mode"`        // sequential (default) | parallel
 	TotalWallS     int    `json:"total_wall_s"`
 	MaxTotalTokens int    `json:"max_total_tokens"`
 }
@@ -201,7 +203,7 @@ func Default() *Config {
 		Tie:        Tie{Enabled: true, Collection: "anneal", ConfigName: ""},
 		MCP:        MCP{Enabled: true, AutoDetect: true, Servers: map[string]MCPServer{}},
 		Harness:    Harness{Enabled: true, CharLimit: 6000},
-		Improve:    Improve{Enabled: true, Library: true, K: 1, Mode: "sequential"},
+		Improve:    Improve{Enabled: true, Auto: true, AutoIdleS: 300, Library: true, K: 1, Mode: "sequential"},
 		UI:         UI{TextScale: 1.0},
 		Server: Server{
 			Listen:       []string{"127.0.0.1:7777"},

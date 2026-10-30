@@ -91,6 +91,14 @@ func (m *Manager) signal() {
 	}
 }
 
+// Running reports whether a review pass is currently executing. Other GPU
+// consumers (auto-improve) use it to stay out of the reviewer's way.
+func (m *Manager) Running() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.running
+}
+
 // SetActivityHooks wires the "is the user active" probes from the runner.
 func (m *Manager) SetActivityHooks(busy func() bool, lastActivity func() time.Time) {
 	m.mu.Lock()

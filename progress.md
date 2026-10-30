@@ -51,6 +51,31 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-10-30 — M17 review round (issues #2–#12)
+- Post-implementation review (self + fresh-eyes pass) found 11 corrections;
+  one GitHub issue each under tracking issue #1, fixed one by one.
+- Highest-impact: the hello read deadline persisted into the RPC loop (every
+  idle connection died at 10 s) — fixed + ping/pong keepalive (30s/75s,
+  documented in PROTOCOL.md); client events channel never closed on death
+  (goroutine leak) + a genuine send-on-closed race found by the new flood
+  test; headless -server hung for up to 60 min when anneald died mid-run.
+- Policy hardening: tokenless anneald now refuses browser-origin handshakes
+  (no CORS on WS) and wildcard/remote TCP binds — loopback TCP + 0600 unix
+  sockets remain the default trust model.
+- Lifecycle correctness: busy edges (run/improve/review start *and finish*)
+  fold into the idle timer so a long improve no longer triggers instant exit
+  the moment it completes.
+- Docker: global ARG VERSION was invisible in the build stage (empty stamp);
+  re-declared; dropreplace comment corrected (committed go.mod has no
+  replace; it is defensive for dev trees).
+- Conformance: notifications never get replies; parse errors reply with
+  id null; invalid-request frames get -32600; harness RPC surface mirrors
+  the local AgentAPI (restart_for_rules, warns, promote journey entry);
+  index.rebuild is single-flight.
+- New tests: idle-survives-handshake-deadline, unix roundtrip (+0600
+  check), slow-consumer disconnect + survivor, notification no-reply,
+  origin rejection, tokenless-bind policy, client teardown, proto mismatch.
+
 ### 2026-10-30 — M17: backend/frontend split (anneald + protocol + containers)
 - New backend binary `cmd/anneald` hosts the core behind a WebSocket JSON-RPC
   protocol (`core/server`): hello handshake (`proto` + optional bearer token

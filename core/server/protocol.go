@@ -19,6 +19,11 @@ const (
 	writeWait    = 10 * time.Second
 	helloTimeout = 10 * time.Second
 	maxFrame     = 1 << 20 // 1 MiB inbound frames
+
+	// Keepalive (PROTOCOL.md lifecycle): the server pings every pingPeriod;
+	// a connection that misses pongs for pongWait is reaped.
+	pingPeriod = 30 * time.Second
+	pongWait   = 75 * time.Second
 )
 
 // JSON-RPC error codes (spec range + -32000 handler errors, -32001 shutting).
@@ -104,6 +109,13 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 // serve owns one authenticated connection: writer goroutine, RPC read loop.
 func (s *Server) serve(ws *websocket.Conn, h *helloFrame) {
+	// The hello deadline must not survive the handshake; from here liveness
+	// is defined by the ping/pong keepalive, not frame traffic.
+	ws.SetReadDeadline(time.Now().Add(pongWait))
+	ws.SetPongHandler(func(string) error {
+		ws.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
 	c := &conn{srv: s, ws: ws, send: make(chan []byte, connQueue), die: make(chan struct{})}
 
 	// ack before registering so the client knows replay events are coming;
@@ -142,9 +154,12 @@ func (s *Server) serve(ws *websocket.Conn, h *helloFrame) {
 	}
 }
 
-// writeLoop drains the event queue and forwards RPC replies to the socket.
-// Any write error kills the connection (the read loop's defer cleans up).
+// writeLoop drains the event queue, forwards RPC replies, and pings. It is
+// the only writer on the socket (WriteControl included). Any write error
+// kills the connection (the read loop's defer cleans up).
 func (c *conn) writeLoop() {
+	tick := time.NewTicker(pingPeriod)
+	defer tick.Stop()
 	for {
 		select {
 		case <-c.die:
@@ -154,6 +169,11 @@ func (c *conn) writeLoop() {
 		case data := <-c.send:
 			_ = c.ws.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.ws.WriteMessage(websocket.TextMessage, data); err != nil {
+				c.close()
+				return
+			}
+		case <-tick.C:
+			if err := c.ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second)); err != nil {
 				c.close()
 				return
 			}

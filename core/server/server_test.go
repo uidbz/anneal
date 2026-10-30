@@ -196,6 +196,21 @@ func TestIdleShutdown(t *testing.T) {
 	t.Fatalf("idle shutdown did not fire (reason=%q)", s.Reason())
 }
 
+func TestIdleConnectionSurvivesHelloDeadline(t *testing.T) {
+	// Regression: the hello read deadline must not persist into the RPC
+	// loop, or every idle connection dies 10 s after connecting.
+	s, c := startTest(t, func(s *Server) { s.cfg.IdleTimeoutS = 0 })
+	_ = s
+	// Wait past the old 10 s hello deadline, then call normally.
+	time.Sleep(11 * time.Second)
+	callOK(t, c, "server.ping", nil)
+	select {
+	case <-c.Dead():
+		t.Fatal("idle connection was reaped after the hello deadline")
+	default:
+	}
+}
+
 func TestQuitRPC(t *testing.T) {
 	s, c := startTest(t, nil)
 	callOK(t, c, "server.quit", map[string]any{"reason": "test"})

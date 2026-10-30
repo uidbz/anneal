@@ -94,6 +94,11 @@ Slow consumers: per-connection queue (1024 events); overflow closes that
 connection rather than blocking the bus. Clients reconnect (fresh hello →
 replay).
 
+**Keepalive**: the server sends WebSocket pings every 30 s; a connection
+that fails to pong within 75 s is closed (clients' libraries answer pings
+automatically; pure-WS clients must). The hello read deadline (10 s) ends
+at the handshake — afterwards an idle connection is healthy by design.
+
 ## Methods
 
 All commands the local GUI has on the core. Params/results are JSON

@@ -104,12 +104,12 @@ type MCP struct {
 }
 
 type UI struct {
-	UIDir      string  `json:"ui_dir"`      // full-window script UI override (ANNEAL_UI_DIR)
-	PaneDir    string  `json:"pane_dir"`    // scripted-pane override
-	TextScale  float64 `json:"text_scale"`  // UI text size multiplier (0.6–2.5)
-	Theme      string  `json:"theme"`       // system (default) | light | dark
-	SidebarOpen   bool `json:"sidebar_open"`   // sessions sidebar visible
-	InspectorOpen bool `json:"inspector_open"` // tasks/context inspector visible
+	UIDir          string  `json:"ui_dir"`          // full-window script UI override (ANNEAL_UI_DIR)
+	PaneDir        string  `json:"pane_dir"`        // scripted-pane override
+	TextScale      float64 `json:"text_scale"`      // UI text size multiplier (0.6–2.5)
+	Theme          string  `json:"theme"`           // system (default) | light | dark
+	SidebarOpen    bool    `json:"sidebar_open"`    // sessions sidebar visible
+	InspectorOpen  bool    `json:"inspector_open"`  // tasks/context inspector visible
 	SidebarWidth   float64 `json:"sidebar_width"`   // px, clamped by the shell
 	InspectorWidth float64 `json:"inspector_width"` // px, clamped by the shell
 }

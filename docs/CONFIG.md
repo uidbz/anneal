@@ -71,8 +71,8 @@ changing them (via file edit or `config.set`) requires a restart.
 | `stream_idle_timeout_s` | 120 | abort if a live stream goes silent |
 | `max_retries` | 2 | provider-level retries (dive) |
 
-Edit this section in `config.json` (there is no built-in settings tab yet;
-UI scripts can call `agent.config()` / `agent.saveConfig(doc)`). Stores that
+Edit this section in Settings → Model (or `config.json`; UI scripts can call
+`agent.config()` / `agent.saveConfig(doc)`). Stores that
 keep a live config pointer (memory, skills, review) re-read changed limits and
 `write_approval` immediately; edited guardrail rule lines still need a restart.
 

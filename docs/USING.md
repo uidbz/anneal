@@ -12,9 +12,11 @@
    an `Anneal` desktop launcher through the XDG applications directory.
 
 Config resolution: `~/.anneal/config.json` (created with defaults on first
-run) → env overrides (see `docs/CONFIG.md`). Provider settings are edited in
-that file; the bridge also exposes `agent.config()` / `agent.saveConfig(doc)`
-for scripted settings UIs (there is no built-in settings tab yet).
+run) → env overrides (see `docs/CONFIG.md`). The Settings view edits the
+common keys as a form (Appearance, Model, Agent, Learning, Context,
+Integrations, Permissions) and keeps **Edit JSON…** for advanced keys; the
+bridge also exposes `agent.config()` / `agent.saveConfig(doc)` for scripted
+settings UIs.
 
 ## GUI tour (hybrid shell)
 
@@ -158,7 +160,7 @@ cd repo && anneal-headless -allow Read,Glob,Grep,Bash -json -p "run tests" \
   in a sandbox and behaviorally contrasted, and a composer merges only the
   evidence-supported changes. The successor applies to **this session only**
   (overlay); nothing global changes. Evidence-backed steps land in the
-  improvement library (Harness tab); making one permanent is your explicit
+  improvement library (Harness view); making one permanent is your explicit
   call: two-click **promote** in the pane, or `/harness promote <id>` in the
   headless REPL (with backups). Full records: `~/.anneal/improvements/`.
   The background reviewer feeds the loop too: recurring work-style

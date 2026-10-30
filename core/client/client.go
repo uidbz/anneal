@@ -301,13 +301,20 @@ func (c *Client) readLoop() {
 
 // deliver is non-blocking; a stalled consumer sheds the newest frame rather
 // than reordering the stream (the caller can resync with sessions.open).
-// The mu guard makes close(events) in Close race-free.
+// The mu guard makes close(events) in Close race-free: closeCh is closed
+// under the same lock *before* events, so the guard rules out
+// send-on-closed.
 func (c *Client) deliver(e Event) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	select {
+	case <-c.closeCh:
+		return
+	default:
+	}
 	select {
 	case c.events <- e:
 	default:
 		c.dropped.Add(1)
 	}
-	c.mu.Unlock()
 }

@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -328,6 +331,91 @@ func TestNotificationNoReply(t *testing.T) {
 			return
 		}
 		t.Fatalf("server replied to a notification: %v", f)
+	}
+}
+
+// TestUnixSocketRoundtrip: the container-default transport — listen on a
+// unix socket in the mount dir, client dials unix://, mode 0600.
+func TestUnixSocketRoundtrip(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ANNEAL_HOME", home)
+	a, err := app.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(home, "anneal.sock")
+	a.Cfg.Server.Listen = []string{"unix:" + sock}
+	s, err := New(a, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = s.Run(ctx) }()
+	waitAddr(t, s)
+
+	c, err := client.Dial(ctx, "unix://"+sock, "")
+	if err != nil {
+		t.Fatalf("unix dial: %v", err)
+	}
+	defer c.Close()
+	callOK(t, c, "server.ping", nil)
+	if fi, err := os.Stat(sock); err != nil {
+		t.Fatal(err)
+	} else if fi.Mode().Perm() != 0o600 {
+		t.Fatalf("socket mode = %o, want 0600", fi.Mode().Perm())
+	}
+}
+
+// TestSlowConsumerDisconnected: a client that stops reading the socket is
+// closed once the server queue overflows; the survivor keeps streaming.
+func TestSlowConsumerDisconnected(t *testing.T) {
+	s, good := startTest(t, nil)
+	addr := s.Addrs()[0]
+	stub, _, err := websocket.DefaultDialer.Dial("ws://"+addr+"/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stub.Close()
+	if err := stub.WriteJSON(map[string]any{"type": "hello", "proto": ProtoVersion}); err != nil {
+		t.Fatal(err)
+	}
+	var ack map[string]any
+	if err := stub.ReadJSON(&ack); err != nil {
+		t.Fatal(err)
+	}
+	// Wait for registration: two conns live (startTest client + stub).
+	regDeadline := time.Now().Add(3 * time.Second)
+	for s.connsCount() < 2 && time.Now().Before(regDeadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if s.connsCount() < 2 {
+		t.Fatal("stub client was never registered")
+	}
+	// Now never read again. Loopback socket buffers are large, so the
+	// flood must be big enough (24 MB) to force the write path to stall
+	// and the per-connection queue to overflow.
+	payload := strings.Repeat("x", 16*1024)
+	for i := 0; i < connQueue+512; i++ {
+		s.App.Bus.Emit(map[string]any{"type": "flood", "p": payload})
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for s.connsCount() > 1 && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if s.connsCount() > 1 {
+		t.Fatalf("unreading client was not disconnected (conns=%d)", s.connsCount())
+	}
+	s.App.Bus.Emit(map[string]any{"type": "after.flood"})
+	for {
+		select {
+		case e := <-good.Events():
+			if e.Type() == "after.flood" {
+				return
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("survivor lost its stream")
+		}
 	}
 }
 

@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/uidbz/anneal/core/app"
@@ -67,6 +68,7 @@ type Server struct {
 	reason         string
 	cancel         context.CancelFunc // set by Run
 	lastBusy       time.Time          // run/improve/review edges; defers idle exit
+	rebuilding     atomic.Bool        // index.rebuild single-flight
 
 	upgrader websocket.Upgrader
 }
@@ -172,6 +174,13 @@ func (s *Server) Addrs() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.addrs...)
+}
+
+// connsCount is the live connection count (test observability).
+func (s *Server) connsCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.conns)
 }
 
 // beginShutdown announces the shutdown on the bus, then closes listeners

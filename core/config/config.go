@@ -233,11 +233,15 @@ func Default() *Config {
 		Compaction: Compaction{Enabled: true, ThresholdPct: 82, KeepRecentTurns: 4},
 		Memory:     Memory{Enabled: true, MemoryCharLimit: 2200, UserCharLimit: 1375, WriteApproval: false},
 		Skills:     Skills{Enabled: true, WriteApproval: false, ExtraDirs: nil},
-		Review:     Review{Enabled: true, DeferUntilIdle: true, IdleSettleS: 45, MaxAgeS: 1800, MaxInputTokens: 48000, Notify: true},
-		Tie:        Tie{Enabled: true, Collection: "anneal", ConfigName: ""},
-		MCP:        MCP{Enabled: true, AutoDetect: true, Servers: map[string]MCPServer{}},
-		Harness:    Harness{Enabled: true, CharLimit: 6000},
-		Improve:    Improve{Enabled: true, Auto: true, AutoIdleS: 300, Library: true, K: 1, Mode: "sequential"},
+		// Background work shares the one local model server: a short idle
+		// window evicts the live conversation's prompt cache right when the
+		// user comes back. Ten minutes (review) / thirty (improve) still runs
+		// while a coffee break happens.
+		Review:  Review{Enabled: true, DeferUntilIdle: true, IdleSettleS: 600, MaxAgeS: 1800, MaxInputTokens: 48000, Notify: true},
+		Tie:     Tie{Enabled: true, Collection: "anneal", ConfigName: ""},
+		MCP:     MCP{Enabled: true, AutoDetect: true, Servers: map[string]MCPServer{}},
+		Harness: Harness{Enabled: true, CharLimit: 6000},
+		Improve: Improve{Enabled: true, Auto: true, AutoIdleS: 1800, Library: true, K: 1, Mode: "sequential"},
 		UI: UI{
 			TextScale:      1.0,
 			Theme:          "system",

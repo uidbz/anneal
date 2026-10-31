@@ -263,6 +263,10 @@ func (s *shell) handleEvent(e map[string]any) {
 			s.notice(noticeWarn, "Improvement library: "+str(e["error"]))
 		}
 		s.refreshActivity()
+	case "improve.preempted":
+		s.improveBusy(false)
+		s.improveAuto = false
+		s.notice(noticeInfo, "Harness improvement paused (you started working); the next run re-arms it.")
 	case "improve.error":
 		s.setRunState("Ready", colorWarn, false)
 		s.improveBusy(false)

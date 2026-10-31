@@ -36,6 +36,7 @@ type backend interface {
 	// commands
 	send(text string)
 	interrupt()
+	preempt() // stand down background model work (review/improve)
 	newSession()
 	openSession(id string)
 	respondPerm(id, action string)
@@ -76,6 +77,7 @@ func (l *localBackend) remote() bool          { return false }
 func (l *localBackend) quit()                 {}
 func (l *localBackend) send(t string)         { l.a.Runner.Send(t) }
 func (l *localBackend) interrupt()            { l.a.Runner.Interrupt() }
+func (l *localBackend) preempt()              { l.a.PreemptBackground() }
 func (l *localBackend) newSession()           { l.a.Runner.NewSession() }
 func (l *localBackend) openSession(id string) { l.a.Runner.OpenSession(id) }
 func (l *localBackend) respondPerm(id, act string) {

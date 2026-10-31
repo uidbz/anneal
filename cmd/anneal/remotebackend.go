@@ -144,6 +144,7 @@ func (r *remoteBackend) send(t string) {
 }
 
 func (r *remoteBackend) interrupt()            { r.fire("agent.interrupt", nil) }
+func (r *remoteBackend) preempt()              { r.fire("background.preempt", nil) }
 func (r *remoteBackend) newSession()           { r.fire("sessions.new", nil) }
 func (r *remoteBackend) openSession(id string) { r.fire("sessions.open", map[string]any{"id": id}) }
 func (r *remoteBackend) respondPerm(id, act string) {

@@ -59,6 +59,7 @@ type Runner struct {
 	running  bool
 	permWait time.Duration // time blocked on approval cards, per run
 	lastPerf *perfSummary
+	preempt  func() // cancels background model work (review/improve)
 
 	permMu       sync.Mutex // guards pendingPerms and doom counts
 	permSeq      int
@@ -187,6 +188,24 @@ func copyTree(src, dst string) error {
 // SetReview attaches the background review manager (nil = no loop).
 func (r *Runner) SetReview(m *review.Manager) { r.review = m }
 
+// SetPreempt registers the callback that yields the model server: it is
+// invoked when a foreground run starts and when the user starts typing.
+func (r *Runner) SetPreempt(fn func()) {
+	r.mu.Lock()
+	r.preempt = fn
+	r.mu.Unlock()
+}
+
+// Preempt asks background work (review, improve) to stand down now.
+func (r *Runner) Preempt() {
+	r.mu.Lock()
+	fn := r.preempt
+	r.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
 func NewRunner(cfg *config.Config, monitor *model.Monitor, bus *events.Bus, cwd string, harn *harness.Store) (*Runner, error) {
 	if harn == nil {
 		harn = harness.New(paths.Harness())
@@ -282,9 +301,13 @@ func (r *Runner) StartTask(input string) (id int, ok bool) {
 	r.lastAct = time.Now()
 	r.cancel = cancel
 	id = r.runSeq
+	preempt := r.preempt
 	r.mu.Unlock()
 	if r.review != nil {
 		r.review.Interrupt() // foreground preempts background
+	}
+	if preempt != nil {
+		preempt() // improve passes own the GPU too: cancel, they resume later
 	}
 	go r.run(ctx, id, input)
 	return id, true

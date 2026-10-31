@@ -348,6 +348,10 @@ func (s *Server) methods() map[string]handler {
 		a.Runner.Interrupt()
 		return nil, nil
 	}
+	m["background.preempt"] = func(json.RawMessage) (any, error) {
+		a.PreemptBackground()
+		return nil, nil
+	}
 	m["run.status"] = func(json.RawMessage) (any, error) {
 		return map[string]any{"busy": a.Runner.Busy(), "mode": a.Runner.Mode(),
 			"session": a.Runner.SessionID()}, nil

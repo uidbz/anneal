@@ -286,7 +286,7 @@ injected once per session as a `<system-reminder name="anneal-memory">` block
 |-----|---------|---------|
 | `enabled` | true | finished sessions are queued for review |
 | `defer_until_idle` | true | only run while idle |
-| `idle_settle_s` | 45 | quiet time after the last run before reviewing |
+| `idle_settle_s` | 600 | quiet time after the last run before reviewing. Background work shares the model server and evicts the live conversation's prompt cache, so this is deliberately long; typing in the composer stands the reviewer down immediately |
 | `max_age_s` | 1800 | …but run anyway once the queue is this old |
 | `max_input_tokens` | 48000 | digest budget (≈bytes/4) |
 | `notify` | true | emit review events to the UI (ledger-based notifications) |
@@ -365,7 +365,7 @@ Check with `anneal -check-harness` or `/harness`.
 |-----|---------|---------|
 | `enabled` | true | `/improve`, `-improve`, headless `/improve`, header improve button |
 | `auto` | true | one automatic pass per session: armed when a run finishes cleanly, fires `auto_idle_s` later if nothing else is using the model |
-| `auto_idle_s` | 300 | quiet period before the automatic pass; it also stands down (re-arms next run) if a run, an improve, or the reviewer is active when it fires |
+| `auto_idle_s` | 1800 | quiet period before the automatic pass; it also stands down (re-arms next run) if a run, an improve, or the reviewer is active when it fires, and a running pass is cancelled when the user starts a run or types |
 | `library` | true | reflection + `~/.anneal/harness-lib/` improvement library |
 | `k` | 1 | recursion depth (iterations under `improvements/<run>/iter<i>/`) |
 | `mode` | `sequential` | `sequential` chains each probed successor into the next iteration; `parallel` runs k independent steps and an anonymized selector picks the winner |

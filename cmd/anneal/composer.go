@@ -22,6 +22,8 @@ type composerEntry struct {
 	onCtrlCR func() // Ctrl+Enter: allow once
 	onCtrlSh func() // Ctrl+Shift+Enter: always allow
 	onEscape func() // Esc: reject the oldest pending approval
+	onTyping func() // first keystroke after empty: yield background GPU work
+	hadText  bool
 }
 
 func newComposerEntry() *composerEntry {
@@ -31,7 +33,13 @@ func newComposerEntry() *composerEntry {
 	e.Wrapping = fyne.TextWrapWord
 	e.minRows = 2
 	e.SetMinRowsVisible(2)
-	e.OnChanged = func(string) { e.syncRows() }
+	e.OnChanged = func(text string) {
+		e.syncRows()
+		if text != "" && !e.hadText && e.onTyping != nil {
+			e.onTyping()
+		}
+		e.hadText = text != ""
+	}
 	return e
 }
 
@@ -124,6 +132,7 @@ func newComposer(s *shell) *composer {
 	c.entry.onCtrlCR = s.allowOldest
 	c.entry.onCtrlSh = s.alwaysAllowOldest
 	c.entry.onEscape = s.rejectOldest
+	c.entry.onTyping = s.b.preempt
 
 	c.buildBtn = widget.NewButton("Build", func() { s.b.setMode("default") })
 	c.planBtn = widget.NewButton("Plan", func() { s.b.setMode("plan") })

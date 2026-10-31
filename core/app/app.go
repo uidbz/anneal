@@ -46,6 +46,7 @@ type App struct {
 
 	improveMu      sync.Mutex
 	improveRunning bool
+	improveCancel  context.CancelFunc
 	autoMu         sync.Mutex
 	improved       map[string]bool // sessions with an improve pass already run (in-memory)
 	autoTimer      *time.Timer     // pending auto-improve pass (improve.auto)
@@ -101,7 +102,29 @@ func New() (*App, error) {
 	a.Review.SetFlagStore(review.NewFlagStore(paths.HarnessQueue()))
 	a.Review.SetActivityHooks(func() bool { return a.Runner.Busy() || a.ImproveBusy() }, a.Runner.LastActivity)
 	a.Runner.SetReview(a.Review)
+	a.Runner.SetPreempt(a.PreemptBackground)
 	return a, nil
+}
+
+// PreemptBackground stops background model work so a foreground run (or a
+// user who started typing) owns the model server: the reviewer is interrupted
+// and a running improve pass is cancelled (its iterations are resumable).
+func (a *App) PreemptBackground() {
+	if a.Review != nil {
+		a.Review.Interrupt()
+	}
+	a.autoMu.Lock()
+	if a.autoTimer != nil {
+		a.autoTimer.Stop()
+		a.autoTimer = nil
+	}
+	a.autoMu.Unlock()
+	a.improveMu.Lock()
+	cancel := a.improveCancel
+	a.improveMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // ReplayState emits the resumed session/mode/todos to whatever UI consumer is
@@ -244,6 +267,15 @@ func (a *App) autoImprovePass(sid string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 	defer cancel()
 	if _, err := a.ImproveWith(ctx, 0, "", ""); err != nil {
+		if ctx.Err() != nil {
+			// Preempted by the user (or the time limit): allow the next
+			// clean run to arm a fresh pass instead of reporting a failure.
+			a.autoMu.Lock()
+			delete(a.improved, sid)
+			a.autoMu.Unlock()
+			a.Bus.Emit(map[string]any{"type": "improve.preempted", "session": sid})
+			return
+		}
 		a.Bus.Emit(map[string]any{"type": "improve.error",
 			"error": "auto: " + err.Error(), "auto": true})
 	}
@@ -285,11 +317,15 @@ func (a *App) ImproveWith(ctx context.Context, kOverride int, modeOverride, resu
 		a.improveMu.Unlock()
 		return nil, fmt.Errorf("improve: already running")
 	}
+	ctx, cancel := context.WithCancel(ctx)
 	a.improveRunning = true
+	a.improveCancel = cancel
 	a.improveMu.Unlock()
 	defer func() {
+		cancel()
 		a.improveMu.Lock()
 		a.improveRunning = false
+		a.improveCancel = nil
 		a.improveMu.Unlock()
 	}()
 

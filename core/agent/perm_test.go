@@ -247,3 +247,46 @@ func TestPermissionHookBlocksUntilAnswered(t *testing.T) {
 		t.Fatal("hook did not unblock")
 	}
 }
+
+// TestTextEditorToolMapsToEdit: dive registers its text editor as
+// str_replace_based_edit_tool. The mapper only knew "TextEditor", so those
+// calls skipped path resolution, edit rules and the outside-project check.
+func TestTextEditorToolMapsToEdit(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runner{cwd: dir}
+	for _, name := range []string{"TextEditor", "str_replace_based_edit_tool"} {
+		in := json.RawMessage(`{"command":"create","path":"oops.txt","file_text":"x"}`)
+		intent := r.inspectCall(name, in, false)
+		if intent.action != "edit" {
+			t.Fatalf("%s: action = %q, want edit", name, intent.action)
+		}
+		if len(intent.resources) != 1 || intent.resources[0] != "oops.txt" {
+			t.Fatalf("%s: resources = %v", name, intent.resources)
+		}
+		// A path outside the project must still raise the external check.
+		out := json.RawMessage(`{"command":"create","path":"/etc/passwd","file_text":"x"}`)
+		intent = r.inspectCall(name, out, false)
+		if len(intent.external) == 0 {
+			t.Fatalf("%s: outside path did not produce an external_directory request", name)
+		}
+	}
+}
+
+// TestPendingPermEventsOldestFirst: replay rebuilds the approval dock, so the
+// cards must come back in registration order.
+func TestPendingPermEventsOldestFirst(t *testing.T) {
+	r := &Runner{pendingPerms: map[string]*pendingPerm{}, doom: map[string]int{}}
+	for _, id := range []string{"first", "second"} {
+		r.registerPerm(permission.Request{Action: "bash", Resources: []string{id}, Tool: "Bash"})
+	}
+	events := r.PendingPermEvents()
+	if len(events) != 2 {
+		t.Fatalf("events = %d", len(events))
+	}
+	if events[0]["id"] != "p1" || events[1]["id"] != "p2" {
+		t.Fatalf("order = %v, %v", events[0]["id"], events[1]["id"])
+	}
+	if events[0]["type"] != "perm.request" || events[0]["action"] != "bash" {
+		t.Fatalf("shape = %+v", events[0])
+	}
+}

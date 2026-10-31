@@ -40,8 +40,14 @@ small IDE.
   switch, the model (click → Settings), and one primary button that turns
   into **Stop** while a run is going.
 - **Approval dock** (above the composer): permission, memory, and skill cards
-  with details and buttons. Permissions offer **Reject / Always allow / Allow
+  with details and buttons. **One card is shown at a time — the oldest, i.e.
+  the request the agent is blocked on — so the action row is always visible**;
+  the header counts the rest and pages through them (`‹ 2/7 ›`). Long details
+  scroll inside the card. Permissions offer **Reject / Always allow / Allow
   once**; Ctrl+Enter (with an empty composer) allows the oldest card once.
+  The run-state line shows "Waiting for your approval (N)" and each card counts
+  how long it has waited. Pending cards survive reconnects and are restored
+  when a client attaches (each client receives its own replay).
 - **Inspector** (right, Ctrl+J): task checklist with progress count, a context
   meter (amber at 70 %, red at 82 %), token totals, compaction count, session
   ID and **working directory** (both copyable), mode, and whether an
@@ -104,8 +110,10 @@ small IDE.
 | Ctrl+= / Ctrl+- / Ctrl+0 | text size up / down / reset |
 | Ctrl+1/2/3/4 | Chat / Harness / Activity / Settings |
 | Ctrl+Q | quit |
-| Enter / Shift+Enter | send / newline in the composer |
-| Ctrl+Enter | allow the oldest pending approval |
+| Enter / Shift+Enter | send / newline in the composer (Enter is refused while a run is active) |
+| Ctrl+Enter | allow the oldest pending approval once |
+| Ctrl+Shift+Enter | always allow the oldest pending approval |
+| Esc (composer) | reject the oldest pending approval |
 
 For UI smoke tests without typing, `anneal -send "task" -quit-after-run` fills
 the composer, submits it, and exits after the run finishes.

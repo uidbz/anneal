@@ -285,6 +285,24 @@ func (s *Server) fanout(v any) {
 	}
 }
 
+// replayTo queues the current state for one connection. It used to go through
+// the bus, which meant a second client connecting reset every attached GUI's
+// transcript and approval dock. It runs after the writer goroutine starts, so
+// the events are delivered in order with the hello.ack already written.
+func (s *Server) replayTo(c *conn) {
+	for _, ev := range s.App.StateEvents() {
+		data, err := json.Marshal(ev)
+		if err != nil {
+			continue
+		}
+		select {
+		case c.send <- data:
+		default:
+			return
+		}
+	}
+}
+
 func (s *Server) closeConns() {
 	s.mu.Lock()
 	conns := make([]*conn, 0, len(s.conns))

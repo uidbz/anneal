@@ -51,6 +51,29 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-11-01 — hotfix round (issues #13–#16 planning)
+- **Approval dock**: one active card (oldest) at a time with a `N approvals
+  waiting · i/N` header instead of an ever-growing stack. The old dock added a
+  spacer with every card and only removed the card, so spacers accumulated:
+  the empty box stayed visible and new cards were pushed below the 320 px cap.
+  Details scroll inside the card; the action row never moves. Ctrl+Enter /
+  Ctrl+Shift+Enter / Esc answer the oldest card; the status line shows
+  "Waiting for your approval (N)" and cards count their wait.
+- **Reconnect replay**: pending permission cards and staged memory/skill cards
+  are replayed, and the server's connect replay is targeted at the new
+  connection (it used to go through the bus and reset every other GUI's
+  transcript and dock, while the runner stayed blocked on the lost cards).
+- **No dropped messages**: Enter during a run now keeps the text in the
+  composer and says it was not sent (the real queue lands in a later phase).
+- **Shell parsing**: `2>&1`, `&>`, `>&`, `<&` and `|&` are redirections, not
+  separators — `go test ./... 2>&1 | tail` used to create a bogus `1` segment
+  (one session saved `bash: "1 *"`). Substituted `cd` targets stay one exact
+  resource and never produce directory grants.
+- **Permission gap**: dive names its text editor tool
+  `str_replace_based_edit_tool`, but the mapper only knew `TextEditor`, so
+  those calls skipped path resolution, edit rules and the outside-project
+  check. Malformed saved grants from old parser bugs are dropped on load.
+
 ### 2026-10-30 — first-launch panel visibility + inspector fit
 - The inspector could stay hidden until the window was resized: some Wayland
   compositors ignore pre-show resize hints, so the window mapped narrower than

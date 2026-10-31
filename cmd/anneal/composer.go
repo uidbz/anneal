@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -18,7 +19,9 @@ type composerEntry struct {
 	shift    bool
 	minRows  int
 	onSend   func()
-	onCtrlCR func()
+	onCtrlCR func() // Ctrl+Enter: allow once
+	onCtrlSh func() // Ctrl+Shift+Enter: always allow
+	onEscape func() // Esc: reject the oldest pending approval
 }
 
 func newComposerEntry() *composerEntry {
@@ -72,6 +75,11 @@ func (e *composerEntry) TypedKey(ev *fyne.KeyEvent) {
 			e.onSend()
 		}
 		return
+	case fyne.KeyEscape:
+		if e.onEscape != nil && e.Text == "" {
+			e.onEscape()
+			return
+		}
 	}
 	e.Entry.TypedKey(ev)
 }
@@ -79,7 +87,11 @@ func (e *composerEntry) TypedKey(ev *fyne.KeyEvent) {
 func (e *composerEntry) TypedShortcut(sc fyne.Shortcut) {
 	if custom, ok := sc.(*desktop.CustomShortcut); ok {
 		if custom.KeyName == fyne.KeyReturn && custom.Modifier&fyne.KeyModifierControl != 0 {
-			if e.onCtrlCR != nil {
+			if custom.Modifier&fyne.KeyModifierShift != 0 {
+				if e.onCtrlSh != nil {
+					e.onCtrlSh()
+				}
+			} else if e.onCtrlCR != nil {
 				e.onCtrlCR()
 			}
 			return
@@ -110,6 +122,8 @@ func newComposer(s *shell) *composer {
 	c.entry.PlaceHolder = "Describe a task…  (/ for commands)"
 	c.entry.onSend = s.submit
 	c.entry.onCtrlCR = s.allowOldest
+	c.entry.onCtrlSh = s.alwaysAllowOldest
+	c.entry.onEscape = s.rejectOldest
 
 	c.buildBtn = widget.NewButton("Build", func() { s.b.setMode("default") })
 	c.planBtn = widget.NewButton("Plan", func() { s.b.setMode("plan") })
@@ -204,20 +218,47 @@ func (c *composer) setCompact(on bool) {
 // focus puts the caret in the composer.
 func (c *composer) focus() { c.s.win.Canvas().Focus(c.entry) }
 
-// approvalDock is the stack of pending approvals above the composer. It
-// scrolls once the cards would take more than ~40% of a typical window.
+// approvalDock shows at most one pending approval at a time, oldest first,
+// above the composer. Showing one full card keeps its buttons on screen even
+// when dozens of requests queue up; the header counts the rest and pages
+// through them. The dock used to append a spacer with every card and only
+// remove the card, so spacers accumulated: the empty box stayed visible and
+// new cards were pushed below the height cap.
 type approvalDock struct {
 	widget.BaseWidget
-	cards   *fyne.Container
-	scroll  *container.Scroll
+	s *shell
+
+	cards   []fyne.CanvasObject // pending cards, oldest first
+	idx     int
 	visible bool
+
+	header  *fyne.Container
+	counter *themedText
+	prev    *widget.Button
+	next    *widget.Button
+	body    *fyne.Container
+	scroll  *container.Scroll
+	inner   *fyne.Container
 	surface *surface
 }
 
-func newApprovalDock() *approvalDock {
-	d := &approvalDock{cards: container.NewVBox()}
-	d.scroll = container.NewVScroll(d.cards)
-	d.surface = newSurface(colorRaised, container.New(&padLayout{l: spaceL, r: spaceL, t: spaceS, b: 0}, d.scroll))
+// approvalDockFrac caps the dock at this fraction of the window height.
+const approvalDockFrac = 0.45
+
+func newApprovalDock(s *shell) *approvalDock {
+	d := &approvalDock{s: s}
+	d.counter = newThemedText("", colorWarn)
+	d.counter.size = theme.SizeNameCaptionText
+	d.counter.bold = true
+	d.prev = iconButton(theme.NavigateBackIcon(), func() { d.selectIdx(d.idx - 1) })
+	d.next = iconButton(theme.NavigateNextIcon(), func() { d.selectIdx(d.idx + 1) })
+	d.header = container.NewBorder(nil, nil,
+		container.New(&padLayout{l: spaceS, r: 0, t: 2, b: 2}, d.counter),
+		container.New(&rowLayout{gap: 0}, d.prev, d.next), nil)
+	d.body = container.New(&columnLayout{gap: 0})
+	d.scroll = container.NewVScroll(d.body)
+	d.inner = container.NewBorder(d.header, nil, nil, nil, d.scroll)
+	d.surface = newSurface(colorRaised, d.inner)
 	d.surface.padding(0, 0, 0, 0)
 	d.surface.Hide()
 	d.ExtendBaseWidget(d)
@@ -236,13 +277,18 @@ func (r *dockRenderer) Layout(size fyne.Size) {
 }
 
 func (r *dockRenderer) MinSize() fyne.Size {
-	if !r.dock.visible {
+	if !r.dock.visible || len(r.dock.cards) == 0 {
 		return fyne.Size{}
 	}
-	h := r.dock.cards.MinSize().Height + 2*spaceS
-	const max float32 = 320
-	if h > max {
+	h := r.dock.body.MinSize().Height + 2*spaceS
+	if len(r.dock.cards) > 1 {
+		h += r.dock.header.MinSize().Height
+	}
+	if max := r.dock.maxHeight(); max > 0 && h > max {
 		h = max
+	}
+	if h < 80 {
+		h = 80
 	}
 	return fyne.NewSize(0, h)
 }
@@ -251,39 +297,102 @@ func (r *dockRenderer) Objects() []fyne.CanvasObject {
 	return []fyne.CanvasObject{r.dock.surface}
 }
 
-func (r *dockRenderer) Refresh() {}
+func (r *dockRenderer) Refresh() { r.dock.surface.Refresh() }
 
 func (r *dockRenderer) Destroy() {}
 
-// add appends a card and shows the dock.
+// maxHeight is a share of the window, so the dock can never crowd out the
+// composer and transcript on short or large-text windows.
+func (d *approvalDock) maxHeight() float32 {
+	if d.s == nil || d.s.win == nil {
+		return 320
+	}
+	h := d.s.win.Canvas().Size().Height * approvalDockFrac
+	if h < 160 {
+		h = 160
+	}
+	return h
+}
+
+// add appends a card and shows it when it is the oldest pending one.
 func (d *approvalDock) add(card fyne.CanvasObject) {
-	d.cards.Add(card)
-	d.cards.Add(vgap(spaceS))
-	d.show(true)
+	d.cards = append(d.cards, card)
+	if len(d.cards) == 1 {
+		d.idx = 0
+	}
+	d.render()
 }
 
 // remove takes one card back out; the dock hides when nothing is pending.
 func (d *approvalDock) remove(card fyne.CanvasObject) {
-	d.cards.Remove(card)
-	d.show(len(d.cards.Objects) > 1)
+	for i, c := range d.cards {
+		if c == card {
+			d.cards = append(d.cards[:i], d.cards[i+1:]...)
+			break
+		}
+	}
+	if d.idx >= len(d.cards) {
+		d.idx = len(d.cards) - 1
+	}
+	if d.idx < 0 {
+		d.idx = 0
+	}
+	d.render()
 }
 
 // clear empties the dock (new session / replay).
 func (d *approvalDock) clear() {
-	d.cards.RemoveAll()
-	d.show(false)
+	d.cards = nil
+	d.idx = 0
+	d.render()
 }
 
-func (d *approvalDock) show(on bool) {
-	if d.visible == on {
-		d.Refresh()
+// selectIdx pages to another pending card (the oldest stays the default so
+// Ctrl+Enter always answers what the agent is blocked on).
+func (d *approvalDock) selectIdx(i int) {
+	if i < 0 || i >= len(d.cards) || i == d.idx {
 		return
 	}
+	d.idx = i
+	d.render()
+}
+
+// active reports the id of the card on screen (for tests/diagnostics).
+func (d *approvalDock) active() fyne.CanvasObject {
+	if d.idx < 0 || d.idx >= len(d.cards) {
+		return nil
+	}
+	return d.cards[d.idx]
+}
+
+func (d *approvalDock) render() {
+	on := len(d.cards) > 0
 	d.visible = on
+	d.body.RemoveAll()
 	if on {
+		d.body.Add(d.cards[d.idx])
 		d.surface.Show()
 	} else {
 		d.surface.Hide()
 	}
+	if len(d.cards) > 1 {
+		d.counter.SetText(fmt.Sprintf("%d approvals waiting · %d of %d",
+			len(d.cards), d.idx+1, len(d.cards)))
+		d.header.Show()
+		d.prev.Enable()
+		d.next.Enable()
+		if d.idx <= 0 {
+			d.prev.Disable()
+		}
+		if d.idx >= len(d.cards)-1 {
+			d.next.Disable()
+		}
+	} else {
+		d.header.Hide()
+	}
+	d.scroll.ScrollToTop()
 	d.Refresh()
+	if d.s != nil {
+		d.s.relayoutChat()
+	}
 }

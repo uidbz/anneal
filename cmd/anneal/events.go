@@ -95,7 +95,7 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.cmp.setRunning(true)
 		s.startRunClock()
 	case "run.busy":
-		s.status.SetText("A run is already active")
+		s.notice(noticeWarn, "A run is already active — the message was not sent.")
 	case "text.delta":
 		s.ensureTail()
 		s.tailBuf += str(e["text"])

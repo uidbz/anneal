@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/uidbz/anneal/core/config"
@@ -61,7 +63,21 @@ func permissionError(req permission.Request, res permission.Result) error {
 // the user replies (or the run is interrupted, which denies the card).
 func (r *Runner) askPermission(ctx context.Context, req permission.Request) (permission.Outcome, error) {
 	id, ch := r.registerPerm(req)
-	r.emit(map[string]any{
+	r.emit(permEvent(id, req))
+
+	select {
+	case out := <-ch:
+		return out, nil
+	case <-ctx.Done():
+		r.resolvePerm(id, "cancelled")
+		return permission.Reject, fmt.Errorf("permission request cancelled (run interrupted)")
+	}
+}
+
+// permEvent is the UI card for one request. Replay uses the same shape, so a
+// reconnecting client rebuilds the dock without a second code path.
+func permEvent(id string, req permission.Request) map[string]any {
+	return map[string]any{
 		"type":      "perm.request",
 		"id":        id,
 		"tool":      req.Tool,
@@ -71,15 +87,30 @@ func (r *Runner) askPermission(ctx context.Context, req permission.Request) (per
 		"resources": req.Resources,
 		"save":      req.Save,
 		"input":     req.Preview,
-	})
-
-	select {
-	case out := <-ch:
-		return out, nil
-	case <-ctx.Done():
-		r.resolvePerm(id, "cancelled")
-		return permission.Reject, fmt.Errorf("permission request cancelled (run interrupted)")
 	}
+}
+
+// PendingPermEvents lists the approval cards still waiting for an answer,
+// oldest first, for state replay. The runner is often blocked on exactly
+// these when a client reconnects.
+func (r *Runner) PendingPermEvents() []map[string]any {
+	type entry struct {
+		seq int
+		ev  map[string]any
+	}
+	r.permMu.Lock()
+	entries := make([]entry, 0, len(r.pendingPerms))
+	for id, p := range r.pendingPerms {
+		seq, _ := strconv.Atoi(strings.TrimPrefix(id, "p"))
+		entries = append(entries, entry{seq: seq, ev: permEvent(id, p.req)})
+	}
+	r.permMu.Unlock()
+	sort.Slice(entries, func(i, j int) bool { return entries[i].seq < entries[j].seq })
+	out := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.ev)
+	}
+	return out
 }
 
 func grantLabel(req permission.Request) string {

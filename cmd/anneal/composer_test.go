@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"fyne.io/fyne/v2"
@@ -133,5 +135,115 @@ func TestComposerEntryPlaceholder(t *testing.T) {
 	}
 	if !sh.entry.MultiLine {
 		t.Fatal("composer is not multi-line")
+	}
+}
+
+// TestApprovalDockClearsCompletely: every resolved card must leave no
+// residue. The old dock appended a spacer per card and only removed the card,
+// so after the first approval the empty box stayed visible and later cards
+// were pushed below the height cap.
+func TestApprovalDockClearsCompletely(t *testing.T) {
+	sh := newTestShell(t)
+	for round := 0; round < 10; round++ {
+		id := fmt.Sprintf("p%d", round)
+		sh.handleEvent(normalizeEvent(map[string]any{
+			"type": "perm.request", "id": id, "tool": "Bash", "message": "run?",
+			"grant": "Bash(cmd)", "input": "cmd",
+		}))
+		if !sh.dock.visible || len(sh.dock.body.Objects) != 1 {
+			t.Fatalf("round %d: visible=%v body=%d", round, sh.dock.visible, len(sh.dock.body.Objects))
+		}
+		sh.handleEvent(normalizeEvent(map[string]any{"type": "perm.resolved", "id": id}))
+		if sh.dock.visible || len(sh.dock.body.Objects) != 0 {
+			t.Fatalf("round %d: dock not cleared (visible=%v body=%d)",
+				round, sh.dock.visible, len(sh.dock.body.Objects))
+		}
+	}
+	if len(sh.pendingApprovals) != 0 || len(sh.permRows) != 0 {
+		t.Fatalf("state leaked: pending=%d rows=%d", len(sh.pendingApprovals), len(sh.permRows))
+	}
+}
+
+// TestApprovalDockShowsOldest: the card the agent is blocked on stays on
+// screen, with a counter for the rest, instead of stacking downward.
+func TestApprovalDockShowsOldest(t *testing.T) {
+	sh := newTestShell(t)
+	for _, id := range []string{"a", "b", "c"} {
+		sh.handleEvent(normalizeEvent(map[string]any{
+			"type": "perm.request", "id": id, "tool": "Bash", "message": id,
+		}))
+	}
+	if got := len(sh.dock.body.Objects); got != 1 {
+		t.Fatalf("dock shows %d cards, want 1", got)
+	}
+	if sh.dock.active() != sh.permRows["a"] {
+		t.Fatal("active card is not the oldest")
+	}
+	if !sh.dock.header.Visible() || !strings.Contains(sh.dock.counter.Text(), "3 approvals") {
+		t.Fatalf("header/counter missing: %q", sh.dock.counter.Text())
+	}
+	sh.dock.selectIdx(1)
+	if sh.dock.active() != sh.permRows["b"] {
+		t.Fatal("paging did not select the next card")
+	}
+	sh.handleEvent(normalizeEvent(map[string]any{"type": "perm.resolved", "id": "a"}))
+	if sh.dock.visible != true || len(sh.dock.body.Objects) != 1 {
+		t.Fatal("resolving a background card disturbed the active one")
+	}
+}
+
+// TestApprovalCardReplayIsIdempotent: a reconnect replay re-sends pending
+// cards; they must not be docked twice.
+func TestApprovalCardReplayIsIdempotent(t *testing.T) {
+	sh := newTestShell(t)
+	ev := normalizeEvent(map[string]any{
+		"type": "perm.request", "id": "p1", "tool": "Bash", "message": "run?",
+	})
+	sh.handleEvent(ev)
+	sh.handleEvent(ev)
+	if len(sh.pendingApprovals) != 1 || len(sh.permRows) != 1 {
+		t.Fatalf("duplicate card: pending=%d rows=%d",
+			len(sh.pendingApprovals), len(sh.permRows))
+	}
+}
+
+// TestSubmitKeepsTextWhileRunning: a message sent during a run must not be
+// rendered as a turn (the backend rejects it) or silently dropped.
+func TestSubmitKeepsTextWhileRunning(t *testing.T) {
+	sh := newTestShell(t)
+	sh.cmp.running = true
+	sh.entry.SetText("do the thing")
+	before := len(sh.visible)
+	sh.submit()
+	if sh.entry.Text != "do the thing" {
+		t.Fatalf("composer text = %q, want it kept", sh.entry.Text)
+	}
+	if len(sh.visible) != before+1 { // only the warning notice was appended
+		t.Fatalf("blocks = %d, want %d", len(sh.visible), before+1)
+	}
+	if sh.turn == turnUser {
+		t.Fatal("a rejected message was rendered as a user turn")
+	}
+}
+
+func TestComposerApprovalShortcuts(t *testing.T) {
+	e := newComposerEntry()
+	once, always, rejected := 0, 0, 0
+	e.onCtrlCR = func() { once++ }
+	e.onCtrlSh = func() { always++ }
+	e.onEscape = func() { rejected++ }
+
+	e.TypedShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyReturn, Modifier: fyne.KeyModifierControl})
+	e.TypedShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyReturn,
+		Modifier: fyne.KeyModifierControl | fyne.KeyModifierShift})
+	e.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+	if once != 1 || always != 1 || rejected != 1 {
+		t.Fatalf("once=%d always=%d reject=%d", once, always, rejected)
+	}
+	// With text in the composer, Esc stays a normal editor key.
+	e.SetText("x")
+	e.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+	if rejected != 1 {
+		t.Fatalf("Esc rejected an approval while typing (rejected=%d)", rejected)
 	}
 }

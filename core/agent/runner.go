@@ -205,20 +205,54 @@ func NewRunner(cfg *config.Config, monitor *model.Monitor, bus *events.Bus, cwd 
 	return r, nil
 }
 
-// ReplayState emits the current session transcript, permission mode, and todos.
+// ReplayState emits the current session state for a UI that just attached.
 // UI frontends call it after attaching their event consumer: the runner is
 // constructed (and the session resumed) before any tap/script handler exists.
 func (r *Runner) ReplayState() {
+	for _, ev := range r.StateEvents() {
+		r.emit(ev)
+	}
+}
+
+// StateEvents builds the replay for one newly attached client: transcript,
+// permission mode, todos, pending approval cards, and staged memory/skill
+// changes. The server sends these to a single connection; broadcasting them
+// would reset every other attached GUI (session.opened clears their view).
+func (r *Runner) StateEvents() []map[string]any {
 	r.mu.Lock()
 	sess, id := r.sess, r.sessID
 	todos := append([]todoItem{}, r.todos...)
 	r.mu.Unlock()
-	blocks := transcriptBlocks(context.Background(), sess)
-	r.emit(map[string]any{"type": "session.opened", "id": id, "title": sess.Title(), "blocks": blocks})
-	r.emit(map[string]any{"type": "mode.changed", "mode": r.Mode()})
-	if len(todos) > 0 {
-		r.emit(map[string]any{"type": "todo.updated", "items": todos})
+
+	events := []map[string]any{}
+	if sess != nil {
+		events = append(events, map[string]any{
+			"type": "session.opened", "id": id, "title": sess.Title(),
+			"blocks": transcriptBlocks(context.Background(), sess),
+		})
 	}
+	events = append(events, map[string]any{"type": "mode.changed", "mode": r.Mode()})
+	if len(todos) > 0 {
+		events = append(events, map[string]any{"type": "todo.updated", "items": todos})
+	}
+	events = append(events, r.PendingPermEvents()...)
+	if r.mem != nil {
+		if ops, err := r.mem.ListPending(); err == nil {
+			for _, op := range ops {
+				events = append(events, map[string]any{"type": "memory.stage", "op": op})
+			}
+		}
+	}
+	if r.skills != nil {
+		if ops, err := r.skills.ListPending(); err == nil {
+			for _, op := range ops {
+				events = append(events, map[string]any{
+					"type": "skill.stage", "op": op, "preview": r.skills.Preview(op),
+				})
+			}
+		}
+	}
+	return events
 }
 
 // Send starts a run; at most one run is active.

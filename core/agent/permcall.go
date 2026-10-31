@@ -134,7 +134,11 @@ func (r *Runner) inspectCall(name string, raw json.RawMessage, readOnly bool) ca
 		}
 	case "Write", "WriteFile", "Edit":
 		return r.pathIntent(field(in, "file_path", "filePath", "path"), "edit", "Modify a file?", false, false)
-	case "TextEditor":
+	case "TextEditor", "str_replace_based_edit_tool":
+		// dive's text editor tool is registered as
+		// "str_replace_based_edit_tool"; matching only "TextEditor" let every
+		// such call fall through to the generic MCP branch, so edit rules,
+		// path resolution and the outside-directory check were all skipped.
 		command := strings.ToLower(field(in, "command"))
 		if command == "view" {
 			return r.pathIntent(field(in, "path"), "read", "View a file?", true, false)

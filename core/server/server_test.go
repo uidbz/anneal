@@ -430,3 +430,46 @@ func TestQuitRPC(t *testing.T) {
 		t.Fatal("expected refusal after shutdown")
 	}
 }
+
+// waitType blocks until the client sees an event of the given type.
+func waitType(t *testing.T, c *client.Client, typ string) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case e := <-c.Events():
+			if e.Type() == typ {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("no %s event", typ)
+		}
+	}
+}
+
+// TestReplayIsPerConnection: the connect-time replay used to go through the
+// bus, so attaching a second client reset every other GUI's transcript and
+// approval dock. Replay must reach only the new connection.
+func TestReplayIsPerConnection(t *testing.T) {
+	s, c := startTest(t, nil)
+	waitType(t, c, "mode.changed") // drain the first client's replay
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c2, err := client.Dial(ctx, "ws://"+s.Addrs()[0], "")
+	if err != nil {
+		t.Fatalf("second dial: %v", err)
+	}
+	defer c2.Close()
+
+	// The new client gets the state...
+	waitType(t, c2, "session.opened")
+	// ...and the first client must not see a second session.opened.
+	select {
+	case e := <-c.Events():
+		if e.Type() == "session.opened" || e.Type() == "mode.changed" {
+			t.Fatalf("second connection replayed %q to the first client", e.Type())
+		}
+	case <-time.After(400 * time.Millisecond):
+	}
+}

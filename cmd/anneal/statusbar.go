@@ -180,7 +180,10 @@ func (s *shell) startRunClock() {
 				return
 			case <-t.C:
 				shown := time.Since(s.runStarted).Round(time.Second)
-				fyne.Do(func() { s.elapsed.SetText(shown.String()) })
+				fyne.Do(func() {
+					s.elapsed.SetText(shown.String())
+					s.updateApprovalAges()
+				})
 			}
 		}
 	}()

@@ -154,7 +154,7 @@ func (s *Server) serve(ws *websocket.Conn, h *helloFrame) {
 	})
 
 	go c.writeLoop()
-	s.App.ReplayState() // idempotent state replay: session.opened/mode/todo
+	s.replayTo(c) // this connection only; other clients keep their view
 
 	methods := s.methods()
 	for {

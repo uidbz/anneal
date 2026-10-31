@@ -2,8 +2,10 @@ package permission
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -222,8 +224,28 @@ func (m *Manager) load() {
 		if rule.Resource == "" {
 			rule.Resource = DefaultResource
 		}
+		if malformedSaved(rule) {
+			fmt.Fprintf(os.Stderr, "permission: dropped malformed saved grant %s %q\n",
+				rule.Action, rule.Resource)
+			continue
+		}
 		m.saved = append(m.saved, rule)
 	}
+}
+
+// malformedSaved recognizes grants produced by old parser bugs: the numeric
+// fragment of `2>&1` (saved as "bash 1 *") and outside-directory resources
+// containing a split substitution (`/go/pkg/mod)/x/*`).
+func malformedSaved(rule Rule) bool {
+	if rule.Action == "bash" && strings.HasSuffix(rule.Resource, " *") {
+		if _, err := strconv.Atoi(strings.TrimSuffix(rule.Resource, " *")); err == nil {
+			return true
+		}
+	}
+	if rule.Action == "external_directory" && strings.Contains(rule.Resource, ")/") {
+		return true
+	}
+	return false
 }
 
 func (m *Manager) persist() error {

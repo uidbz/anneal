@@ -94,6 +94,7 @@ type shell struct {
 	cmp              *composer
 	entry            *composerEntry
 	dock             *approvalDock
+	chatBody         *fyne.Container
 	scroll           *container.Scroll
 	chatBox          *fyne.Container // visible transcript blocks (append-only)
 	earlier          *widget.Button  // "show earlier messages" when the window is capped
@@ -176,7 +177,7 @@ func (s *shell) build() {
 
 	s.cmp = newComposer(s)
 	s.entry = s.cmp.entry
-	s.dock = newApprovalDock()
+	s.dock = newApprovalDock(s)
 
 	s.statusbar = s.buildStatusBar()
 
@@ -207,8 +208,8 @@ func (s *shell) wireFrame() {
 	s.welcome = s.welcomeView()
 	transcript := container.NewStack(s.scroll, s.welcome)
 	bottom := container.NewVBox(s.dock, s.cmp.Object())
-	chatBody := container.NewBorder(nil, bottom, nil, nil, transcript)
-	s.chatView = container.NewBorder(s.header.object, nil, nil, nil, chatBody)
+	s.chatBody = container.NewBorder(nil, bottom, nil, nil, transcript)
+	s.chatView = container.NewBorder(s.header.object, nil, nil, nil, s.chatBody)
 
 	s.harnessHeader = newHeader("Harness")
 	s.activityHeader = newHeader("Activity")
@@ -456,6 +457,13 @@ func (s *shell) submit() {
 	if text == "" {
 		return
 	}
+	if !strings.HasPrefix(text, "/") && (s.cmp.running || s.b.busy()) {
+		// Never render a turn the backend will reject: until the queue lands,
+		// keep the text in the composer so Enter cannot silently drop it.
+		s.notice(noticeWarn, "A task is running — your message was not sent. "+
+			"Wait for it, or stop it (Ctrl+D), then press Enter again.")
+		return
+	}
 	s.entry.SetText("")
 	if strings.HasPrefix(text, "/") {
 		s.slash(text)
@@ -465,6 +473,29 @@ func (s *shell) submit() {
 	s.b.send(text)
 	s.win.Canvas().Focus(s.entry)
 	s.scroll.ScrollToBottom()
+}
+
+// relayoutChat re-runs the chat border layout after the approval dock's
+// min-size changed. It deliberately skips Container.Refresh, which would
+// re-layout (and re-wrap) every transcript block.
+func (s *shell) relayoutChat() {
+	if s.chatBody == nil {
+		return
+	}
+	s.chatBody.Layout.Layout(s.chatBody.Objects, s.chatBody.Size())
+}
+
+// updateApprovalStatus surfaces pending approvals in the run-state line so a
+// blocked run is not mistaken for a slow model.
+func (s *shell) updateApprovalStatus() {
+	if !s.cmp.running {
+		return
+	}
+	if n := len(s.pendingApprovals); n > 0 {
+		s.setRunState(fmt.Sprintf("Waiting for your approval (%d)", n), colorWarn, false)
+		return
+	}
+	s.setRunState("Running…", colorWarn, false)
 }
 
 // setTextScale applies and persists a text-size multiplier. SetTheme repaints

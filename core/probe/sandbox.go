@@ -185,7 +185,11 @@ func (s *Sandbox) jailBash(input map[string]any) (string, bool) {
 // pathKeys are the known file-path arguments of Anneal's toolkit tools.
 var pathKeys = []string{"file_path", "path", "notebook_path", "directory"}
 
-var writeTools = map[string]bool{"Write": true, "Edit": true, "MultiEdit": true, "TextEditor": true}
+var writeTools = map[string]bool{
+	"Write": true, "Edit": true, "MultiEdit": true,
+	// dive names its text editor tool str_replace_based_edit_tool.
+	"TextEditor": true, "str_replace_based_edit_tool": true,
+}
 
 // Jail returns a PreToolUse hook enforcing the sandbox policy.
 func (s *Sandbox) Jail() dive.PreToolUseHook {

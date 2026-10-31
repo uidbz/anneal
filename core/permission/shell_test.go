@@ -51,6 +51,46 @@ func TestScanCommand(t *testing.T) {
 			command:  "git config user.name johan",
 			commands: []Command{{Resource: "git config user.name johan", Save: "git config user.name *"}},
 		},
+		{
+			// Regression: the `&` in `2>&1` used to split the command and
+			// produced a bogus "1" segment that needed its own approval.
+			name:    "stderr redirect then pipe",
+			command: "go test ./... 2>&1 | tail -20",
+			commands: []Command{
+				{Resource: "go test ./... 2>&1", Save: "go test *"},
+				{Resource: "tail -20", Save: "tail *"},
+			},
+		},
+		{
+			name:     "and-redirect",
+			command:  "make ci &> build.log",
+			commands: []Command{{Resource: "make ci &> build.log", Save: "make ci *"}},
+		},
+		{
+			name:     "fd duplication",
+			command:  "echo hi >&2",
+			commands: []Command{{Resource: "echo hi >&2", Save: "echo *"}},
+		},
+		{
+			name:    "pipe stderr",
+			command: "make 2>&1 |& tee log",
+			commands: []Command{
+				{Resource: "make 2>&1", Save: "make *"},
+				{Resource: "tee log", Save: "tee *"},
+			},
+		},
+		{
+			name:     "background job still splits",
+			command:  "sleep 1 & echo done",
+			commands: []Command{{Resource: "sleep 1", Save: "sleep *"}, {Resource: "echo done", Save: "echo *"}},
+		},
+		{
+			// A substituted cd stays one exact resource: its partial tokens
+			// must not become directory or "cd *" grants.
+			name:     "substitution cd is exact",
+			command:  `cd $(go env GOMODCACHE)/github.com/x && ls`,
+			commands: []Command{{Resource: `cd $(go env GOMODCACHE)/github.com/x && ls`, Save: `cd $(go env GOMODCACHE)/github.com/x && ls`}},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

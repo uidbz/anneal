@@ -270,3 +270,25 @@ func TestManagerModes(t *testing.T) {
 		t.Fatalf("plan read: %s", got)
 	}
 }
+
+// TestMalformedSavedGrantsDropped: old parser bugs persisted a numeric
+// fragment of `2>&1` and split substitution paths as grants. They must not
+// survive a reload, or `1 *` silently allows nonsense and the path grant is
+// meaningless.
+func TestMalformedSavedGrantsDropped(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "permissions.json")
+	doc := `{"projects":{"/proj":[
+		{"action":"bash","resource":"1 *","effect":"allow"},
+		{"action":"external_directory","resource":"/go/pkg/mod)/x/*","effect":"allow"},
+		{"action":"bash","resource":"go test *","effect":"allow"}
+	]}}`
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(Options{Project: "/proj", SavedPath: path})
+	saved := m.Saved()
+	if len(saved) != 1 || saved[0].Resource != "go test *" {
+		t.Fatalf("saved = %+v, want only go test", saved)
+	}
+}

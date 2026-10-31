@@ -32,6 +32,7 @@ func ScanCommand(command string) ShellScan {
 
 	segments, substitution := splitSegments(command)
 	if substitution {
+		// Substitutions cannot be analyzed safely: keep the command whole.
 		segments = []string{command}
 	}
 
@@ -43,7 +44,13 @@ func ScanCommand(command string) ShellScan {
 		}
 		name := strings.ToLower(tokens[0])
 		if isDirectoryCommand(name) {
-			out.Directories = append(out.Directories, directoryArgs(tokens)...)
+			if substitution {
+				// `cd $(…) && …` stays one exact resource: it cannot be
+				// analyzed, and "cd *" must never be offered as a grant.
+				out.Commands = append(out.Commands, Command{Resource: segment, Save: segment})
+			} else {
+				out.Directories = append(out.Directories, directoryArgs(tokens)...)
+			}
 			continue
 		}
 		out.Commands = append(out.Commands, Command{
@@ -92,6 +99,14 @@ func savePattern(tokens []string) string {
 	// Environment assignments are not part of the operation name.
 	for len(tokens) > 0 && isAssignment(tokens[0]) {
 		tokens = tokens[1:]
+	}
+	// Redirections are not part of the operation name: "make 2>&1" should
+	// offer "make *", not "make 2>&1 *".
+	for i, token := range tokens {
+		if strings.ContainsAny(token, "<>") {
+			tokens = tokens[:i]
+			break
+		}
 	}
 	if len(tokens) == 0 {
 		return ""
@@ -146,8 +161,14 @@ func directoryArgs(tokens []string) []string {
 		if token == "" || token == "-" || strings.HasPrefix(token, "-") {
 			continue
 		}
+		switch token {
+		case "&&", "||", ";", "|", "&":
+			return dirs
+		}
 		// Unknown shell expressions cannot be resolved without executing them.
-		if strings.ContainsAny(token, "$`") || strings.HasPrefix(token, "(") {
+		// Globs and stray parens from a split substitution must never become
+		// outside-directory grants (a saved "/go/pkg/mod)/x/*" happened).
+		if strings.ContainsAny(token, "$`()*?[{}") {
 			continue
 		}
 		dirs = append(dirs, ExpandHome(token))
@@ -246,9 +267,29 @@ func splitSegments(command string) (segments []string, hasSubstitution bool) {
 				hasSubstitution = true
 			}
 			cur.WriteByte(c)
-		case '<', '>':
+		case '>':
+			// `>&1`, `2>&1`, `&>` and `>>` are redirections, not command
+			// separators. Treating the `&` as one split `go test 2>&1` into a
+			// bogus second command "1" that needed its own approval.
 			if !inDouble && i+1 < len(command) && command[i+1] == '(' {
 				hasSubstitution = true
+			}
+			if i+1 < len(command) && command[i+1] == '&' {
+				cur.WriteByte(c)
+				i++
+				cur.WriteByte(command[i])
+				continue
+			}
+			cur.WriteByte(c)
+		case '<':
+			if !inDouble && i+1 < len(command) && command[i+1] == '(' {
+				hasSubstitution = true
+			}
+			if i+1 < len(command) && command[i+1] == '&' {
+				cur.WriteByte(c)
+				i++
+				cur.WriteByte(command[i])
+				continue
 			}
 			cur.WriteByte(c)
 		case ';', '\n':
@@ -257,14 +298,27 @@ func splitSegments(command string) (segments []string, hasSubstitution bool) {
 				continue
 			}
 			flush()
-		case '&', '|':
+		case '&':
+			if inDouble {
+				cur.WriteByte(c)
+				continue
+			}
+			if i+1 < len(command) && command[i+1] == '>' {
+				// `&>file` / `&>>file`: a redirect, never a background job.
+				cur.WriteByte(c)
+				i++
+				cur.WriteByte(command[i])
+				continue
+			}
+			flush()
+		case '|':
 			if inDouble {
 				cur.WriteByte(c)
 				continue
 			}
 			flush()
-			if i+1 < len(command) && command[i+1] == c {
-				i++
+			if i+1 < len(command) && (command[i+1] == '|' || command[i+1] == '&') {
+				i++ // `||` (or) and `|&` (pipe stderr) are one operator
 			}
 		default:
 			cur.WriteByte(c)

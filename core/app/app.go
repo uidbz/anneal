@@ -108,6 +108,10 @@ func New() (*App, error) {
 // attached now (the runner is constructed before the UI exists).
 func (a *App) ReplayState() { a.Runner.ReplayState() }
 
+// StateEvents returns the replay for one newly attached client (the server
+// targets a single connection; a broadcast would reset every other GUI).
+func (a *App) StateEvents() []map[string]any { return a.Runner.StateEvents() }
+
 // journeyTap appends self-improvement events to the journey log.
 func (a *App) journeyTap(v any) {
 	data, err := json.Marshal(v)

@@ -51,6 +51,24 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-11-01 — message queue + delivery state (Phase 5)
+- `Runner.Submit` starts when idle, otherwise queues (max 20). A clean run
+  starts the next input; stop/error pauses the queue. Cancel / clear / promote
+  (Run next) / resume; queued input is cleared on session switch and the text
+  is offered back in the composer.
+- Events: `input.queued/dequeued/cancelled/failed`, `queue.state/paused/
+  resumed/promoted/cleared`; `run.started` now carries `text`, `ref`,
+  `input_id`, so every attached client renders the user turn (before, only
+  the sender did).
+- Protocol: `agent.send {queue:true,ref}` (legacy `{text}` unchanged) plus
+  `queue.list/cancel/clear/resume/promote`; queue state is in connect replay.
+- GUI: queue tray above the composer, per-message delivery footer
+  (sending → queued · N → picked up · first token after X → done/stopped/
+  failed), "Queue a follow-up…" composer hint, and Run next/Edit/✕ per row.
+- Mid-turn steering was scoped out: injecting a message into a running dive
+  turn would need session-message surgery; "Run next" delivers immediately
+  after the current task instead.
+
 ### 2026-11-01 — approval fatigue (issue #14, Phase 4)
 - Read-only shell classifier (`core/permission/classify.go`): ls/cat/grep/
   sed -n/find without writes/git query subcommands/go env|list|doc/gofmt

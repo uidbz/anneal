@@ -80,6 +80,12 @@ type Runner struct {
 	sessMu      sync.Mutex
 	sessCache   []SessionInfo
 	sessCacheAt time.Time
+
+	// Input queue (see queue.go): messages sent while a run is active.
+	queue       []QueuedInput
+	queuePaused bool
+	queueReason string
+	inputSeq    int
 }
 
 // SetIndex attaches the tie index (nil or disabled = no session_search).
@@ -272,6 +278,7 @@ func (r *Runner) StateEvents() []map[string]any {
 		events = append(events, map[string]any{"type": "todo.updated", "items": todos})
 	}
 	events = append(events, r.PendingPermEvents()...)
+	events = append(events, r.queueStateEvent())
 	if r.mem != nil {
 		if ops, err := r.mem.ListPending(); err == nil {
 			for _, op := range ops {
@@ -300,6 +307,17 @@ func (r *Runner) Send(input string) {
 // already active (a run.busy event is still emitted). Callers that must
 // correlate events with the run they started use this instead of Send.
 func (r *Runner) StartTask(input string) (id int, ok bool) {
+	return r.startTask(input, "", "")
+}
+
+// StartTaskRef starts a run for a known input (direct send or dequeued item).
+// The id/ref travel in run.started so every attached client can reconcile the
+// message it rendered optimistically.
+func (r *Runner) StartTaskRef(q QueuedInput) (id int, ok bool) {
+	return r.startTask(q.Text, q.ID, q.Ref)
+}
+
+func (r *Runner) startTask(input, inputID, ref string) (id int, ok bool) {
 	// Create the cancellable context before the goroutine starts so a stop
 	// click that races the run's startup is never lost.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -324,7 +342,7 @@ func (r *Runner) StartTask(input string) (id int, ok bool) {
 	if preempt != nil {
 		preempt() // improve passes own the GPU too: cancel, they resume later
 	}
-	go r.run(ctx, id, input)
+	go r.run(ctx, id, input, inputID, ref)
 	return id, true
 }
 
@@ -351,7 +369,7 @@ func (r *Runner) Interrupt() {
 	}
 }
 
-func (r *Runner) run(ctx context.Context, id int, input string) {
+func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string) {
 	defer r.clearRun(id) // safety net for early returns / panics
 	r.resetDoom()
 	r.resetPermWait()
@@ -454,10 +472,10 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 		return
 	}
 
-	// The text lets every attached client render the user's turn (today only
-	// the sender does, so a second client never sees it).
+	// The text/id/ref let every attached client render the user's turn and
+	// reconcile the message it showed optimistically.
 	r.emit(map[string]any{"type": "run.started", "run": id, "model": h.Model,
-		"text": clip(input, 400)})
+		"text": clip(input, 400), "input_id": inputID, "ref": ref})
 
 	sink := &runEventSink{r: r, run: id, deltas: deltas}
 	resp, runErr := ag.CreateResponse(ctx,
@@ -519,6 +537,11 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 	// run.finished must not hit run.busy.
 	r.clearRun(id)
 	r.emit(out)
+	// A clean run continues the queue; a stop/error pauses it (the user
+	// decides what runs next).
+	finishedOK, _ := out["ok"].(bool)
+	stopped, _ := out["stopped"].(bool)
+	r.startNextQueued(finishedOK && !stopped)
 }
 
 // runEventSink translates dive's response items into UI events. Text deltas

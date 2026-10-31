@@ -30,6 +30,24 @@ func (s *shell) addUser(text string) {
 	s.appendBlock(s.userBlock(text))
 }
 
+// addUserPending renders a just-submitted message with a small status footer
+// ("sending…", later "queued" / "picked up"). The footer is keyed by the
+// client ref carried through run.started / input.* events.
+func (s *shell) addUserPending(text, ref string) {
+	footer := newThemedText("sending…", colorMuted)
+	footer.size = theme.SizeNameCaptionText
+	obj := s.userBlockWithFooter(text, footer)
+	s.turn = turnUser
+	s.appendBlock(obj)
+	if ref == "" {
+		return
+	}
+	if s.userFooters == nil {
+		s.userFooters = map[string]*themedText{}
+	}
+	s.userFooters[ref] = footer
+}
+
 // addMarkdown appends an assistant answer as prose and code/table blocks.
 // Code blocks go on a code surface; the caption is attached to the first
 // block so a turn still counts as one visible transcript block.
@@ -290,6 +308,14 @@ func (s *shell) resetChat() {
 	s.pendingApprovals = nil
 	s.permRows = map[string]fyne.CanvasObject{}
 	s.dock.clear()
+	s.queued = nil
+	s.queuePaused = false
+	s.queueReason = ""
+	s.userFooters = map[string]*themedText{}
+	s.runRefs = map[int]string{}
+	if s.queueTray != nil {
+		s.queueTray.set(nil, false, "")
+	}
 	s.todos.RemoveAll()
 	s.todos.Refresh()
 	if s.todoPane != nil {

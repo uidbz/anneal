@@ -130,26 +130,35 @@ func (r *remoteBackend) describe() string {
 func (r *remoteBackend) remote() bool { return true }
 func (r *remoteBackend) quit()        { r.fire("server.quit", map[string]any{"reason": "client"}) }
 
-func (r *remoteBackend) send(t string) {
+func (r *remoteBackend) send(t, ref string) {
 	go func() {
 		var res struct {
-			ID int  `json:"id"`
-			OK bool `json:"ok"`
+			Run      int  `json:"run"`
+			Queued   bool `json:"queued"`
+			Position int  `json:"position"`
+			OK       bool `json:"ok"`
 		}
-		if err := r.callInto("agent.send", map[string]any{"text": t}, &res); err != nil {
-			// No run.started/finished will arrive for a rejected send.
+		if err := r.callInto("agent.send",
+			map[string]any{"text": t, "ref": ref, "queue": true}, &res); err != nil {
+			// No run.started/queued will arrive for a rejected send.
 			if r.bus != nil {
-				r.bus.Emit(map[string]any{"type": "run.finished", "ok": false,
+				r.bus.Emit(map[string]any{"type": "input.failed", "ref": ref,
 					"error": "send failed: " + err.Error()})
 			}
 		}
 	}()
 }
 
-func (r *remoteBackend) interrupt()            { r.fire("agent.interrupt", nil) }
-func (r *remoteBackend) preempt()              { r.fire("background.preempt", nil) }
-func (r *remoteBackend) newSession()           { r.fire("sessions.new", nil) }
-func (r *remoteBackend) openSession(id string) { r.fire("sessions.open", map[string]any{"id": id}) }
+func (r *remoteBackend) cancelQueued(id string) {
+	r.fire("queue.cancel", map[string]any{"id": id})
+}
+func (r *remoteBackend) clearQueue()             { r.fire("queue.clear", nil) }
+func (r *remoteBackend) resumeQueue()            { r.fire("queue.resume", nil) }
+func (r *remoteBackend) promoteQueued(id string) { r.fire("queue.promote", map[string]any{"id": id}) }
+func (r *remoteBackend) interrupt()              { r.fire("agent.interrupt", nil) }
+func (r *remoteBackend) preempt()                { r.fire("background.preempt", nil) }
+func (r *remoteBackend) newSession()             { r.fire("sessions.new", nil) }
+func (r *remoteBackend) openSession(id string)   { r.fire("sessions.open", map[string]any{"id": id}) }
 func (r *remoteBackend) respondPerm(id, act string) {
 	r.fire("perm.respond", map[string]any{"id": id, "action": act})
 }

@@ -35,7 +35,11 @@ type backend interface {
 	quit()
 
 	// commands
-	send(text string)
+	send(text, ref string) // starts now or queues; events say which
+	cancelQueued(id string)
+	clearQueue()
+	resumeQueue()
+	promoteQueued(id string)
 	interrupt()
 	preempt() // stand down background model work (review/improve)
 	newSession()
@@ -75,14 +79,22 @@ func (l *localBackend) start(ctx context.Context) {
 	l.a.Start(ctx)
 	l.a.ReplayState() // idempotent state replay after the tap exists
 }
-func (l *localBackend) describe() string      { return "local" }
-func (l *localBackend) remote() bool          { return false }
-func (l *localBackend) quit()                 {}
-func (l *localBackend) send(t string)         { l.a.Runner.Send(t) }
-func (l *localBackend) interrupt()            { l.a.Runner.Interrupt() }
-func (l *localBackend) preempt()              { l.a.PreemptBackground() }
-func (l *localBackend) newSession()           { l.a.Runner.NewSession() }
-func (l *localBackend) openSession(id string) { l.a.Runner.OpenSession(id) }
+func (l *localBackend) describe() string { return "local" }
+func (l *localBackend) remote() bool     { return false }
+func (l *localBackend) quit()            {}
+func (l *localBackend) send(t, ref string) {
+	if _, err := l.a.Runner.Submit(t, ref); err != nil {
+		l.a.Bus.Emit(map[string]any{"type": "input.failed", "ref": ref, "error": err.Error()})
+	}
+}
+func (l *localBackend) cancelQueued(id string)  { l.a.Runner.CancelQueued(id) }
+func (l *localBackend) clearQueue()             { l.a.Runner.ClearQueue() }
+func (l *localBackend) resumeQueue()            { l.a.Runner.ResumeQueue() }
+func (l *localBackend) promoteQueued(id string) { l.a.Runner.Promote(id) }
+func (l *localBackend) interrupt()              { l.a.Runner.Interrupt() }
+func (l *localBackend) preempt()                { l.a.PreemptBackground() }
+func (l *localBackend) newSession()             { l.a.Runner.NewSession() }
+func (l *localBackend) openSession(id string)   { l.a.Runner.OpenSession(id) }
 func (l *localBackend) respondPerm(id, act string) {
 	l.a.Runner.RespondPerm(id, act)
 }

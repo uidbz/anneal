@@ -207,22 +207,73 @@ func TestApprovalCardReplayIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestSubmitKeepsTextWhileRunning: a message sent during a run must not be
-// rendered as a turn (the backend rejects it) or silently dropped.
-func TestSubmitKeepsTextWhileRunning(t *testing.T) {
+// TestQueueTrayFooters: a message sent while a run is active is visible as
+// queued, picked up, and stopped — never silently dropped.
+func TestQueueTrayFooters(t *testing.T) {
 	sh := newTestShell(t)
-	sh.cmp.running = true
-	sh.entry.SetText("do the thing")
-	before := len(sh.visible)
-	sh.submit()
-	if sh.entry.Text != "do the thing" {
-		t.Fatalf("composer text = %q, want it kept", sh.entry.Text)
+	sh.handleEvent(normalizeEvent(map[string]any{
+		"type": "input.queued", "position": 1,
+		"input": map[string]any{"id": "i1", "text": "do the thing", "ref": "c1"},
+	}))
+	if len(sh.queued) != 1 || !sh.queueTray.visible {
+		t.Fatalf("queued=%d tray=%v", len(sh.queued), sh.queueTray.visible)
 	}
-	if len(sh.visible) != before+1 { // only the warning notice was appended
-		t.Fatalf("blocks = %d, want %d", len(sh.visible), before+1)
+	footer := sh.userFooters["c1"]
+	if footer == nil || !strings.Contains(footer.Text(), "queued") {
+		t.Fatalf("footer = %v", footer)
 	}
-	if sh.turn == turnUser {
-		t.Fatal("a rejected message was rendered as a user turn")
+	sh.handleEvent(normalizeEvent(map[string]any{
+		"type":  "input.dequeued",
+		"input": map[string]any{"id": "i1", "text": "do the thing", "ref": "c1"},
+	}))
+	if len(sh.queued) != 0 || sh.queueTray.visible {
+		t.Fatal("tray not cleared after dequeue")
+	}
+	if !strings.Contains(footer.Text(), "picked up") {
+		t.Fatalf("footer after dequeue = %q", footer.Text())
+	}
+	// run.started for the same ref must not render a second user turn.
+	blocks := len(sh.visible)
+	sh.handleEvent(normalizeEvent(map[string]any{
+		"type": "run.started", "run": 1, "ref": "c1", "text": "do the thing",
+	}))
+	if len(sh.visible) != blocks {
+		t.Fatalf("run.started duplicated the user turn (%d -> %d)", blocks, len(sh.visible))
+	}
+	sh.handleEvent(normalizeEvent(map[string]any{"type": "run.finished", "run": 1, "ok": true}))
+	if !strings.Contains(footer.Text(), "done") {
+		t.Fatalf("footer after finish = %q", footer.Text())
+	}
+}
+
+// TestRunStartedFromOtherClientRendersTurn: in multi-client mode every client
+// shows the user turn, not just the sender.
+func TestRunStartedFromOtherClientRendersTurn(t *testing.T) {
+	sh := newTestShell(t)
+	sh.handleEvent(normalizeEvent(map[string]any{
+		"type": "run.started", "run": 2, "ref": "other", "text": "from another client",
+	}))
+	if sh.turn != turnUser || len(sh.visible) != 1 {
+		t.Fatalf("turn=%v blocks=%d", sh.turn, len(sh.visible))
+	}
+}
+
+// TestQueuePausedAfterStop: a stop pauses the queue instead of auto-sending.
+func TestQueuePausedAfterStop(t *testing.T) {
+	sh := newTestShell(t)
+	sh.handleEvent(normalizeEvent(map[string]any{
+		"type": "input.queued", "position": 1,
+		"input": map[string]any{"id": "i1", "text": "next", "ref": "c1"},
+	}))
+	sh.handleEvent(normalizeEvent(map[string]any{
+		"type": "queue.paused", "reason": "previous run stopped", "count": 1,
+	}))
+	if !sh.queuePaused || !sh.queueTray.resume.Visible() {
+		t.Fatal("paused queue does not offer Run next")
+	}
+	sh.handleEvent(normalizeEvent(map[string]any{"type": "queue.resumed", "count": 1}))
+	if sh.queuePaused || sh.queueTray.resume.Visible() {
+		t.Fatal("resume did not clear the pause")
 	}
 }
 

@@ -113,8 +113,13 @@ accepted — their effects arrive as events).
 | `server.ping` | – | `{"ok":true}` |
 | `server.info` | – | `{version,proto,workdir,mode,session,busy,idle_timeout_s,uptime_s}` |
 | `server.quit` | `{reason}` | `{"ok":true}` |
-| `agent.send` | `{text}` | `{id,ok}` (run id; `ok:false` if busy) |
+| `agent.send` | `{text}` or `{text,ref,queue:true}` | legacy: `{id,ok}` (run id; `ok:false` if busy). With `queue:true`: `{ok:true,id:<input id>,run,queued,position}` — never rejected for a busy runner |
 | `agent.interrupt` | – | null |
+| `queue.list` | – | `{items:[{id,text,ref,at}],paused,reason}` |
+| `queue.cancel` | `{id}` | `{input,removed}` |
+| `queue.clear` | – | `{inputs:[…]}` |
+| `queue.resume` | – | `{"ok":true}` (clears the pause; starts the next input when idle) |
+| `queue.promote` | `{id}` | `{"ok":true}` (move to the front) |
 | `background.preempt` | – | null (stands the reviewer/improve down so a foreground run owns the model server) |
 | `run.status` | – | `{busy,mode,session}` |
 | `sessions.list` | – | `[{id,title,updated,events}]` |
@@ -150,8 +155,13 @@ method, `-32602` bad params, `-32000` handler error, `-32001` shutting down.
 
 ## Concurrency semantics (unchanged from the core)
 
-* One foreground run per server, shared by all clients. `agent.send` while
-  busy returns `{ok:false}` (and a `run.busy` event).
+* One foreground run per server, shared by all clients. Legacy `agent.send`
+  while busy returns `{ok:false}` (and a `run.busy` event). With
+  `queue:true` the message is queued instead (`input.queued`), starts after a
+  clean finish (`input.dequeued`, then `run.started` carrying `text`, `ref` and
+  `input_id`), and a stop/error pauses the queue (`queue.paused`).
+* `queue.state` is part of the connect replay; queued input belongs to the
+  session it was typed in and is cleared when the session changes.
 * Permission cards are global: any client may answer any `perm.request`
   (watch `perm.resolved` to retire cards answered elsewhere).
 * Run-scoped events carry the numeric `run` id assigned by `agent.send`.

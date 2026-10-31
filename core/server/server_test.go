@@ -473,3 +473,32 @@ func TestReplayIsPerConnection(t *testing.T) {
 	case <-time.After(400 * time.Millisecond):
 	}
 }
+
+func TestQueuedSendAndQueueMethods(t *testing.T) {
+	_, c := startTest(t, nil)
+	var list struct {
+		Items  []map[string]any `json:"items"`
+		Paused bool             `json:"paused"`
+	}
+	callInto(t, c, "queue.list", nil, &list)
+	if len(list.Items) != 0 || list.Paused {
+		t.Fatalf("initial queue = %+v", list)
+	}
+	var send struct {
+		OK       bool `json:"ok"`
+		Queued   bool `json:"queued"`
+		Run      int  `json:"run"`
+		Position int  `json:"position"`
+	}
+	callInto(t, c, "agent.send", map[string]any{"text": "hello", "ref": "c1", "queue": true}, &send)
+	if !send.OK || (send.Run == 0 && !send.Queued) {
+		t.Fatalf("queued send = %+v", send)
+	}
+	var cleared struct {
+		Inputs []map[string]any `json:"inputs"`
+	}
+	callInto(t, c, "queue.clear", nil, &cleared)
+	// The run may have started, so nothing is guaranteed to be queued; the
+	// call must simply succeed and return a list.
+	callOK(t, c, "queue.resume", nil)
+}

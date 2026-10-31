@@ -90,6 +90,20 @@ func (s *shell) handleEvent(e map[string]any) {
 			s.mcpChip.Hide()
 		}
 	case "run.started":
+		ref, text := str(e["ref"]), str(e["text"])
+		if run := int(num(e["run"])); run > 0 && ref != "" {
+			s.runRefs[run] = ref
+		}
+		if ref != "" {
+			if footer := s.userFooters[ref]; footer != nil {
+				footer.SetText("picked up")
+			} else if text != "" {
+				// Started by another client: every client renders the turn.
+				s.addUser(text)
+			}
+		} else if text != "" {
+			s.addUser(text)
+		}
 		s.setRunState("Running…", colorWarn, false)
 		s.setUsageText(0, 0, 0)
 		s.cmp.setRunning(true)
@@ -97,8 +111,14 @@ func (s *shell) handleEvent(e map[string]any) {
 	case "model.wait":
 		s.setRunState(fmt.Sprintf("Waiting for model… (~%s context)", humanK(int(num(e["input_est"])))), colorWarn, false)
 	case "model.first_token":
+		ttft := time.Duration(num(e["ttft_ms"])) * time.Millisecond
 		s.setRunState(fmt.Sprintf("Writing… (first token after %s)",
-			formatElapsed(time.Duration(num(e["ttft_ms"]))*time.Millisecond)), colorWarn, false)
+			formatElapsed(ttft)), colorWarn, false)
+		if ref := s.runRefs[int(num(e["run"]))]; ref != "" {
+			if footer := s.userFooters[ref]; footer != nil {
+				footer.SetText("picked up · first token after " + formatElapsed(ttft))
+			}
+		}
 	case "run.stats":
 		s.lastStats = e
 		s.inspector.refresh()
@@ -121,8 +141,10 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.dropProgress("compose")
 		s.closeTail("")
 		s.addTool(str(e["id"]), str(e["name"]), str(e["input"]))
+		s.setRunState("Running "+toolDisplayName(str(e["name"]))+"…", colorWarn, false)
 	case "tool.result":
 		s.finishTool(str(e["id"]), str(e["name"]), str(e["preview"]), boolean(e["error"]))
+		s.updateApprovalStatus()
 	case "run.finished":
 		s.closeTail("")
 		u := obj(e["usage"])
@@ -147,10 +169,104 @@ func (s *shell) handleEvent(e map[string]any) {
 			}
 		}
 		s.cmp.setRunning(false)
+		if ref := s.runRefs[int(num(e["run"]))]; ref != "" {
+			if footer := s.userFooters[ref]; footer != nil {
+				switch {
+				case boolean(e["stopped"]):
+					footer.SetText("stopped before the answer")
+				case boolean(e["ok"]):
+					footer.SetText("✓ done")
+				default:
+					footer.SetText("✗ failed" + errorSuffix(str(e["error"])))
+				}
+			}
+			delete(s.runRefs, int(num(e["run"])))
+		}
 		s.scroll.ScrollToBottom()
 		if s.autoQuit {
 			time.AfterFunc(1500*time.Millisecond, func() { fyne.Do(func() { s.app.Quit() }) })
 		}
+	case "input.queued":
+		in := obj(e["input"])
+		id := str(in["id"])
+		if id != "" && s.queuedIndex(id) < 0 {
+			s.queued = append(s.queued, queuedItem{ID: id, Text: str(in["text"]), Ref: str(in["ref"])})
+		}
+		s.queueTray.set(s.queued, s.queuePaused, s.queueReason)
+		ref := str(in["ref"])
+		pos := int(num(e["position"]))
+		if ref != "" {
+			if footer := s.userFooters[ref]; footer != nil {
+				footer.SetText(fmt.Sprintf("queued · %d", pos))
+			} else if text := str(in["text"]); text != "" {
+				s.addUserPending(text, ref)
+				s.setQueuedFooters(ref, fmt.Sprintf("queued · %d", pos))
+			}
+		}
+	case "input.dequeued":
+		in := obj(e["input"])
+		if i := s.queuedIndex(str(in["id"])); i >= 0 {
+			s.queued = append(s.queued[:i], s.queued[i+1:]...)
+		}
+		s.queueTray.set(s.queued, s.queuePaused, s.queueReason)
+		s.setQueuedFooters(str(in["ref"]), "picked up · running")
+	case "input.cancelled":
+		in := obj(e["input"])
+		if i := s.queuedIndex(str(in["id"])); i >= 0 {
+			s.queued = append(s.queued[:i], s.queued[i+1:]...)
+		}
+		s.queueTray.set(s.queued, s.queuePaused, s.queueReason)
+		s.setQueuedFooters(str(in["ref"]), "cancelled — not sent")
+	case "input.failed":
+		ref := str(e["ref"])
+		if footer := s.userFooters[ref]; footer != nil {
+			footer.token = colorErr
+			footer.SetText("not sent: " + str(e["error"]))
+			footer.Refresh()
+		}
+		s.notice(noticeWarn, "Message not sent: "+str(e["error"]))
+	case "queue.paused":
+		s.queuePaused, s.queueReason = true, str(e["reason"])
+		s.queueTray.set(s.queued, s.queuePaused, s.queueReason)
+		s.notice(noticeWarn, fmt.Sprintf("Queue paused (%s): %d message(s) waiting — "+
+			"Run next or Clear in the queue tray", s.queueReason, int(num(e["count"]))))
+	case "queue.resumed":
+		s.queuePaused, s.queueReason = false, ""
+		s.queueTray.set(s.queued, false, "")
+	case "queue.promoted":
+		in := obj(e["input"])
+		id := str(in["id"])
+		if i := s.queuedIndex(id); i > 0 {
+			item := s.queued[i]
+			s.queued = append(s.queued[:i], s.queued[i+1:]...)
+			s.queued = append([]queuedItem{item}, s.queued...)
+		}
+		s.queueTray.set(s.queued, s.queuePaused, s.queueReason)
+	case "queue.cleared":
+		var texts []string
+		for _, raw := range list(e["inputs"]) {
+			in := obj(raw)
+			s.setQueuedFooters(str(in["ref"]), "cleared — not sent")
+			if text := strings.TrimSpace(str(in["text"])); text != "" {
+				texts = append(texts, text)
+			}
+		}
+		if len(texts) > 0 && strings.TrimSpace(s.entry.Text) == "" {
+			s.entry.SetText(strings.Join(texts, "\n"))
+		}
+		s.queued = nil
+		s.queuePaused, s.queueReason = false, ""
+		s.queueTray.set(nil, false, "")
+	case "queue.state":
+		s.queued = nil
+		for _, raw := range list(e["items"]) {
+			in := obj(raw)
+			s.queued = append(s.queued, queuedItem{
+				ID: str(in["id"]), Text: str(in["text"]), Ref: str(in["ref"]),
+			})
+		}
+		s.queuePaused, s.queueReason = boolean(e["paused"]), str(e["reason"])
+		s.queueTray.set(s.queued, s.queuePaused, s.queueReason)
 	case "session.started":
 		s.sessionID = str(e["id"])
 		s.title = ""
@@ -349,6 +465,14 @@ func (s *shell) handleEvent(e map[string]any) {
 			s.notice(noticeSuccess, fmt.Sprintf("Index rebuilt: %d sessions", int(num(e["sessions"]))))
 		}
 	}
+}
+
+// errorSuffix renders a short " — reason" for a delivery footer.
+func errorSuffix(msg string) string {
+	if strings.TrimSpace(msg) == "" {
+		return ""
+	}
+	return " — " + trunc(msg, 80)
 }
 
 func (s *shell) renderTodos(items []any) {

@@ -334,15 +334,54 @@ func (s *Server) methods() map[string]handler {
 
 	// runs
 	m["agent.send"] = func(params json.RawMessage) (any, error) {
-		var p pText
+		var p struct {
+			Text  string `json:"text"`
+			Ref   string `json:"ref"`
+			Queue bool   `json:"queue"`
+		}
 		if err := decode(params, &p); err != nil {
 			return nil, err
 		}
 		if p.Text == "" {
 			return nil, argErr(fmt.Errorf("text is empty"))
 		}
+		if p.Queue {
+			// Opt-in queueing: never reject a message because a run is active.
+			res, err := a.Runner.Submit(p.Text, p.Ref)
+			if err != nil {
+				return nil, argErr(err)
+			}
+			return map[string]any{"ok": true, "id": res.Input.ID, "run": res.Run,
+				"queued": res.Queued, "position": res.Position}, nil
+		}
 		id, ok := a.Runner.StartTask(p.Text)
 		return map[string]any{"id": id, "ok": ok}, nil
+	}
+	m["queue.list"] = func(json.RawMessage) (any, error) {
+		items, paused, reason := a.Runner.Queue()
+		return map[string]any{"items": items, "paused": paused, "reason": reason}, nil
+	}
+	m["queue.cancel"] = func(params json.RawMessage) (any, error) {
+		var p pID
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		q, ok := a.Runner.CancelQueued(p.ID)
+		return map[string]any{"input": q, "removed": ok}, nil
+	}
+	m["queue.clear"] = func(json.RawMessage) (any, error) {
+		return map[string]any{"inputs": a.Runner.ClearQueue()}, nil
+	}
+	m["queue.resume"] = func(json.RawMessage) (any, error) {
+		a.Runner.ResumeQueue()
+		return map[string]any{"ok": true}, nil
+	}
+	m["queue.promote"] = func(params json.RawMessage) (any, error) {
+		var p pID
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": a.Runner.Promote(p.ID)}, nil
 	}
 	m["agent.interrupt"] = func(json.RawMessage) (any, error) {
 		a.Runner.Interrupt()

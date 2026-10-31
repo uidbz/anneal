@@ -49,9 +49,20 @@ func selectableLabel(text string, mono bool) *widget.Label {
 
 // userBlock renders one user turn: caption + raised card.
 func (s *shell) userBlock(text string) fyne.CanvasObject {
+	return s.userBlockWithFooter(text, nil)
+}
+
+// userBlockWithFooter adds an optional status line under the message text
+// (delivery state: sending / queued / picked up / stopped).
+func (s *shell) userBlockWithFooter(text string, footer fyne.CanvasObject) fyne.CanvasObject {
 	body := selectableLabel(text, false)
+	parts := []fyne.CanvasObject{body}
+	if footer != nil {
+		parts = append(parts, footer)
+	}
 	card := newSurface(colorRaised,
-		container.New(&padLayout{l: spaceM, r: spaceM, t: spaceS, b: spaceS}, body)).
+		container.New(&padLayout{l: spaceM, r: spaceM, t: spaceS, b: spaceS},
+			container.NewVBox(parts...))).
 		border(colorBorder, 1)
 	return container.NewVBox(
 		container.New(&padLayout{l: spaceXS, r: 0, t: 0, b: 2}, turnCaption("You", false)),

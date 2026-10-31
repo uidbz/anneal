@@ -51,6 +51,14 @@ small IDE.
   The run-state line shows "Waiting for your approval (N)" and each card counts
   how long it has waited. Pending cards survive reconnects and are restored
   when a client attaches (each client receives its own replay).
+- **Queue tray** (between the approval dock and the composer): messages sent
+  while a task is running, oldest first, with **Run next / Edit / ✕** per row.
+  The header reads "Queued (N) — runs after the current task"; after a stop it
+  reads "Queue paused — previous run stopped" and offers **Run next / Clear**.
+  Every user turn also carries a delivery footer: `sending…` → `queued · N` →
+  `picked up · first token after 9.8 s` → `✓ done` / `stopped` / `✗ failed`.
+  Queued messages belong to the session they were typed in; switching sessions
+  clears them (the text is offered back in the composer).
 - **Inspector** (right, Ctrl+J): task checklist with progress count, a context
   meter (amber at 70 %, red at 82 %), token totals, compaction count, session
   ID and **working directory** (both copyable), mode, and whether an
@@ -113,13 +121,28 @@ small IDE.
 | Ctrl+= / Ctrl+- / Ctrl+0 | text size up / down / reset |
 | Ctrl+1/2/3/4 | Chat / Harness / Activity / Settings |
 | Ctrl+Q | quit |
-| Enter / Shift+Enter | send / newline in the composer (Enter is refused while a run is active) |
+| Enter / Shift+Enter | send (or queue while a run is active) / newline in the composer |
 | Ctrl+Enter | allow the oldest pending approval once |
 | Ctrl+Shift+Enter | always allow the oldest pending approval |
 | Esc (composer) | reject the oldest pending approval |
 
 For UI smoke tests without typing, `anneal -send "task" -quit-after-run` fills
 the composer, submits it, and exits after the run finishes.
+
+### Sending while a task runs
+
+Press Enter while the agent is working and the message is **queued**, not
+dropped: it appears in the queue tray and in the transcript with a `queued`
+footer. When the run finishes cleanly the next message starts automatically
+(`run.started` carries its id and text, so every attached client renders the
+same turn). **Run next** moves a message to the front; **Edit** puts it back in
+the composer and removes it from the queue.
+
+A **stop or a failed run pauses the queue** instead of sending anything behind
+your back; the tray then offers Run next / Clear. Switching sessions clears the
+queue (the tray notes "cleared — not sent" and the text is put back in the
+composer). Headless one-shot runs are never busy, so they are unaffected; the
+remote protocol exposes the same queue (`queue.list/cancel/clear/resume/promote`).
 
 ## Deployment & tenancy (recommended usage pattern)
 

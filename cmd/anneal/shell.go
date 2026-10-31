@@ -94,7 +94,14 @@ type shell struct {
 	cmp              *composer
 	entry            *composerEntry
 	dock             *approvalDock
+	queueTray        *queueTray
 	chatBody         *fyne.Container
+	queued           []queuedItem
+	queuePaused      bool
+	queueReason      string
+	userFooters      map[string]*themedText
+	runRefs          map[int]string
+	refSeq           int
 	scroll           *container.Scroll
 	chatBox          *fyne.Container // visible transcript blocks (append-only)
 	earlier          *widget.Button  // "show earlier messages" when the window is capped
@@ -179,6 +186,9 @@ func (s *shell) build() {
 	s.cmp = newComposer(s)
 	s.entry = s.cmp.entry
 	s.dock = newApprovalDock(s)
+	s.queueTray = newQueueTray(s)
+	s.userFooters = map[string]*themedText{}
+	s.runRefs = map[int]string{}
 
 	s.statusbar = s.buildStatusBar()
 
@@ -208,7 +218,7 @@ func (s *shell) wireFrame() {
 	s.scroll = container.NewVScroll(padded)
 	s.welcome = s.welcomeView()
 	transcript := container.NewStack(s.scroll, s.welcome)
-	bottom := container.NewVBox(s.dock, s.cmp.Object())
+	bottom := container.NewVBox(s.dock, s.queueTray.Object(), s.cmp.Object())
 	s.chatBody = container.NewBorder(nil, bottom, nil, nil, transcript)
 	s.chatView = container.NewBorder(s.header.object, nil, nil, nil, s.chatBody)
 
@@ -500,22 +510,25 @@ func (s *shell) submit() {
 	if text == "" {
 		return
 	}
-	if !strings.HasPrefix(text, "/") && (s.cmp.running || s.b.busy()) {
-		// Never render a turn the backend will reject: until the queue lands,
-		// keep the text in the composer so Enter cannot silently drop it.
-		s.notice(noticeWarn, "A task is running — your message was not sent. "+
-			"Wait for it, or stop it (Ctrl+D), then press Enter again.")
-		return
-	}
 	s.entry.SetText("")
 	if strings.HasPrefix(text, "/") {
 		s.slash(text)
 		return
 	}
-	s.addUser(text)
-	s.b.send(text)
+	// Render the turn immediately with a status footer; the backend either
+	// starts it now or queues it, and the events reconcile the footer.
+	ref := s.nextRef()
+	s.addUserPending(text, ref)
+	s.b.send(text, ref)
 	s.win.Canvas().Focus(s.entry)
 	s.scroll.ScrollToBottom()
+}
+
+// nextRef names one submitted message so its events can be reconciled with
+// the transcript card that was rendered optimistically.
+func (s *shell) nextRef() string {
+	s.refSeq++
+	return fmt.Sprintf("c%d", s.refSeq)
 }
 
 // relayoutChat re-runs the chat border layout after the approval dock's

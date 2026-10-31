@@ -138,9 +138,12 @@ func (r *Runner) NewSession() {
 		r.emit(map[string]any{"type": "session.error", "id": id, "error": err.Error()})
 		return
 	}
+	// Queued messages belong to the session that was active when typed.
+	r.ClearQueue()
 	r.mu.Lock()
 	r.sess, r.sessID = sess, id
 	r.todos = nil
+	r.queuePaused, r.queueReason = false, ""
 	r.mu.Unlock()
 	if r.perm != nil {
 		r.perm.ClearSession() // session grants do not follow the user
@@ -161,10 +164,12 @@ func (r *Runner) OpenSession(id string) {
 		return
 	}
 	blocks := transcriptBlocks(context.Background(), sess)
+	r.ClearQueue()
 	r.mu.Lock()
 	r.sess, r.sessID = sess, id
 	r.restoreTodos(sess)
 	todos := append([]todoItem{}, r.todos...)
+	r.queuePaused, r.queueReason = false, ""
 	r.mu.Unlock()
 	if r.perm != nil {
 		r.perm.ClearSession()

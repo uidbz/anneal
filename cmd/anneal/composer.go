@@ -191,11 +191,13 @@ func (c *composer) setRunning(running bool) {
 			c.s.status.SetText("Stopping…")
 			c.s.b.interrupt()
 		}
+		c.hint.SetText("Queue a follow-up… Enter sends it after this task · Ctrl+D stops")
 	} else {
 		c.actionBtn.SetText("Send")
 		c.actionBtn.SetIcon(theme.MailSendIcon())
 		c.actionBtn.Importance = widget.HighImportance
 		c.actionBtn.OnTapped = c.s.submit
+		c.hint.SetText("Enter to send · Shift+Enter for a new line")
 	}
 	c.actionBtn.Refresh()
 }

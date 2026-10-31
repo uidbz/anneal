@@ -40,10 +40,11 @@ same core behind a WebSocket protocol (docs/PROTOCOL.md).
 
 ## Runtime model
 
-- **One foreground run at a time.** `Runner.Send`/`StartTask` starts a
-  goroutine (`run()`); a second send gets a `run.busy` event. Each run builds
-  a fresh dive `Agent` (tools, hooks, skill extension) against the shared
-  session.
+- **One foreground run at a time, with a queue.** `Runner.Submit` starts a
+  run when idle, otherwise queues the message (`core/agent/queue.go`, max 20).
+  A clean finish starts the next input; a stop or error pauses the queue and
+  the user decides (resume/cancel/clear). Each run builds a fresh dive `Agent`
+  (tools, hooks, skill extension) against the shared session.
 - **Conversation truth = dive `session.FileStore`** JSONL under
   `~/.anneal/sessions`. tie is only a *rebuildable search index* over it
   (collection `anneal` for new installs; existing configs keep their value).
@@ -90,10 +91,13 @@ on missing keys is a hard error. The Go shell consumes the same values as maps
 | event | when |
 |-------|------|
 | `provider.state` | health monitor change |
-| `run.started` / `run.finished` / `run.busy` | run lifecycle (finished includes ok/text/error/usage/ctx_pct) |
+| `run.started` / `run.finished` / `run.busy` | run lifecycle (started carries text/ref/input_id; finished includes ok/text/error/usage/ctx_pct) |
+| `input.queued` / `input.dequeued` / `input.cancelled` / `input.failed` | message delivery state (queued input, picked up by a run, cancelled, rejected by the backend) |
+| `queue.state` / `queue.paused` / `queue.resumed` / `queue.promoted` / `queue.cleared` | queue tray (replay snapshot; paused after stop/error; ordering; clear) |
 | `text.delta` / `message.final` | streaming + final assistant text |
-| `thinking.delta` | reasoning stream |
-| `tool.start` / `tool.result` | tool calls (result has 600-char preview) |
+| `thinking.delta` | reasoning stream (coalesced at the source) |
+| `tool.start` / `tool.result` / `tool.composing` | tool calls (result has a 600-char preview; composing reports streamed argument bytes) |
+| `model.wait` / `model.first_token` / `run.stats` | prompt processing, time-to-first-token, and the per-run timing split |
 | `perm.request` / `perm.saved` / `perm.resolved` | permission inbox (reply: `agent.respondPerm(id, once|allow_session|always|reject)`; legacy `allow|session|deny` still accepted; replayed per connection after reconnect) |
 | `session.started` / `session.opened` / `session.error` | session lifecycle (opened carries replay blocks) |
 | `mode.changed` | permission mode |

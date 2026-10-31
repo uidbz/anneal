@@ -5,7 +5,7 @@ State lives under `~/.anneal/` (override with `ANNEAL_HOME`).
 | path | what |
 |------|------|
 | `config.json` | the configuration below |
-| `sessions/` | dive JSONL session files — **conversation truth** (newest resumed at boot) |
+| `sessions/` | dive JSONL session files — **conversation truth**. Sessions record their project cwd; boot resumes the newest session **for this instance's working directory** (legacy sessions without cwd are a fallback), and the sidebar can show all projects |
 | `memories/` | `MEMORY.md`, `USER.md` (bounded learning stores) |
 | `skills/` | agent-authored skills (`<name>/SKILL.md`) |
 | `skills-archive/` | removed skills land here (`<name>-<timestamp>`) |

@@ -110,6 +110,7 @@ disabled (`index: offline`); Strata cold ⇒ health status and auto-reconnect.
 |-----|----------|
 | [docs/USING.md](docs/USING.md) | GUI tour, slash commands, shortcuts, headless CLI, learning-loop operations |
 | [docs/PROJECTS.md](docs/PROJECTS.md) | one instance per project: running several side by side, shared vs separate state, and what to do when one project needs a change in another |
+| [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | per-run timing, the opencode comparison harness, baseline vs. after numbers |
 | [docs/CONFIG.md](docs/CONFIG.md) | every config key, defaults, env overrides, state dir layout |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | packages, hybrid UI/threading rules, event table, permission/learning/MCP design |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | anneald wire protocol (normative) |

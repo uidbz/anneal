@@ -51,6 +51,27 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-11-01 — wrap-up: issues #13–#16 and the approval/queue/perf work
+- All ten phases landed; `make ci` green (vet + tests + pane and script-UI
+  compile gates).
+- Final performance numbers (same machine/server/task, `testing/perf/ab.sh`):
+  wall 20.7→18.7 s, prompt 26.7k→23.8k tokens, TTFT 2.0→1.6 s, 79→89 tok/s;
+  streamed UI batch 2.23→0.47 ms and 600-block session replay 366→57 ms
+  (`docs/PERFORMANCE.md`).
+- Issue resolutions: #13 gortex untracked detection + error hints (+ upstream
+  zzet/gortex#1237), #14 read-only Bash allowlist + session grants + grant
+  manager + churn flag (79% of a real session's Bash calls now need no card),
+  #15 active-time turn budget, soft stop, interrupted-turn Continue and
+  recovery stashes, #16 lenient/validated todo tool + staleness signal.
+- Beyond the issues: the approval dock no longer leaks spacers and keeps its
+  buttons visible; reconnects replay pending approvals without resetting other
+  clients; messages sent during a run are queued (never dropped) with visible
+  delivery state; one instance == one project is documented and supported with
+  `-C`, project-scoped session resume, a project chip and per-project sessions.
+- Known scoped-out item: true mid-turn steering (injecting a message into a
+  running dive turn) — "Run next" delivers immediately after the current task
+  instead; see Phase 5 notes.
+
 ### 2026-11-01 — multi-project workflow (Phase 9)
 - `anneal -C <dir>` / `-work` (parity with anneald): chdir before the core is
   built, so jail, skills, MCP and tie see the project root.

@@ -48,8 +48,9 @@ same core behind a WebSocket protocol (docs/PROTOCOL.md).
 - **Conversation truth = dive `session.FileStore`** JSONL under
   `~/.anneal/sessions`. tie is only a *rebuildable search index* over it
   (collection `anneal` for new installs; existing configs keep their value).
-  Session title = first task; todos live in session metadata (`store.Put`
-  rewrites the header — message appends never do).
+  Session title = first task; todos and the project **cwd** live in session
+  metadata (`store.Put` rewrites the header — message appends never do), so a
+  shared state dir can hold several projects and boot resumes the right one.
 - **Hybrid UI.** `cmd/anneal` owns the window in Go/Fyne. The transcript,
   composer, permission inbox, sessions, todos, and status are native widgets.
   The harness editor/library is a fynerisor `CanvasObject`

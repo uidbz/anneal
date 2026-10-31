@@ -221,6 +221,7 @@ above. A new-style rule appended later can therefore override them.
 | `tool_iteration_limit` | 80 | max tool rounds per run |
 | `subagents` | true | register the `Agent` tool (general-purpose / explore / plan) |
 | `script` | true | register the `script` tool (sandboxed Risor data-glue runner, see below) |
+| `parallel_tools` | true | run batches of read-only tool calls concurrently; tools that change state are marked sequential, so a mixed batch stays ordered. Results of a parallel batch arrive in completion order, not call order |
 
 Legacy rule strings support tool-name patterns and specifiers:
 `"Bash(go test *)"`. They are canonicalized to the actions above

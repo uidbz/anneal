@@ -48,7 +48,8 @@ type Agent struct {
 	Permissions        permission.Config `json:"permissions,omitempty"`
 	ToolIterationLimit int               `json:"tool_iteration_limit"`
 	Subagents          bool              `json:"subagents"`
-	Script             bool              `json:"script"` // Risor data-glue script tool
+	Script             bool              `json:"script"`         // Risor data-glue script tool
+	ParallelTools      bool              `json:"parallel_tools"` // run read-only tool batches concurrently
 }
 
 type Compaction struct {
@@ -229,6 +230,7 @@ func Default() *Config {
 			ToolIterationLimit: 80,
 			Subagents:          true,
 			Script:             true,
+			ParallelTools:      true,
 		},
 		Compaction: Compaction{Enabled: true, ThresholdPct: 82, KeepRecentTurns: 4},
 		Memory:     Memory{Enabled: true, MemoryCharLimit: 2200, UserCharLimit: 1375, WriteApproval: false},

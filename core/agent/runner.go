@@ -67,6 +67,8 @@ type Runner struct {
 	doom         map[string]int
 
 	mcpMu sync.Mutex // guards mcp: it is attached asynchronously at boot
+
+	indexCh chan indexJob // background tie indexing (see search.go)
 }
 
 // SetIndex attaches the tie index (nil or disabled = no session_search).
@@ -218,11 +220,13 @@ func NewRunner(cfg *config.Config, monitor *model.Monitor, bus *events.Bus, cwd 
 		harn:         harn,
 		pendingPerms: make(map[string]*pendingPerm),
 		doom:         make(map[string]int),
+		indexCh:      make(chan indexJob, 8),
 	}
 	r.perm = newPermManager(cfg, r.harn, cwd)
 	if err := r.initStore(); err != nil {
 		return nil, err
 	}
+	r.startIndexWorker()
 	return r, nil
 }
 
@@ -364,29 +368,32 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 		sess.SetTitle(clip(input, 60))
 	}
 
+	// TextEditor is intentionally absent: it duplicates Read/Write/Edit, and
+	// its schema made every prompt longer and tool choice harder for small
+	// models. Read-only tools can run in parallel; anything that changes
+	// state is wrapped so a mixed batch stays sequential.
 	tools := []dive.Tool{
 		toolkit.NewReadFileTool(),
-		toolkit.NewWriteFileTool(),
-		toolkit.NewEditTool(),
-		toolkit.NewTextEditorTool(),
+		seq(toolkit.NewWriteFileTool()),
+		seq(toolkit.NewEditTool()),
 		toolkit.NewGlobTool(),
 		toolkit.NewGrepTool(),
 		toolkit.NewListDirectoryTool(),
-		toolkit.NewBashTool(),
-		toolkit.NewFetchTool(),
-		r.todoTool(),
+		seq(toolkit.NewBashTool()),
+		seq(toolkit.NewFetchTool()),
+		seq(r.todoTool()),
 	}
 	if r.index != nil && r.index.Enabled() {
 		tools = append(tools, r.sessionSearchTool())
 	}
 	if r.mem != nil && r.cfg.Memory.Enabled {
-		tools = append(tools, r.memoryTool())
+		tools = append(tools, seq(r.memoryTool()))
 	}
 	if r.skills != nil && r.cfg.Skills.Enabled {
-		tools = append(tools, r.skillManageTool())
+		tools = append(tools, seq(r.skillManageTool()))
 	}
 	if r.cfg.Agent.Script {
-		tools = append(tools, r.scriptTool())
+		tools = append(tools, seq(r.scriptTool()))
 	}
 	skillExt := r.skillLoader()
 	var exts []dive.Extension
@@ -395,7 +402,7 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 	}
 	tools = append(tools, mcpTools(r.mcpManager())...)
 	if r.cfg.Agent.Subagents {
-		tools = append(tools, r.agentTool(provider, tools))
+		tools = append(tools, seq(r.agentTool(provider, tools)))
 	}
 
 	var layers []harness.Layer
@@ -419,16 +426,17 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 	}
 
 	ag, err := dive.NewAgent(dive.AgentOptions{
-		Name:               "anneal",
-		SystemPrompt:       prompt,
-		Model:              provider,
-		Tools:              tools,
-		Hooks:              hooks,
-		Extensions:         exts,
-		ToolIterationLimit: r.cfg.Agent.ToolIterationLimit,
-		Session:            sess,
-		ModelSettings:      model.Settings(r.cfg),
-		Tracer:             tracer,
+		Name:                  "anneal",
+		SystemPrompt:          prompt,
+		Model:                 provider,
+		Tools:                 tools,
+		Hooks:                 hooks,
+		Extensions:            exts,
+		ToolIterationLimit:    r.cfg.Agent.ToolIterationLimit,
+		ParallelToolExecution: r.cfg.Agent.ParallelTools,
+		Session:               sess,
+		ModelSettings:         model.Settings(r.cfg),
+		Tracer:                tracer,
 	})
 	if err != nil {
 		r.finishRun(id, false, "", err.Error(), 0, 0, 0)
@@ -474,7 +482,7 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 	// Always persist: an empty list must overwrite a stale one.
 	sess.SetMetadata("todos", items)
 	_ = r.store.Put(context.Background(), sess)
-	r.indexSessionNow(sess, h.Model)
+	r.queueIndex(sess, h.Model)
 	if r.review != nil {
 		r.review.Enqueue(sess.ID())
 	}

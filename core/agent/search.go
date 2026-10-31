@@ -45,15 +45,39 @@ func (r *Runner) sessionSearchTool() dive.Tool {
 		dive.WithFuncToolAnnotations(&dive.ToolAnnotations{ReadOnlyHint: true, Title: "Session search"}))
 }
 
-// indexSessionNow pushes the session's messages into the tie index
-// (incremental; safe to call after every run).
-func (r *Runner) indexSessionNow(sess *session.Session, modelID string) {
-	if r.index == nil || !r.index.Enabled() {
+// indexJob is one session waiting to be (re)indexed off the run path.
+type indexJob struct {
+	sess  *session.Session
+	model string
+}
+
+// startIndexWorker drains the index queue. Indexing used to run inline before
+// run.finished, so a slow tie server delayed "Ready" and, after a restart,
+// re-indexed the whole session on the next run. The index is rebuildable, so
+// a full queue drops work instead of blocking the agent.
+func (r *Runner) startIndexWorker() {
+	go func() {
+		for job := range r.indexCh {
+			if r.index == nil || !r.index.Enabled() {
+				continue
+			}
+			sd := SessionToData(context.Background(), job.sess, r.cwd, job.model)
+			if err := r.index.IndexSession(sd); err != nil {
+				r.emit(map[string]any{"type": "tie.state", "state": r.index.State()})
+			}
+		}
+	}()
+}
+
+// queueIndex schedules an incremental index update after the run. It never
+// blocks: search is a convenience, not the conversation truth.
+func (r *Runner) queueIndex(sess *session.Session, modelID string) {
+	if r.index == nil || !r.index.Enabled() || sess == nil || r.indexCh == nil {
 		return
 	}
-	sd := SessionToData(context.Background(), sess, r.cwd, modelID)
-	if err := r.index.IndexSession(sd); err != nil {
-		r.emit(map[string]any{"type": "tie.state", "state": r.index.State()})
+	select {
+	case r.indexCh <- indexJob{sess: sess, model: modelID}:
+	default:
 	}
 }
 

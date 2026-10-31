@@ -130,6 +130,7 @@ type shell struct {
 	autoSend      string
 	autoQuit      bool
 	maxVisible    int
+	lastStats     map[string]any // last run.stats payload (/perf, inspector)
 
 	title     string // current session title ("" = untitled)
 	sessionID string

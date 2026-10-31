@@ -51,6 +51,23 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-11-01 — performance baseline (Phase 2)
+- New per-run tracer (`core/agent/perf.go`, dive `Tracer`): per model call
+  TTFT/duration/tokens (in, cached, out, reasoning), per tool duration,
+  approval wait, post-run persistence/indexing. Emits `run.stats`, appends
+  `~/.anneal/logs/perf.jsonl`; `/perf` and the inspector show the split.
+- Baseline, same local Strata server:
+  - mini task (`testing/perf/ab.sh`, one-shot `-yolo`): wall 20.7 s, model
+    20.6 s, tools 0.1 s, TTFT 2.0 s, prompt 26.7k tokens (20.8k cached),
+    out 756, 79 tok/s.
+  - prompt caching works (cached ≫ uncached on later iterations).
+  - UI: 2.23 ms per streamed text batch with 300 visible blocks; opening a
+    600-block session 366 ms (full-tree refresh per delta and per block).
+  - Strata streams tool-call arguments incrementally (first args 2.3 s, then
+    deltas), so composing indicators and large writes are viable.
+  - Earlier session evidence to verify in Phase 3: turns after a background
+    review re-processed 96k–153k uncached prompt tokens (`…38ae96`).
+
 ### 2026-11-01 — hotfix round (issues #13–#16 planning)
 - **Approval dock**: one active card (oldest) at a time with a `N approvals
   waiting · i/N` header instead of an ever-growing stack. The old dock added a

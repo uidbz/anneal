@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/uidbz/anneal/core/config"
 	"github.com/uidbz/anneal/core/harness"
@@ -65,6 +66,10 @@ func (r *Runner) askPermission(ctx context.Context, req permission.Request) (per
 	id, ch := r.registerPerm(req)
 	r.emit(permEvent(id, req))
 
+	// Waiting for the user is not the model's time; the run budget and the
+	// perf summary both exclude it.
+	start := time.Now()
+	defer func() { r.addPermWait(time.Since(start)) }()
 	select {
 	case out := <-ch:
 		return out, nil

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -27,6 +28,7 @@ type inspectorPanel struct {
 	ctxLabel  *themedText
 	ctxTokens *themedText
 	ctxComp   *themedText
+	perf      *themedText
 	sessID    *widget.Label
 	sessCwd   *widget.Label
 	sessMode  *themedText
@@ -50,10 +52,12 @@ func newInspectorPanel(s *shell) *inspectorPanel {
 	p.ctxLabel = newThemedText("No run yet", colorMuted)
 	p.ctxTokens = newThemedText("", colorMuted)
 	p.ctxComp = newThemedText("", colorMuted)
+	p.perf = newThemedText("", colorMuted)
+	p.perf.size = theme.SizeNameCaptionText
 	ctxSection := container.NewVBox(
 		newSectionLabel("CONTEXT"),
 		container.New(&padLayout{l: 0, r: 0, t: spaceXS, b: spaceXS}, p.ctxMeter),
-		p.ctxLabel, p.ctxTokens, p.ctxComp,
+		p.ctxLabel, p.ctxTokens, p.ctxComp, p.perf,
 	)
 
 	p.sessID = newEllipsisLabel("")
@@ -110,6 +114,13 @@ func (p *inspectorPanel) refresh() {
 		p.ctxComp.SetText(fmt.Sprintf("%d compaction(s) this session", p.compacted))
 	} else {
 		p.ctxComp.SetText("")
+	}
+	if stats, ok := p.s.lastStats["stats"].(map[string]any); ok {
+		sec := func(k string) string { return formatElapsed(time.Duration(num(stats[k])) * time.Millisecond) }
+		p.perf.SetText(fmt.Sprintf("last run %s · model %s · tools %s",
+			sec("total_ms"), sec("model_ms"), sec("tool_ms")))
+	} else {
+		p.perf.SetText("")
 	}
 	p.sessID.SetText(shortSessionID(p.s.sessionID))
 	p.sessCwd.SetText(shortPath(p.s.b.cwd(), 34))

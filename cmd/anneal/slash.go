@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/uidbz/anneal/core/agent"
 	"github.com/uidbz/anneal/core/config"
 )
 
@@ -13,7 +14,7 @@ func (s *shell) slash(line string) {
 	cmd := fields[0]
 	switch cmd {
 	case "/help":
-		s.showText("commands", "/new /sessions /plan /build /stop /textsize /memory /skills /journey /activity /runs /index /learn /improve /harness /backend /quit")
+		s.showText("commands", "/new /sessions /plan /build /stop /textsize /memory /skills /journey /activity /runs /perf /index /learn /improve /harness /backend /quit")
 	case "/new":
 		s.b.newSession()
 	case "/sessions":
@@ -74,6 +75,8 @@ func (s *shell) slash(line string) {
 	case "/activity", "/runs":
 		s.refreshActivity()
 		s.showView(viewActivity)
+	case "/perf":
+		s.showText("performance", agent.FormatPerf(s.lastStats))
 	case "/index":
 		s.b.rebuildIndex()
 		s.addNotice("index rebuild requested")

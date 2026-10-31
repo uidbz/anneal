@@ -94,6 +94,14 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.setUsageText(0, 0, 0)
 		s.cmp.setRunning(true)
 		s.startRunClock()
+	case "model.wait":
+		s.setRunState(fmt.Sprintf("Waiting for model… (~%s context)", humanK(int(num(e["input_est"])))), colorWarn, false)
+	case "model.first_token":
+		s.setRunState(fmt.Sprintf("Writing… (first token after %s)",
+			formatElapsed(time.Duration(num(e["ttft_ms"]))*time.Millisecond)), colorWarn, false)
+	case "run.stats":
+		s.lastStats = e
+		s.inspector.refresh()
 	case "run.busy":
 		s.notice(noticeWarn, "A run is already active — the message was not sent.")
 	case "text.delta":

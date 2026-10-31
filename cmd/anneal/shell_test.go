@@ -11,7 +11,7 @@ import (
 	coreapp "github.com/uidbz/anneal/core/app"
 )
 
-func newTestShell(t *testing.T) *shell {
+func newTestShell(t testing.TB) *shell {
 	t.Helper()
 	t.Setenv("ANNEAL_HOME", t.TempDir())
 	a, err := coreapp.New()

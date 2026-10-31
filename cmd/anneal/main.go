@@ -8,6 +8,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -30,6 +32,15 @@ func main() {
 	serverAddr := flag.String("server", "", "attach to a remote anneald (host:port or unix:/path) instead of embedding the core")
 	token := flag.String("token", "", "auth token for -server (default: $ANNEAL_AUTH_TOKEN)")
 	flag.Parse()
+
+	// Developer profiling: ANNEAL_PPROF=127.0.0.1:6060 exposes net/http/pprof.
+	// Off by default; the endpoint is plain HTTP with no auth, so bind loopback.
+	if addr := os.Getenv("ANNEAL_PPROF"); addr != "" {
+		go func() {
+			log.Printf("anneal: pprof on http://%s/debug/pprof/", addr)
+			_ = http.ListenAndServe(addr, nil)
+		}()
+	}
 
 	cfg, err := config.Load()
 	if err != nil {

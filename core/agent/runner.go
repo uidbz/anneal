@@ -57,6 +57,8 @@ type Runner struct {
 	cancel   context.CancelFunc
 	runSeq   int
 	running  bool
+	permWait time.Duration // time blocked on approval cards, per run
+	lastPerf *perfSummary
 
 	permMu       sync.Mutex // guards pendingPerms and doom counts
 	permSeq      int
@@ -314,6 +316,8 @@ func (r *Runner) Interrupt() {
 func (r *Runner) run(ctx context.Context, id int, input string) {
 	defer r.clearRun(id) // safety net for early returns / panics
 	r.resetDoom()
+	r.resetPermWait()
+	tracer := newPerfTracer(r.bus, id)
 
 	h := r.monitor.Current()
 	if h.State == model.StateConnecting {
@@ -401,6 +405,7 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 		ToolIterationLimit: r.cfg.Agent.ToolIterationLimit,
 		Session:            sess,
 		ModelSettings:      model.Settings(r.cfg),
+		Tracer:             tracer,
 	})
 	if err != nil {
 		r.finishRun(id, false, "", err.Error(), 0, 0, 0)
@@ -411,46 +416,10 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 
 	resp, runErr := ag.CreateResponse(ctx,
 		dive.WithInput(input),
-		dive.WithEventCallback(func(_ context.Context, item *dive.ResponseItem) error {
-			switch item.Type {
-			case dive.ResponseItemTypeModelEvent:
-				if item.Event != nil && item.Event.Delta != nil {
-					if item.Event.Delta.Text != "" {
-						deltas.addText(item.Event.Delta.Text)
-					}
-					if item.Event.Delta.Thinking != "" {
-						r.emit(map[string]any{"type": "thinking.delta", "run": id, "text": item.Event.Delta.Thinking})
-					}
-				}
-			case dive.ResponseItemTypeMessage:
-				deltas.flush()
-				if item.Message != nil {
-					r.emit(map[string]any{"type": "message.final", "run": id, "text": item.Message.AnswerText()})
-				}
-			case dive.ResponseItemTypeToolCall:
-				deltas.flush()
-				if item.ToolCall != nil {
-					r.emit(map[string]any{"type": "tool.start", "run": id, "id": item.ToolCall.ID,
-						"name": item.ToolCall.Name, "input": previewJSON(item.ToolCall.Input, 400)})
-				}
-			case dive.ResponseItemTypeToolCallResult:
-				if item.ToolCallResult != nil {
-					tr := item.ToolCallResult
-					text := ""
-					isErr := tr.Error != nil || (tr.Result != nil && tr.Result.IsError)
-					if tr.Error != nil {
-						text = tr.Error.Error()
-					} else if tr.Result != nil {
-						text = toolResultText(tr.Result)
-					}
-					r.emit(map[string]any{"type": "tool.result", "run": id, "id": tr.ID,
-						"name": tr.Name, "error": isErr, "preview": clip(text, 600)})
-				}
-			}
-			return nil
-		}),
+		dive.WithEventCallback(r.runEventCallback(id, deltas)),
 	)
 	deltas.flush()
+	postStart := time.Now()
 
 	out := map[string]any{"type": "run.finished", "run": id, "ok": runErr == nil,
 		"text": "", "error": "", "usage": map[string]any{"tin": 0, "tout": 0}, "ctx_pct": 0}
@@ -486,10 +455,59 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 	if r.review != nil {
 		r.review.Enqueue(sess.ID())
 	}
+	// Report where the time went before announcing completion, so the UI can
+	// paint the summary and "Ready" together.
+	post := time.Since(postStart)
+	sum := tracer.finish(r.takePermWait(), post)
+	r.mu.Lock()
+	r.lastPerf = &sum
+	r.mu.Unlock()
 	// Clear before announcing completion: a UI that chains sends on
 	// run.finished must not hit run.busy.
 	r.clearRun(id)
 	r.emit(out)
+}
+
+// runEventCallback translates dive's response items into UI events.
+func (r *Runner) runEventCallback(id int, deltas *deltaBatcher) dive.EventCallback {
+	return func(_ context.Context, item *dive.ResponseItem) error {
+		switch item.Type {
+		case dive.ResponseItemTypeModelEvent:
+			if item.Event != nil && item.Event.Delta != nil {
+				if item.Event.Delta.Text != "" {
+					deltas.addText(item.Event.Delta.Text)
+				}
+				if item.Event.Delta.Thinking != "" {
+					r.emit(map[string]any{"type": "thinking.delta", "run": id, "text": item.Event.Delta.Thinking})
+				}
+			}
+		case dive.ResponseItemTypeMessage:
+			deltas.flush()
+			if item.Message != nil {
+				r.emit(map[string]any{"type": "message.final", "run": id, "text": item.Message.AnswerText()})
+			}
+		case dive.ResponseItemTypeToolCall:
+			deltas.flush()
+			if item.ToolCall != nil {
+				r.emit(map[string]any{"type": "tool.start", "run": id, "id": item.ToolCall.ID,
+					"name": item.ToolCall.Name, "input": previewJSON(item.ToolCall.Input, 400)})
+			}
+		case dive.ResponseItemTypeToolCallResult:
+			if item.ToolCallResult != nil {
+				tr := item.ToolCallResult
+				text := ""
+				isErr := tr.Error != nil || (tr.Result != nil && tr.Result.IsError)
+				if tr.Error != nil {
+					text = tr.Error.Error()
+				} else if tr.Result != nil {
+					text = toolResultText(tr.Result)
+				}
+				r.emit(map[string]any{"type": "tool.result", "run": id, "id": tr.ID,
+					"name": tr.Name, "error": isErr, "preview": clip(text, 600)})
+			}
+		}
+		return nil
+	}
 }
 
 // clearRun marks run id idle (always before its run.finished emits). A stale

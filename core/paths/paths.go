@@ -26,6 +26,7 @@ func Skills() string        { return filepath.Join(Root(), "skills") }
 func SkillsArchive() string { return filepath.Join(Root(), "skills-archive") }
 func Pending() string       { return filepath.Join(Root(), "pending") }
 func Logs() string          { return filepath.Join(Root(), "logs") }
+func PerfLog() string       { return filepath.Join(Root(), "logs", "perf.jsonl") }
 
 // Harness components (M10): editable files mounted into every run.
 func Harness() string      { return filepath.Join(Root(), "harness") }

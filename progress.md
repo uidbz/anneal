@@ -51,6 +51,23 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-11-01 — approval fatigue (issue #14, Phase 4)
+- Read-only shell classifier (`core/permission/classify.go`): ls/cat/grep/
+  sed -n/find without writes/git query subcommands/go env|list|doc/gofmt
+  -l|d/gh list|view. Stderr noise (`2>&1`, `2>/dev/null`) is allowed; file
+  redirections, substitutions, `tee`, build/test commands and mutating flags
+  are not. Replayed against session `…38ae96`: **110/140 Bash calls (79%)**
+  would skip the card; the rest are builds/tests/git writes.
+- Read-only is allowed only in the **base** rule layer: explicit
+  `permission`/agent/harness ask rules still prompt, denies stay absolute.
+  Outside-project paths and .env/keys still ask. `agent.readonly_bash`.
+- Approval cards gain **This session** (in-memory grant, cleared on session
+  switch); saved grants stay project-scoped.
+- Settings → Permissions lists saved grants with Remove and flags broad ones
+  (`bash *`, `edit *`, `rm *`, window when the project is $HOME).
+- Approval churn: 25 requests in a session queue a reviewer flag with the
+  most frequent patterns (`review.flag`), feeding `/improve`.
+
 ### 2026-11-01 — performance fixes (Phase 3)
 - Foreground work now preempts background learning (first keystroke cancels
   a running improve pass too, not just the reviewer); default idle windows

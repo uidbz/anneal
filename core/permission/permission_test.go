@@ -292,3 +292,75 @@ func TestMalformedSavedGrantsDropped(t *testing.T) {
 		t.Fatalf("saved = %+v, want only go test", saved)
 	}
 }
+
+func TestReadOnlyBashLayering(t *testing.T) {
+	base := Rules{{Action: "bash", Resource: "*", Effect: Ask}}
+	m := NewManager(Options{Base: base, ReadOnlyBash: true})
+	if got := m.Evaluate(Request{Action: "bash", Resources: []string{"cat x"}, ReadOnly: true}).Effect; got != Allow {
+		t.Fatalf("read-only bash = %s, want allow", got)
+	}
+	if got := m.Evaluate(Request{Action: "bash", Resources: []string{"rm -rf x"}}).Effect; got != Ask {
+		t.Fatalf("mutating bash = %s, want ask", got)
+	}
+
+	// An explicit user/harness ask keeps prompting, even for read-only.
+	override := NewManager(Options{Base: base, Rules: Rules{
+		{Action: "bash", Resource: "*", Effect: Ask},
+	}, ReadOnlyBash: true})
+	if got := override.Evaluate(Request{Action: "bash", Resources: []string{"cat x"}, ReadOnly: true}).Effect; got != Ask {
+		t.Fatalf("override ask = %s, want ask", got)
+	}
+
+	// Read-only is off when the setting is off.
+	off := NewManager(Options{Base: base})
+	if got := off.Evaluate(Request{Action: "bash", Resources: []string{"cat x"}, ReadOnly: true}).Effect; got != Ask {
+		t.Fatalf("readonly off = %s, want ask", got)
+	}
+
+	// Denies stay absolute.
+	deny := NewManager(Options{Base: Rules{
+		{Action: "bash", Resource: "*", Effect: Ask},
+		{Action: "bash", Resource: "cat *", Effect: Deny},
+	}, ReadOnlyBash: true})
+	if got := deny.Evaluate(Request{Action: "bash", Resources: []string{"cat x"}, ReadOnly: true}).Effect; got != Deny {
+		t.Fatalf("deny = %s, want deny", got)
+	}
+}
+
+func TestSessionGrants(t *testing.T) {
+	m := NewManager(Options{Base: Rules{{Action: "bash", Resource: "*", Effect: Ask}}})
+	req := Request{Action: "bash", Resources: []string{"go test ./..."}}
+	if got := m.Evaluate(req).Effect; got != Ask {
+		t.Fatalf("before grant = %s", got)
+	}
+	m.AddSession("bash", []string{"go test *"})
+	if got := m.Evaluate(req).Effect; got != Allow {
+		t.Fatalf("session grant = %s", got)
+	}
+	m.ClearSession()
+	if got := m.Evaluate(req).Effect; got != Ask {
+		t.Fatalf("after clear = %s", got)
+	}
+}
+
+func TestRemoveSavedGrant(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "permissions.json")
+	m := NewManager(Options{Base: Rules{{Action: "bash", Resource: "*", Effect: Ask}},
+		Project: "/proj", SavedPath: path})
+	if err := m.AddSaved("bash", []string{"go test *", "go build *"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RemoveSaved("bash", "go test *"); err != nil {
+		t.Fatal(err)
+	}
+	saved := m.Saved()
+	if len(saved) != 1 || saved[0].Resource != "go build *" {
+		t.Fatalf("saved after remove = %+v", saved)
+	}
+	// Reload from disk: the removal was persisted.
+	again := NewManager(Options{Project: "/proj", SavedPath: path})
+	if got := again.Saved(); len(got) != 1 || got[0].Resource != "go build *" {
+		t.Fatalf("reloaded = %+v", got)
+	}
+}

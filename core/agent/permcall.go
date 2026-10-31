@@ -252,7 +252,11 @@ func (r *Runner) pathIntent(path, action, message string, readOnly, isDir bool) 
 
 func (r *Runner) bashIntent(command, workdir string) callIntent {
 	scan := permission.ScanCommand(command)
-	intent := callIntent{action: "bash", message: "Run a shell command?"}
+	// Read-only commands (ls/cat/grep/sed -n/git status/go env/…) skip the
+	// approval card by default; the path checks below still run, so reads
+	// outside the project and secret files still ask.
+	intent := callIntent{action: "bash", message: "Run a shell command?",
+		readOnly: permission.ReadOnlyBash(command)}
 	for _, cmd := range scan.Commands {
 		if cmd.Resource == "" {
 			continue

@@ -188,8 +188,12 @@ func (s *shell) handleEvent(e map[string]any) {
 	case "perm.request":
 		s.addPermEvent(e)
 	case "perm.saved":
-		s.notice(noticeSuccess, fmt.Sprintf("Permission saved: %s %s", str(e["action"]),
-			strings.Join(stringList(e["resources"]), ", ")))
+		scope := "for this project"
+		if str(e["scope"]) == "session" {
+			scope = "for this session"
+		}
+		s.notice(noticeSuccess, fmt.Sprintf("Permission saved %s: %s %s", scope,
+			str(e["action"]), strings.Join(stringList(e["resources"]), ", ")))
 	case "perm.warning":
 		s.notice(noticeWarn, "Permission save failed: "+str(e["error"]))
 	case "perm.resolved":

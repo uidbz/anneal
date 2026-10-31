@@ -50,6 +50,7 @@ type Agent struct {
 	Subagents          bool              `json:"subagents"`
 	Script             bool              `json:"script"`         // Risor data-glue script tool
 	ParallelTools      bool              `json:"parallel_tools"` // run read-only tool batches concurrently
+	ReadonlyBash       bool              `json:"readonly_bash"`  // auto-allow classified read-only shell commands
 }
 
 type Compaction struct {
@@ -231,6 +232,7 @@ func Default() *Config {
 			Subagents:          true,
 			Script:             true,
 			ParallelTools:      true,
+			ReadonlyBash:       true,
 		},
 		Compaction: Compaction{Enabled: true, ThresholdPct: 82, KeepRecentTurns: 4},
 		Memory:     Memory{Enabled: true, MemoryCharLimit: 2200, UserCharLimit: 1375, WriteApproval: false},

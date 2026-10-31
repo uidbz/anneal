@@ -1,0 +1,25 @@
+cd /home/johan/src/anneal && sed -n '1,120p' cmd/anneal/shell.go
+cd /home/johan/src/anneal && grep -rn "func newShell" cmd/anneal
+cd /home/johan/src/anneal && sed -n '200,260p' core/agent/runner.go
+cd /home/johan/src/anneal && grep -n "perm.request" core/agent/perm.go
+cd /home/johan/src/anneal && cat docs/CONTAINERS.md
+cd /home/johan/src/anneal && ls -la core/server/
+cd /home/johan/src/anneal && git status --porcelain
+cd /home/johan/src/anneal && git log --oneline -5
+cd /home/johan/src/anneal && git diff HEAD -- cmd/anneal
+cd /home/johan/src/anneal && git branch --list
+cd /home/johan/src/anneal && go env GOMODCACHE
+cd /home/johan/src/anneal && go list ./...
+cd /home/johan/src/anneal && find . -name '*.go' -maxdepth 2
+cd /home/johan/src/anneal && head -30 docs/CONFIG.md
+cd /home/johan/src/anneal && wc -l core/agent/runner.go
+cd /home/johan/src/anneal && rg -n "permissionHook" core
+cd /home/johan/src/anneal && go build ./... 2>&1
+cd /home/johan/src/anneal && go vet ./... 2>&1
+cd /home/johan/src/anneal && go test ./core/permission/ 2>&1 | tail -20
+cd /home/johan/src/anneal && gofmt -w cmd/anneal/shell.go
+cd /home/johan/src/anneal && git add -A
+cd /home/johan/src/anneal && git commit -m "feat: x"
+cd /home/johan/src/anneal && rm -f bin/anneal
+cd /home/johan/src/anneal && sed -i 's/a/b/' core/agent/perm.go
+cd /home/johan/src/anneal && make ci

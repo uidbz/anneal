@@ -43,8 +43,11 @@ small IDE.
   with details and buttons. **One card is shown at a time — the oldest, i.e.
   the request the agent is blocked on — so the action row is always visible**;
   the header counts the rest and pages through them (`‹ 2/7 ›`). Long details
-  scroll inside the card. Permissions offer **Reject / Always allow / Allow
-  once**; Ctrl+Enter (with an empty composer) allows the oldest card once.
+  scroll inside the card. Permissions offer **Reject / This session / Always
+  allow / Allow once**; Ctrl+Enter allows the oldest card once,
+  Ctrl+Shift+Enter always allows it, Esc rejects it. Read-only shell commands
+  (ls/cat/grep/sed -n/git status/go env/…) are allowed without a card by
+  default (`agent.readonly_bash`); build/test commands still ask.
   The run-state line shows "Waiting for your approval (N)" and each card counts
   how long it has waited. Pending cards survive reconnects and are restored
   when a client attaches (each client receives its own replay).

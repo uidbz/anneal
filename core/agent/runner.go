@@ -66,6 +66,13 @@ type Runner struct {
 	pendingPerms map[string]*pendingPerm
 	doom         map[string]int
 
+	// Approval-churn telemetry (per session): enough prompts in one session
+	// means the guardrails should change, not the user's patience.
+	churnSession string
+	churnCount   int
+	churnPattern map[string]int
+	churnFlagged map[string]bool
+
 	mcpMu sync.Mutex // guards mcp: it is attached asynchronously at boot
 
 	indexCh chan indexJob // background tie indexing (see search.go)
@@ -495,6 +502,10 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 	r.invalidateSessions()
 	r.queueIndex(sess, h.Model)
 	if r.review != nil {
+		if gap := r.churnFlag(sess.ID()); gap != "" {
+			r.review.Flag(sess.ID(), gap)
+			r.emit(map[string]any{"type": "review.flag", "session": sess.ID(), "gap": gap})
+		}
 		r.review.Enqueue(sess.ID())
 	}
 	// Report where the time went before announcing completion, so the UI can

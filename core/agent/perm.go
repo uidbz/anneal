@@ -64,6 +64,7 @@ func permissionError(req permission.Request, res permission.Result) error {
 // the user replies (or the run is interrupted, which denies the card).
 func (r *Runner) askPermission(ctx context.Context, req permission.Request) (permission.Outcome, error) {
 	id, ch := r.registerPerm(req)
+	r.countApproval(req)
 	r.emit(permEvent(id, req))
 
 	// Waiting for the user is not the model's time; the run budget and the
@@ -161,13 +162,22 @@ func (r *Runner) RespondPerm(id, action string) {
 	switch strings.ToLower(strings.TrimSpace(action)) {
 	case "allow", "once":
 		outcome = permission.Once
+	case "allow_session", "this_session", "session_once":
+		outcome = permission.Once
+		if len(p.req.Save) > 0 {
+			r.perm.AddSession(p.req.Action, p.req.Save)
+			r.emit(map[string]any{"type": "perm.saved", "action": p.req.Action,
+				"resources": p.req.Save, "scope": "session"})
+			r.autoAllowPending()
+		}
 	case "session", "always":
 		outcome = permission.Always
 		if len(p.req.Save) > 0 {
 			if err := r.perm.AddSaved(p.req.Action, p.req.Save); err != nil {
 				r.emit(map[string]any{"type": "perm.warning", "id": id, "error": err.Error()})
 			} else {
-				r.emit(map[string]any{"type": "perm.saved", "action": p.req.Action, "resources": p.req.Save})
+				r.emit(map[string]any{"type": "perm.saved", "action": p.req.Action,
+					"resources": p.req.Save, "scope": "project"})
 			}
 			r.autoAllowPending()
 		}
@@ -210,6 +220,22 @@ func (r *Runner) resolvePerm(id, reason string) {
 	r.emit(map[string]any{"type": "perm.resolved", "id": id, "reason": reason})
 }
 
+// SavedGrants lists this project's persisted "always" grants (Settings view).
+func (r *Runner) SavedGrants() permission.Rules {
+	if r.perm == nil {
+		return nil
+	}
+	return r.perm.Saved()
+}
+
+// RemoveSavedGrant deletes one project grant.
+func (r *Runner) RemoveSavedGrant(action, resource string) error {
+	if r.perm == nil {
+		return nil
+	}
+	return r.perm.RemoveSaved(action, resource)
+}
+
 // SetMode changes the permission mode at runtime and persists it to config.
 func (r *Runner) SetMode(mode string) {
 	if !permission.ValidMode(mode) {
@@ -226,6 +252,80 @@ func (r *Runner) SetMode(mode string) {
 
 // Mode returns the active permission mode.
 func (r *Runner) Mode() string { return string(r.perm.Mode()) }
+
+// countApproval records one card for the approval-churn flag.
+func (r *Runner) countApproval(req permission.Request) {
+	r.mu.Lock()
+	sid := r.sessID
+	r.mu.Unlock()
+	if sid == "" {
+		return
+	}
+	key := req.Action
+	if len(req.Save) > 0 {
+		key += " " + req.Save[0]
+	}
+	r.permMu.Lock()
+	if r.churnSession != sid {
+		r.churnSession = sid
+		r.churnCount = 0
+		r.churnPattern = map[string]int{}
+	}
+	r.churnCount++
+	if r.churnPattern == nil {
+		r.churnPattern = map[string]int{}
+	}
+	r.churnPattern[key]++
+	r.permMu.Unlock()
+}
+
+// churnFlag returns a reviewer-style gap description once a session needed
+// more than churnThreshold approvals; empty otherwise. Flagged once per
+// session so the queue is not spammed.
+func (r *Runner) churnFlag(sid string) string {
+	const churnThreshold = 25
+	r.permMu.Lock()
+	defer r.permMu.Unlock()
+	if sid == "" || r.churnSession != sid || r.churnCount < churnThreshold {
+		return ""
+	}
+	if r.churnFlagged == nil {
+		r.churnFlagged = map[string]bool{}
+	}
+	if r.churnFlagged[sid] {
+		return ""
+	}
+	r.churnFlagged[sid] = true
+
+	type pair struct {
+		key string
+		n   int
+	}
+	top := make([]pair, 0, len(r.churnPattern))
+	for k, n := range r.churnPattern {
+		top = append(top, pair{k, n})
+	}
+	sort.Slice(top, func(i, j int) bool {
+		if top[i].n == top[j].n {
+			return top[i].key < top[j].key
+		}
+		return top[i].n > top[j].n
+	})
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Approval churn: %d permission requests in one session", r.churnCount)
+	if len(top) > 0 {
+		sb.WriteString(" (most frequent:")
+		for i, p := range top {
+			if i == 5 {
+				break
+			}
+			fmt.Fprintf(&sb, " %s ×%d;", p.key, p.n)
+		}
+		sb.WriteString(")")
+	}
+	sb.WriteString(". Consider guardrail allow: rules or the read-only Bash defaults.")
+	return sb.String()
+}
 
 // resetDoom clears repeated-call detection at the start of a run.
 func (r *Runner) resetDoom() {
@@ -251,35 +351,46 @@ func (r *Runner) doomTripped(tool string, input []byte) bool {
 	return n >= 3 && n%3 == 0
 }
 
-// permConfig translates config + harness guardrails into one ordered ruleset.
-// Order (later wins): legacy allow/ask/deny, built-in .env guard, global
-// permission/permissions, agent permission/permissions, harness guardrails.
-func permConfig(cfg *config.Config, harn *harness.Store) permission.Rules {
-	var rules permission.Rules
-	rules = append(rules, permission.ParseRules(permission.Allow, cfg.Agent.Allow)...)
-	rules = append(rules, permission.ParseRules(permission.Ask, cfg.Agent.Ask)...)
-	rules = append(rules, permission.ParseRules(permission.Deny, cfg.Agent.Deny)...)
+// permLayers splits the ruleset into the built-in/legacy base layer and the
+// user/harness override layer. The split matters for read-only Bash: the
+// classifier may relax a base "ask", but an explicit user ask must still
+// prompt.
+func permLayers(cfg *config.Config, harn *harness.Store) (base, over permission.Rules) {
+	base = append(base, permission.ParseRules(permission.Allow, cfg.Agent.Allow)...)
+	base = append(base, permission.ParseRules(permission.Ask, cfg.Agent.Ask)...)
+	base = append(base, permission.ParseRules(permission.Deny, cfg.Agent.Deny)...)
 	// Built-in secret-file guard, after the legacy read allow so it wins by
 	// default; explicit config rules below can override it.
-	rules = append(rules, permission.EnvReadRules()...)
-	rules = append(rules, cfg.Permission...)
-	rules = append(rules, cfg.Permissions...)
-	rules = append(rules, cfg.Agent.Permission...)
-	rules = append(rules, cfg.Agent.Permissions...)
+	base = append(base, permission.EnvReadRules()...)
+
+	over = append(over, cfg.Permission...)
+	over = append(over, cfg.Permissions...)
+	over = append(over, cfg.Agent.Permission...)
+	over = append(over, cfg.Agent.Permissions...)
 	if harn != nil && cfg.Harness.Enabled {
 		allow, ask, deny := harn.GuardRules()
-		rules = append(rules, permission.ParseRules(permission.Allow, allow)...)
-		rules = append(rules, permission.ParseRules(permission.Ask, ask)...)
-		rules = append(rules, permission.ParseRules(permission.Deny, deny)...)
+		over = append(over, permission.ParseRules(permission.Allow, allow)...)
+		over = append(over, permission.ParseRules(permission.Ask, ask)...)
+		over = append(over, permission.ParseRules(permission.Deny, deny)...)
 	}
-	return rules
+	return base, over
+}
+
+// permConfig translates config + harness guardrails into one ordered ruleset
+// (base then overrides; later wins).
+func permConfig(cfg *config.Config, harn *harness.Store) permission.Rules {
+	base, over := permLayers(cfg, harn)
+	return append(base, over...)
 }
 
 func newPermManager(cfg *config.Config, harn *harness.Store, cwd string) *permission.Manager {
+	base, over := permLayers(cfg, harn)
 	return permission.NewManager(permission.Options{
-		Mode:      cfg.Agent.PermissionMode,
-		Rules:     permConfig(cfg, harn),
-		Project:   cwd,
-		SavedPath: paths.Permissions(),
+		Mode:         cfg.Agent.PermissionMode,
+		Base:         base,
+		Rules:        over,
+		Project:      cwd,
+		SavedPath:    paths.Permissions(),
+		ReadOnlyBash: cfg.Agent.ReadonlyBash,
 	})
 }

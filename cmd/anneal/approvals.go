@@ -53,6 +53,7 @@ func (s *shell) addPerm(e map[string]any) {
 		reject: func() { s.b.respondPerm(id, "deny") },
 	}, title, str(e["message"]), detail, grant,
 		approvalButton("Reject", widget.LowImportance, func() { s.b.respondPerm(id, "deny") }),
+		approvalButton("This session", widget.MediumImportance, func() { s.b.respondPerm(id, "allow_session") }),
 		approvalButton("Always allow", widget.MediumImportance, func() { s.b.respondPerm(id, "session") }),
 		approvalButton("Allow once", widget.HighImportance, func() { s.b.respondPerm(id, "allow") }),
 	)

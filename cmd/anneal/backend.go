@@ -19,6 +19,7 @@ import (
 	"github.com/uidbz/anneal/core/improve"
 	"github.com/uidbz/anneal/core/journey"
 	"github.com/uidbz/anneal/core/paths"
+	"github.com/uidbz/anneal/core/permission"
 	"github.com/uidbz/anneal/core/skills"
 )
 
@@ -47,6 +48,8 @@ type backend interface {
 	respondMemory(id, decision string)
 	respondSkill(id, decision string)
 	saveConfig(doc string) error
+	savedGrants() ([]permission.Rule, error)
+	removeSavedGrant(action, resource string) error
 
 	// queries (must not block the UI thread for long)
 	sessions() []agent.SessionInfo
@@ -107,6 +110,12 @@ func (l *localBackend) rebuildIndex() {
 func (l *localBackend) respondMemory(id, d string)  { l.a.RespondMemory(id, d) }
 func (l *localBackend) respondSkill(id, d string)   { l.a.RespondSkill(id, d) }
 func (l *localBackend) saveConfig(doc string) error { return l.a.SaveConfig(doc) }
+func (l *localBackend) savedGrants() ([]permission.Rule, error) {
+	return l.a.Runner.SavedGrants(), nil
+}
+func (l *localBackend) removeSavedGrant(action, resource string) error {
+	return l.a.Runner.RemoveSavedGrant(action, resource)
+}
 func (l *localBackend) sessions() []agent.SessionInfo {
 	return l.a.Runner.Sessions()
 }

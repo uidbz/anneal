@@ -383,6 +383,19 @@ func (s *Server) methods() map[string]handler {
 		a.Runner.RespondPerm(p.ID, p.Action)
 		return nil, nil
 	}
+	m["perm.saved"] = func(json.RawMessage) (any, error) {
+		return a.Runner.SavedGrants(), nil
+	}
+	m["perm.saved_remove"] = func(params json.RawMessage) (any, error) {
+		var p struct {
+			Action   string `json:"action"`
+			Resource string `json:"resource"`
+		}
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		return nil, a.Runner.RemoveSavedGrant(p.Action, p.Resource)
+	}
 
 	// mode
 	m["mode.get"] = func(json.RawMessage) (any, error) { return a.Runner.Mode(), nil }

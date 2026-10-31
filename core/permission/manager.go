@@ -13,11 +13,19 @@ import (
 )
 
 // Options configures a Manager.
+//
+// Base is the built-in/legacy layer (allow/ask/deny lists, the secret-file
+// guard). Rules is the user/harness layer: any rule there wins over Base,
+// which is what lets an explicit "ask" keep prompting even for commands the
+// read-only classifier would otherwise allow. For compatibility, a caller
+// that only sets Rules gets it as Base with no overrides.
 type Options struct {
-	Mode      string
-	Rules     Rules
-	Project   string // absolute project root; saved rules are scoped to it
-	SavedPath string // JSON file for "always" grants ("" = memory only)
+	Mode         string
+	Base         Rules
+	Rules        Rules
+	Project      string // absolute project root; saved rules are scoped to it
+	SavedPath    string // JSON file for "always" grants ("" = memory only)
+	ReadOnlyBash bool   // auto-allow classified read-only Bash commands
 }
 
 // Manager evaluates permission requests and remembers "always" grants.
@@ -25,13 +33,16 @@ type Options struct {
 // absolute, then the request is evaluated (last match wins), then the mode
 // layer turns asks into allow/deny where appropriate.
 type Manager struct {
-	mu        sync.RWMutex
-	persistMu sync.Mutex
-	mode      Mode
-	rules     Rules
-	saved     Rules
-	project   string
-	savedPath string
+	mu           sync.RWMutex
+	persistMu    sync.Mutex
+	mode         Mode
+	base         Rules
+	override     Rules
+	session      Rules // "allow for this session" grants (memory only)
+	saved        Rules
+	project      string
+	savedPath    string
+	readonlyBash bool
 }
 
 // NewManager creates a manager and loads any saved project grants.
@@ -40,11 +51,17 @@ func NewManager(opts Options) *Manager {
 	if !ValidMode(string(mode)) {
 		mode = ModeDefault
 	}
+	base, over := opts.Base, opts.Rules
+	if len(base) == 0 && len(over) > 0 {
+		base, over = over, nil
+	}
 	m := &Manager{
-		mode:      mode,
-		rules:     NormalizeRules(opts.Rules),
-		project:   canonicalProject(opts.Project),
-		savedPath: opts.SavedPath,
+		mode:         mode,
+		base:         NormalizeRules(base),
+		override:     NormalizeRules(over),
+		project:      canonicalProject(opts.Project),
+		savedPath:    opts.SavedPath,
+		readonlyBash: opts.ReadOnlyBash,
 	}
 	m.load()
 	return m
@@ -76,11 +93,12 @@ func NormalizeRules(in Rules) Rules {
 	return out
 }
 
-// Rules returns a copy of the configured rules.
+// Rules returns a copy of the configured rules (base then overrides).
 func (m *Manager) Rules() Rules {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return append(Rules(nil), m.rules...)
+	out := append(Rules(nil), m.base...)
+	return append(out, m.override...)
 }
 
 // Saved returns a copy of the "always" grants for this project.
@@ -91,6 +109,11 @@ func (m *Manager) Saved() Rules {
 }
 
 // Evaluate applies configured rules, saved grants, and the mode layer.
+//
+// Order: configured deny rules are absolute (neither saved grants nor bypass
+// mode override them). Then per resource, a user/harness override wins over
+// the base layer. Read-only Bash is auto-allowed only while the base layer is
+// what asked: an explicit override "ask" keeps prompting.
 func (m *Manager) Evaluate(req Request) Result {
 	resources := req.Resources
 	if len(resources) == 0 {
@@ -99,19 +122,22 @@ func (m *Manager) Evaluate(req Request) Result {
 
 	m.mu.RLock()
 	mode := m.mode
-	configured := append(Rules(nil), m.rules...)
+	base := append(Rules(nil), m.base...)
+	over := append(Rules(nil), m.override...)
+	session := append(Rules(nil), m.session...)
 	saved := append(Rules(nil), m.saved...)
+	readonly := m.readonlyBash
 	m.mu.RUnlock()
 
-	// Configured deny rules are absolute: a saved "always" grant or bypass
-	// mode cannot override them (OpenCode's denied() check).
+	baseRules := append(append(append(Rules(nil), base...), session...), saved...)
+	overRules := append(append(append(Rules(nil), over...), session...), saved...)
+	relevant := relevantRules(req.Action, append(append(Rules(nil), base...), over...))
+
+	// Configured deny rules are absolute: a saved "always" grant, a session
+	// grant or bypass mode cannot override them (OpenCode's denied() check).
 	for _, resource := range resources {
-		if Evaluate(req.Action, resource, configured).Effect == Deny {
-			return Result{
-				Effect: Deny,
-				Rules:  relevantRules(req.Action, configured),
-				Reason: "denied by permission rule",
-			}
+		if Evaluate(req.Action, resource, append(append(Rules(nil), base...), over...)).Effect == Deny {
+			return Result{Effect: Deny, Rules: relevant, Reason: "denied by permission rule"}
 		}
 	}
 
@@ -119,13 +145,36 @@ func (m *Manager) Evaluate(req Request) Result {
 	if mode == ModePlan && !req.ReadOnly {
 		return Result{
 			Effect: Deny,
-			Rules:  relevantRules(req.Action, configured),
+			Rules:  relevant,
 			Reason: "plan mode allows only read-only tools",
 		}
 	}
 
-	all := append(append(Rules(nil), configured...), saved...)
-	effect, relevant := Decide(req.Action, resources, all)
+	effect := Allow
+	explicitAsk := false
+	for _, resource := range resources {
+		if e, matched := evaluateMatch(req.Action, resource, overRules); matched {
+			switch e {
+			case Deny:
+				return Result{Effect: Deny, Rules: relevant, Reason: "denied by permission rule"}
+			case Allow:
+			default:
+				effect, explicitAsk = Ask, true
+			}
+			continue
+		}
+		switch Evaluate(req.Action, resource, baseRules).Effect {
+		case Deny:
+			return Result{Effect: Deny, Rules: relevant, Reason: "denied by permission rule"}
+		case Allow:
+		default:
+			effect = Ask
+		}
+	}
+
+	if effect == Ask && readonly && req.ReadOnly && req.Action == "bash" && !explicitAsk {
+		effect = Allow
+	}
 
 	switch effect {
 	case Ask:
@@ -142,6 +191,24 @@ func (m *Manager) Evaluate(req Request) Result {
 	}
 
 	return Result{Effect: effect, Rules: relevant}
+}
+
+// evaluateMatch returns the last rule matching action/resource and whether one
+// matched at all (an implicit "ask" and an explicit "ask" differ for the
+// read-only Bash layer).
+func evaluateMatch(action, resource string, rules Rules) (Effect, bool) {
+	for i := len(rules) - 1; i >= 0; i-- {
+		rule := rules[i]
+		if !Match(rule.Action, action) || !Match(rule.Resource, resource) {
+			continue
+		}
+		effect := rule.Effect
+		if effect != Allow && effect != Deny && effect != Ask {
+			effect = Ask
+		}
+		return effect, true
+	}
+	return Ask, false
 }
 
 func relevantRules(action string, rules Rules) Rules {
@@ -188,6 +255,48 @@ func (m *Manager) AddSaved(action string, patterns []string) error {
 			m.saved = append(m.saved, rule)
 		}
 	}
+	m.mu.Unlock()
+	return m.persist()
+}
+
+// AddSession records an in-memory grant for the rest of this session. It is
+// not persisted and is cleared when the session changes.
+func (m *Manager) AddSession(action string, patterns []string) {
+	action = CanonicalAction(action)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		m.session = append(m.session, Rule{
+			Action: action, Resource: ExpandHome(pattern), Effect: Allow,
+		})
+	}
+}
+
+// ClearSession drops session-scoped grants (new/opened session).
+func (m *Manager) ClearSession() {
+	m.mu.Lock()
+	m.session = nil
+	m.mu.Unlock()
+}
+
+// RemoveSaved deletes one project grant. It is a no-op when no such rule
+// exists (the UI may race another window's removal).
+func (m *Manager) RemoveSaved(action, resource string) error {
+	action = CanonicalAction(action)
+	resource = ExpandHome(strings.TrimSpace(resource))
+	m.mu.Lock()
+	kept := m.saved[:0]
+	for _, rule := range m.saved {
+		if rule.Action == action && rule.Resource == resource {
+			continue
+		}
+		kept = append(kept, rule)
+	}
+	m.saved = kept
 	m.mu.Unlock()
 	return m.persist()
 }

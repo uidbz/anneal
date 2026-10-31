@@ -16,6 +16,7 @@ import (
 	"github.com/uidbz/anneal/core/events"
 	"github.com/uidbz/anneal/core/improve"
 	"github.com/uidbz/anneal/core/journey"
+	"github.com/uidbz/anneal/core/permission"
 	"github.com/uidbz/anneal/core/skills"
 )
 
@@ -180,6 +181,17 @@ func (r *remoteBackend) saveConfig(doc string) error {
 	if err == nil {
 		r.refreshConfig()
 	}
+	return err
+}
+
+func (r *remoteBackend) savedGrants() ([]permission.Rule, error) {
+	var out []permission.Rule
+	err := r.callInto("perm.saved", nil, &out)
+	return out, err
+}
+
+func (r *remoteBackend) removeSavedGrant(action, resource string) error {
+	_, err := r.call("perm.saved_remove", map[string]string{"action": action, "resource": resource})
 	return err
 }
 

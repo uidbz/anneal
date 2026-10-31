@@ -142,6 +142,9 @@ func (r *Runner) NewSession() {
 	r.sess, r.sessID = sess, id
 	r.todos = nil
 	r.mu.Unlock()
+	if r.perm != nil {
+		r.perm.ClearSession() // session grants do not follow the user
+	}
 	r.invalidateSessions()
 	r.emit(map[string]any{"type": "session.started", "id": id, "title": ""})
 }
@@ -163,6 +166,9 @@ func (r *Runner) OpenSession(id string) {
 	r.restoreTodos(sess)
 	todos := append([]todoItem{}, r.todos...)
 	r.mu.Unlock()
+	if r.perm != nil {
+		r.perm.ClearSession()
+	}
 	r.invalidateSessions()
 	r.emit(map[string]any{"type": "session.opened", "id": id, "title": sess.Title(), "blocks": blocks})
 	// Always emit: an empty list must clear the previous session's panel.

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -397,6 +398,8 @@ func (p *settingsPanel) agentCard() fyne.CanvasObject {
 		p.intField("iterations", "Tool iteration limit", &ag.ToolIterationLimit, 1, 1000),
 		p.checkField("Enable subagents", &ag.Subagents),
 		p.checkField("Enable the script tool", &ag.Script),
+		p.checkField("Auto-allow read-only shell commands", &ag.ReadonlyBash),
+		p.checkField("Run read-only tool calls in parallel", &ag.ParallelTools),
 	}
 	return p.section("Agent", "Permission rules themselves live under Permissions.", items...)
 }
@@ -516,8 +519,63 @@ func (p *settingsPanel) permissionsCard() fyne.CanvasObject {
 
 	edit := widget.NewButton("Edit rules in JSON…", p.s.showSettingsJSON)
 	edit.Importance = widget.LowImportance
-	return p.section("Permissions", "Read-only overview; last matching rule wins.", widget.NewFormItem("Rules",
-		container.NewVBox(lines, vgap(spaceS), edit)))
+	return p.section("Permissions", "Read-only overview; last matching rule wins.",
+		widget.NewFormItem("Rules", container.NewVBox(lines, vgap(spaceS), edit)),
+		widget.NewFormItem("Saved grants", p.savedGrantsSection()))
+}
+
+// savedGrantsSection lists this project's persisted "always" grants with a
+// remove button, so a blanket grant saved during an approval-fatigue session
+// can be taken back without editing permissions.json by hand.
+func (p *settingsPanel) savedGrantsSection() fyne.CanvasObject {
+	box := container.New(&columnLayout{gap: 2})
+	if home, err := os.UserHomeDir(); err == nil && p.s.b.cwd() == home {
+		box.Add(newThemedText("⚠ This project is your home directory: grants saved "+
+			"here apply to everything you can reach. Start anneal in the project "+
+			"directory instead (anneal -C <dir>).", colorWarn))
+	}
+	grants, err := p.s.b.savedGrants()
+	if err != nil {
+		box.Add(newThemedText("Could not read saved grants: "+err.Error(), colorWarn))
+		return box
+	}
+	if len(grants) == 0 {
+		box.Add(newThemedText("No saved grants for this project.", colorMuted))
+		return box
+	}
+	for _, g := range grants {
+		g := g
+		label := g.Action + " " + g.Resource
+		if broadGrant(g) {
+			label += "   ⚠ broad"
+		}
+		remove := widget.NewButton("Remove", func() {
+			if err := p.s.b.removeSavedGrant(g.Action, g.Resource); err != nil {
+				p.s.notice(noticeWarn, "Remove grant: "+err.Error())
+				return
+			}
+			p.s.notice(noticeSuccess, "Grant removed: "+g.Action+" "+g.Resource)
+			p.fillBody()
+		})
+		remove.Importance = widget.LowImportance
+		box.Add(container.NewBorder(nil, nil, nil, remove,
+			newThemedText(label, theme.ColorNameForeground)))
+	}
+	return box
+}
+
+// broadGrant flags grants that effectively remove the jail for an action.
+func broadGrant(r permission.Rule) bool {
+	if r.Resource == "*" {
+		return true
+	}
+	if r.Action == "bash" {
+		switch r.Resource {
+		case "rm *", "git push *", "sudo *":
+			return true
+		}
+	}
+	return false
 }
 
 // subHeading is a bold caption between groups inside a card.

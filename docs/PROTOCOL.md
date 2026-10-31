@@ -115,11 +115,14 @@ accepted — their effects arrive as events).
 | `server.quit` | `{reason}` | `{"ok":true}` |
 | `agent.send` | `{text}` | `{id,ok}` (run id; `ok:false` if busy) |
 | `agent.interrupt` | – | null |
+| `background.preempt` | – | null (stands the reviewer/improve down so a foreground run owns the model server) |
 | `run.status` | – | `{busy,mode,session}` |
 | `sessions.list` | – | `[{id,title,updated,events}]` |
 | `sessions.new` | – | null |
 | `sessions.open` | `{id}` | null (replay via `session.opened`) |
-| `perm.respond` | `{id,action}` `once\|session\|always\|reject` | null |
+| `perm.respond` | `{id,action}` `once\|allow_session\|session\|always\|reject` | null (`allow_session` is an in-memory grant cleared when the session changes) |
+| `perm.saved` | – | `[{action,resource,effect}]` saved grants for this project |
+| `perm.saved_remove` | `{action,resource}` | null |
 | `mode.get` | – | `"<mode>"` |
 | `mode.set` | `{mode}` | `{mode}` (effective) |
 | `provider.state` | – | health struct |

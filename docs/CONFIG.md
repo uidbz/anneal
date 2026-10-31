@@ -176,6 +176,8 @@ it (last match wins).
 When an `ask` rule fires, the UI shows:
 
 - **once** — run this call only (`agent.respondPerm(id, "allow")`)
+- **this session** — auto-allow matching calls until the session changes
+  (`agent.respondPerm(id, "allow_session")`); never persisted
 - **always** — save the suggested patterns for this project and auto-allow
   matching pending cards (`agent.respondPerm(id, "session")`; `"always"` is
   also accepted)
@@ -184,8 +186,30 @@ When an `ask` rule fires, the UI shows:
 The patterns come from the tool. Bash suggests a safe command prefix
 (`git status *`); skills suggest the skill name; file/edit/read tools suggest
 `*` for that action; external access suggests `<dir>/*`. `always` grants are
-stored in `~/.anneal/permissions.json` under the project root. Delete an entry
-(or the file) to revoke it.
+stored in `~/.anneal/permissions.json` under the project root. Settings →
+Permissions lists the current project's grants with a **Remove** button and
+flags broad ones (`bash *`, `edit *`, `rm *`); deleting the file also revokes
+them.
+
+### Read-only shell commands
+
+`agent.readonly_bash` (default **true**) auto-allows shell commands that only
+read: `ls`, `cat`, `head`, `tail`, `wc`, `grep`/`rg`, `sed -n` (without
+`-i`/`w`/`e`), `find` (without `-exec`/`-delete`/`-fprint`), `git
+status|diff|log|show|branch --list|...`, `go env|list|version|doc`, `gofmt
+-l|-d`, `gh ... list|view`, and similar. Build/test/lint commands (`go
+build|vet|test`, `make`, `npm test`, `cargo test`, …) still ask: they execute
+project code.
+
+Read-only is not "harmless": path arguments outside the project still raise
+an `external_directory` card, and `.env`/key files still ask. The allowance
+only relaxes the **base** layer — an explicit `ask` rule in `permission`,
+`agent.permission` or `guardrails.md` keeps prompting, and denies always win.
+Set `agent.readonly_bash: false` to restore ask-on-every-Bash.
+
+After 25 approvals in one session the agent queues a reviewer flag with the
+most frequent patterns (`review.flag`), which `/improve` can turn into
+guardrail `allow:` lines.
 
 ### Modes
 
@@ -201,10 +225,14 @@ stored in `~/.anneal/permissions.json` under the project root. Delete an entry
 
 Rules are evaluated in this order, later winning:
 
-1. legacy `agent.allow` / `agent.ask` / `agent.deny`
-2. top-level `permission`, then `permissions` (native array)
-3. `agent.permission`, then `agent.permissions` (per-agent override)
-4. harness `guardrails.md` rules
+1. legacy `agent.allow` / `agent.ask` / `agent.deny` (base layer)
+2. built-in `.env` read guard (base layer)
+3. top-level `permission`, then `permissions` (native array)
+4. `agent.permission`, then `agent.permissions` (per-agent override)
+5. harness `guardrails.md` rules
+
+The read-only Bash allowance (see above) only relaxes the base layer; layers
+3–5 still override it, and any matching `deny` is absolute.
 
 The legacy lists remain supported and default to the safe anneal policy shown
 above. A new-style rule appended later can therefore override them.
@@ -222,6 +250,7 @@ above. A new-style rule appended later can therefore override them.
 | `subagents` | true | register the `Agent` tool (general-purpose / explore / plan) |
 | `script` | true | register the `script` tool (sandboxed Risor data-glue runner, see below) |
 | `parallel_tools` | true | run batches of read-only tool calls concurrently; tools that change state are marked sequential, so a mixed batch stays ordered. Results of a parallel batch arrive in completion order, not call order |
+| `readonly_bash` | true | auto-allow shell commands classified read-only (see Permissions); explicit ask rules and denies still win |
 
 Legacy rule strings support tool-name patterns and specifiers:
 `"Bash(go test *)"`. They are canonicalized to the actions above

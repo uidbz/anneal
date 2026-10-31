@@ -125,6 +125,15 @@ func (m *Manager) ReleaseFlags(runid string) {
 	m.flags.Release(runid)
 }
 
+// Flag queues a reviewer-style harness gap for this session (used for
+// approval churn, which the reviewer agent cannot see from a transcript).
+func (m *Manager) Flag(session, gap string) Flag {
+	if m.flags == nil {
+		return Flag{}
+	}
+	return m.flags.Add(session, gap)
+}
+
 // PendingFlags peeks at the queue (oldest first).
 func (m *Manager) PendingFlags(n int) []Flag {
 	if m.flags == nil {

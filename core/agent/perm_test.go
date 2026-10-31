@@ -220,7 +220,7 @@ func TestPermissionHookBlocksUntilAnswered(t *testing.T) {
 	go func() {
 		done <- r.permissionHook(context.Background(), &dive.HookContext{
 			Tool: &fakePermTool{name: "Bash"},
-			Call: &llm.ToolUseContent{Name: "Bash", Input: json.RawMessage(`{"command":"echo hi"}`)},
+			Call: &llm.ToolUseContent{Name: "Bash", Input: json.RawMessage(`{"command":"rm -rf build"}`)},
 		})
 	}()
 
@@ -233,7 +233,7 @@ func TestPermissionHookBlocksUntilAnswered(t *testing.T) {
 	if req["action"] != "bash" {
 		t.Fatalf("action = %v", req["action"])
 	}
-	if got := req["resources"].([]string); len(got) != 1 || got[0] != "echo hi" {
+	if got := req["resources"].([]string); len(got) != 1 || got[0] != "rm -rf build" {
 		t.Fatalf("resources = %v", req["resources"])
 	}
 	r.RespondPerm(req["id"].(string), "allow")

@@ -49,11 +49,17 @@ type Runner struct {
 	mcp     *mcp.Manager
 	lastAct time.Time
 
-	mu         sync.Mutex
-	sess       *session.Session
-	sessID     string
-	lastTask   string
-	todos      []todoItem
+	mu       sync.Mutex
+	sess     *session.Session
+	sessID   string
+	lastTask string
+	todos    []todoItem
+	// Staleness: tool calls since the last todo set, and when that was.
+	toolCalls     int
+	todoCallsAt   int
+	todoUpdatedAt time.Time
+	todoWarned    bool
+
 	cancel     context.CancelFunc
 	softCancel func() // graceful stop: finish the running tool, start no new one
 	stopping   bool
@@ -277,7 +283,7 @@ func (r *Runner) StateEvents() []map[string]any {
 	}
 	events = append(events, map[string]any{"type": "mode.changed", "mode": r.Mode()})
 	if len(todos) > 0 {
-		events = append(events, map[string]any{"type": "todo.updated", "items": todos})
+		events = append(events, r.todoSnapshotEvent())
 	}
 	events = append(events, r.PendingPermEvents()...)
 	events = append(events, r.queueStateEvent())
@@ -502,8 +508,9 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string, co
 		}
 	}
 	// Budget reminders run after compaction so FinalCall/reminders apply to
-	// the call that actually happens.
-	hooks.PreIteration = append(hooks.PreIteration, budget.hook())
+	// the call that actually happens. The todo reminder is ModelOnly and
+	// appended at the tail, so prompt caching is unaffected.
+	hooks.PreIteration = append(hooks.PreIteration, r.todoReminderHook(), budget.hook())
 
 	ag, err := dive.NewAgent(dive.AgentOptions{
 		Name:                  "anneal",
@@ -668,6 +675,7 @@ func (s *runEventSink) handle(item *dive.ResponseItem) {
 			s.r.emit(map[string]any{"type": "message.final", "run": s.run, "text": item.Message.AnswerText()})
 		}
 	case dive.ResponseItemTypeToolCall:
+		s.r.countToolCall()
 		s.flushThinking()
 		s.flushCompose()
 		s.deltas.flush()

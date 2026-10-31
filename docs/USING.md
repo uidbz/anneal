@@ -59,7 +59,10 @@ small IDE.
   `picked up · first token after 9.8 s` → `✓ done` / `stopped` / `✗ failed`.
   Queued messages belong to the session they were typed in; switching sessions
   clears them (the text is offered back in the composer).
-- **Inspector** (right, Ctrl+J): task checklist with progress count, a context
+- **Inspector** (right, Ctrl+J): task checklist with progress count and a
+  freshness line ("updated just now"; after 15 tool calls without a `todo`
+  update with unfinished items it turns amber: "⚠ may be stale · N tool calls
+  since update", and the agent gets a one-time nudge to update it), a context
   meter (amber at 70 %, red at 82 %), token totals, compaction count, session
   ID and **working directory** (both copyable), mode, and whether an
   improvement overlay is active. The working directory is the process cwd:

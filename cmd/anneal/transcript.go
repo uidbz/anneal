@@ -321,6 +321,9 @@ func (s *shell) resetChat() {
 	if s.todoPane != nil {
 		s.todoPane.Hide()
 	}
+	if s.inspector != nil {
+		s.inspector.setTodoMeta("", false)
+	}
 	if s.welcome != nil {
 		s.welcome.Show()
 	}

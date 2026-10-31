@@ -332,6 +332,20 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.inspector.refresh()
 	case "todo.updated":
 		s.renderTodos(list(e["items"]))
+		since := int(num(e["calls_since"]))
+		switch {
+		case len(list(e["items"])) == 0:
+			s.inspector.setTodoMeta("", false)
+		case boolean(e["stale"]):
+			s.inspector.setTodoMeta(fmt.Sprintf("⚠ may be stale · %d tool calls since update", since), true)
+		case since > 0:
+			s.inspector.setTodoMeta(fmt.Sprintf("last update %d tool calls ago", since), false)
+		default:
+			s.inspector.setTodoMeta("updated just now", false)
+		}
+	case "todo.stale":
+		s.inspector.setTodoMeta(fmt.Sprintf("⚠ may be stale · %d tool calls since update (%dm)",
+			int(num(e["calls_since"])), int(num(e["age_s"]))/60), true)
 	case "perm.request":
 		s.addPermEvent(e)
 	case "perm.saved":

@@ -19,6 +19,7 @@ type inspectorPanel struct {
 
 	tasks        *fyne.Container // the task rows (s.todos)
 	tasksHead    *fyne.Container
+	taskMeta     *themedText // "updated just now" / "may be stale"
 	tasksSection *fyne.Container
 	context      *fyne.Container
 	session      *fyne.Container
@@ -46,7 +47,9 @@ func newInspectorPanel(s *shell) *inspectorPanel {
 	p.tasks = s.todos
 	p.tasksHead = container.NewBorder(nil, nil,
 		container.New(&rowLayout{gap: spaceS}, newSectionLabel("TASKS"), p.taskCount), nil, nil)
-	p.tasksSection = container.NewVBox(p.tasksHead, p.tasks)
+	p.taskMeta = newThemedText("", colorMuted)
+	p.taskMeta.size = theme.SizeNameCaptionText
+	p.tasksSection = container.NewVBox(p.tasksHead, p.taskMeta, p.tasks)
 
 	p.ctxMeter = newMeter(0, 6)
 	p.ctxLabel = newThemedText("No run yet", colorMuted)
@@ -95,6 +98,20 @@ func newInspectorPanel(s *shell) *inspectorPanel {
 }
 
 func (p *inspectorPanel) Object() fyne.CanvasObject { return p.object }
+
+// setTodoMeta shows how fresh the checklist is; stale lists are amber so a
+// task panel that has not moved for many turns is visible at a glance.
+func (p *inspectorPanel) setTodoMeta(text string, stale bool) {
+	if p.taskMeta == nil {
+		return
+	}
+	p.taskMeta.token = colorMuted
+	if stale {
+		p.taskMeta.token = colorWarn
+	}
+	p.taskMeta.SetText(text)
+	p.taskMeta.Refresh()
+}
 
 // refresh updates the derived sections (tasks are rendered by renderTodos).
 func (p *inspectorPanel) refresh() {

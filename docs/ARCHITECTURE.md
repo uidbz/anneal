@@ -104,7 +104,7 @@ on missing keys is a hard error. The Go shell consumes the same values as maps
 | `perm.request` / `perm.saved` / `perm.resolved` | permission inbox (reply: `agent.respondPerm(id, once|allow_session|always|reject)`; legacy `allow|session|deny` still accepted; replayed per connection after reconnect) |
 | `session.started` / `session.opened` / `session.error` | session lifecycle (opened carries replay blocks) |
 | `mode.changed` | permission mode |
-| `todo.updated` | checklist (always the full list) |
+| `todo.updated` / `todo.stale` | checklist (always the full list, plus `stale`/`calls_since`); stale fires once per episode after 15 tool calls without an update while items are unfinished |
 | `tie.state` / `tie.rebuilt` | index status (header label + notices) |
 | `memory.stage` / `memory.resolved` / `memory.updated` | staged/applied memory writes |
 | `skill.stage` / `skill.resolved` / `skill.applied` / `skill.error` | staged/applied skill writes; loader problems |

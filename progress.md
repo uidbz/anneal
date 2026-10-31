@@ -51,6 +51,18 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-11-01 — todo ergonomics and staleness (issue #16, Phase 7)
+- `todo` without `action` but with items is treated as `set`; a bare call
+  returns the schema/example in the error; statuses and "at most one
+  in_progress" are validated with actionable messages.
+- The runner counts tool calls since the last `set`; after 15 calls with
+  unfinished items it appends one ModelOnly reminder (tail-only, cache-safe)
+  and emits `todo.stale` once per episode.
+- The inspector shows "updated just now" / "last update N tool calls ago" and
+  turns amber on staleness; `todo.updated` carries `stale`/`calls_since`, and
+  replay restores them.
+- The checklist is persisted on every set (not only at run end).
+
 ### 2026-11-01 — turn budget, graceful stop, interrupted turns (issue #15, Phase 6)
 - `agent.turn_budget_s` (default 1800) counts active model/tool time and
   **excludes approval waits**; `turn_hard_limit_s` (4 h) is the backstop.

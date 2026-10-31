@@ -66,6 +66,9 @@ func (r *Runner) restoreTodos(sess *session.Session) {
 		var items []todoItem
 		if err := json.Unmarshal(b, &items); err == nil {
 			r.todos = items
+			r.todoUpdatedAt = time.Now()
+			r.todoCallsAt = r.toolCalls
+			r.todoWarned = false
 		}
 	}
 }

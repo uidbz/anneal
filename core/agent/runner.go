@@ -69,6 +69,10 @@ type Runner struct {
 	mcpMu sync.Mutex // guards mcp: it is attached asynchronously at boot
 
 	indexCh chan indexJob // background tie indexing (see search.go)
+
+	sessMu      sync.Mutex
+	sessCache   []SessionInfo
+	sessCacheAt time.Time
 }
 
 // SetIndex attaches the tie index (nil or disabled = no session_search).
@@ -443,12 +447,18 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 		return
 	}
 
-	r.emit(map[string]any{"type": "run.started", "run": id, "model": h.Model})
+	// The text lets every attached client render the user's turn (today only
+	// the sender does, so a second client never sees it).
+	r.emit(map[string]any{"type": "run.started", "run": id, "model": h.Model,
+		"text": clip(input, 400)})
 
+	sink := &runEventSink{r: r, run: id, deltas: deltas}
 	resp, runErr := ag.CreateResponse(ctx,
 		dive.WithInput(input),
-		dive.WithEventCallback(r.runEventCallback(id, deltas)),
+		dive.WithEventCallback(sink.callback()),
 	)
+	sink.flushThinking()
+	sink.flushCompose()
 	deltas.flush()
 	postStart := time.Now()
 
@@ -482,6 +492,7 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 	// Always persist: an empty list must overwrite a stale one.
 	sess.SetMetadata("todos", items)
 	_ = r.store.Put(context.Background(), sess)
+	r.invalidateSessions()
 	r.queueIndex(sess, h.Model)
 	if r.review != nil {
 		r.review.Enqueue(sess.ID())
@@ -499,46 +510,113 @@ func (r *Runner) run(ctx context.Context, id int, input string) {
 	r.emit(out)
 }
 
-// runEventCallback translates dive's response items into UI events.
-func (r *Runner) runEventCallback(id int, deltas *deltaBatcher) dive.EventCallback {
+// runEventSink translates dive's response items into UI events. Text deltas
+// are batched, reasoning is throttled (the UI only shows a status line, and
+// one event per reasoning token flooded the bus), and streamed tool-call
+// arguments become tool.composing so a long Write is visible while it is
+// being written.
+type runEventSink struct {
+	r      *Runner
+	run    int
+	deltas *deltaBatcher
+
+	think   string
+	thinkAt time.Time
+
+	composeName  string
+	composeBytes int
+	composeAt    time.Time
+}
+
+func (s *runEventSink) callback() dive.EventCallback {
 	return func(_ context.Context, item *dive.ResponseItem) error {
-		switch item.Type {
-		case dive.ResponseItemTypeModelEvent:
-			if item.Event != nil && item.Event.Delta != nil {
-				if item.Event.Delta.Text != "" {
-					deltas.addText(item.Event.Delta.Text)
-				}
-				if item.Event.Delta.Thinking != "" {
-					r.emit(map[string]any{"type": "thinking.delta", "run": id, "text": item.Event.Delta.Thinking})
-				}
-			}
-		case dive.ResponseItemTypeMessage:
-			deltas.flush()
-			if item.Message != nil {
-				r.emit(map[string]any{"type": "message.final", "run": id, "text": item.Message.AnswerText()})
-			}
-		case dive.ResponseItemTypeToolCall:
-			deltas.flush()
-			if item.ToolCall != nil {
-				r.emit(map[string]any{"type": "tool.start", "run": id, "id": item.ToolCall.ID,
-					"name": item.ToolCall.Name, "input": previewJSON(item.ToolCall.Input, 400)})
-			}
-		case dive.ResponseItemTypeToolCallResult:
-			if item.ToolCallResult != nil {
-				tr := item.ToolCallResult
-				text := ""
-				isErr := tr.Error != nil || (tr.Result != nil && tr.Result.IsError)
-				if tr.Error != nil {
-					text = tr.Error.Error()
-				} else if tr.Result != nil {
-					text = toolResultText(tr.Result)
-				}
-				r.emit(map[string]any{"type": "tool.result", "run": id, "id": tr.ID,
-					"name": tr.Name, "error": isErr, "preview": clip(text, 600)})
-			}
-		}
+		s.handle(item)
 		return nil
 	}
+}
+
+func (s *runEventSink) handle(item *dive.ResponseItem) {
+	switch item.Type {
+	case dive.ResponseItemTypeModelEvent:
+		ev := item.Event
+		if ev == nil {
+			return
+		}
+		if ev.Type == llm.EventTypeContentBlockStart && ev.ContentBlock != nil &&
+			ev.ContentBlock.Type == llm.ContentTypeToolUse {
+			s.composeName = ev.ContentBlock.Name
+			s.composeBytes = 0
+			s.composeAt = time.Now()
+			s.emitCompose()
+		}
+		d := ev.Delta
+		if d == nil {
+			return
+		}
+		if d.Text != "" {
+			s.deltas.addText(d.Text)
+		}
+		if d.Thinking != "" {
+			s.think += d.Thinking
+			if time.Since(s.thinkAt) >= 250*time.Millisecond {
+				s.flushThinking()
+			}
+		}
+		if d.PartialJSON != "" && s.composeName != "" {
+			s.composeBytes += len(d.PartialJSON)
+			if time.Since(s.composeAt) >= 200*time.Millisecond {
+				s.emitCompose()
+			}
+		}
+	case dive.ResponseItemTypeMessage:
+		s.flushThinking()
+		s.flushCompose()
+		s.deltas.flush()
+		if item.Message != nil {
+			s.r.emit(map[string]any{"type": "message.final", "run": s.run, "text": item.Message.AnswerText()})
+		}
+	case dive.ResponseItemTypeToolCall:
+		s.flushThinking()
+		s.flushCompose()
+		s.deltas.flush()
+		if item.ToolCall != nil {
+			s.r.emit(map[string]any{"type": "tool.start", "run": s.run, "id": item.ToolCall.ID,
+				"name": item.ToolCall.Name, "input": previewJSON(item.ToolCall.Input, 400)})
+		}
+	case dive.ResponseItemTypeToolCallResult:
+		if item.ToolCallResult != nil {
+			tr := item.ToolCallResult
+			text := ""
+			isErr := tr.Error != nil || (tr.Result != nil && tr.Result.IsError)
+			if tr.Error != nil {
+				text = tr.Error.Error()
+			} else if tr.Result != nil {
+				text = toolResultText(tr.Result)
+			}
+			s.r.emit(map[string]any{"type": "tool.result", "run": s.run, "id": tr.ID,
+				"name": tr.Name, "error": isErr, "preview": clip(text, 600)})
+		}
+	}
+}
+
+func (s *runEventSink) flushThinking() {
+	if s.think == "" {
+		return
+	}
+	s.r.emit(map[string]any{"type": "thinking.delta", "run": s.run, "text": s.think})
+	s.think = ""
+	s.thinkAt = time.Now()
+}
+
+func (s *runEventSink) emitCompose() {
+	s.r.emit(map[string]any{"type": "tool.composing", "run": s.run,
+		"name": s.composeName, "bytes": s.composeBytes})
+	s.composeAt = time.Now()
+}
+
+func (s *runEventSink) flushCompose() {
+	s.composeName = ""
+	s.composeBytes = 0
 }
 
 // clearRun marks run id idle (always before its run.finished emits). A stale

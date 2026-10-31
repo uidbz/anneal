@@ -77,8 +77,19 @@ type SessionInfo struct {
 	Events  int    `json:"events"`
 }
 
-// Sessions lists sessions (newest first) for UI code.
+// Sessions lists sessions (newest first) for UI code. FileStore.List parses
+// every session file, and the shell asks for the list several times per event
+// (and per filter keystroke), so results are cached briefly and invalidated on
+// session changes.
 func (r *Runner) Sessions() []SessionInfo {
+	r.sessMu.Lock()
+	if r.sessCache != nil && time.Since(r.sessCacheAt) < 2*time.Second {
+		out := append([]SessionInfo(nil), r.sessCache...)
+		r.sessMu.Unlock()
+		return out
+	}
+	r.sessMu.Unlock()
+
 	res, err := r.store.List(context.Background(), nil)
 	if err != nil {
 		return []SessionInfo{}
@@ -92,7 +103,18 @@ func (r *Runner) Sessions() []SessionInfo {
 			Events:  s.EventCount,
 		})
 	}
-	return out
+	r.sessMu.Lock()
+	r.sessCache = out
+	r.sessCacheAt = time.Now()
+	r.sessMu.Unlock()
+	return append([]SessionInfo(nil), out...)
+}
+
+// invalidateSessions drops the cached list after a title/new/open change.
+func (r *Runner) invalidateSessions() {
+	r.sessMu.Lock()
+	r.sessCache = nil
+	r.sessMu.Unlock()
 }
 
 // SessionsJSON lists sessions as a JSON array (script UI bridge).
@@ -120,6 +142,7 @@ func (r *Runner) NewSession() {
 	r.sess, r.sessID = sess, id
 	r.todos = nil
 	r.mu.Unlock()
+	r.invalidateSessions()
 	r.emit(map[string]any{"type": "session.started", "id": id, "title": ""})
 }
 
@@ -140,6 +163,7 @@ func (r *Runner) OpenSession(id string) {
 	r.restoreTodos(sess)
 	todos := append([]todoItem{}, r.todos...)
 	r.mu.Unlock()
+	r.invalidateSessions()
 	r.emit(map[string]any{"type": "session.opened", "id": id, "title": sess.Title(), "blocks": blocks})
 	// Always emit: an empty list must clear the previous session's panel.
 	r.emit(map[string]any{"type": "todo.updated", "items": todos})

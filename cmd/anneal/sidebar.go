@@ -44,7 +44,9 @@ func newSessionsSidebar(s *shell) *sessionsSidebar {
 
 	sb.filter = widget.NewEntry()
 	sb.filter.PlaceHolder = "Filter sessions"
-	sb.filter.OnChanged = func(string) { sb.refresh() }
+	// Filtering works on the loaded list: reloading (and re-parsing every
+	// session file) on each keystroke froze the UI on large histories.
+	sb.filter.OnChanged = func(string) { sb.apply(sb.infos) }
 
 	newBtn := iconButton(theme.ContentAddIcon(), func() { s.b.newSession() })
 
@@ -88,10 +90,14 @@ func newSessionsSidebar(s *shell) *sessionsSidebar {
 
 func (sb *sessionsSidebar) Object() fyne.CanvasObject { return sb.object }
 
-// refresh reloads the session list, applies the filter, and rebuilds the
-// grouped rows.
+// refresh reloads the session list and rebuilds the grouped rows.
 func (sb *sessionsSidebar) refresh() {
 	sb.infos = sb.load()
+	sb.apply(sb.infos)
+}
+
+// apply rebuilds the rows from an already loaded list.
+func (sb *sessionsSidebar) apply(infos []agent.SessionInfo) {
 	query := strings.ToLower(strings.TrimSpace(sb.filter.Text))
 	now := sb.now()
 	rows := groupSessions(sb.infos, now)
@@ -109,7 +115,7 @@ func (sb *sessionsSidebar) refresh() {
 		rows = filtered
 	}
 	sb.rows = rows
-	sb.count.SetText(fmt.Sprintf("%d", len(sb.infos)))
+	sb.count.SetText(fmt.Sprintf("%d", len(infos)))
 	sb.empty.Hide()
 	if len(rows) == 0 {
 		sb.empty.Show()

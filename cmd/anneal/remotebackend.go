@@ -34,7 +34,8 @@ type remoteBackend struct {
 	overlay   bool
 	curMode   string
 	curBusy   bool
-	improveOn bool // improve.enabled from the backend config
+	curCwd    string // fixed per backend instance, so no per-refresh RPC
+	improveOn bool   // improve.enabled from the backend config
 	bus       *events.Bus
 
 	refreshMu sync.Mutex
@@ -51,11 +52,12 @@ func dialRemote(ctx context.Context, name, addr, token string) (*remoteBackend, 
 	rb := &remoteBackend{c: c, name: name, addr: addr}
 	// Seed the caches the shell reads before the first event lands.
 	var info struct {
-		Mode string `json:"mode"`
-		Busy bool   `json:"busy"`
+		Mode    string `json:"mode"`
+		Busy    bool   `json:"busy"`
+		Workdir string `json:"workdir"`
 	}
 	if err := rb.callInto("server.info", nil, &info); err == nil {
-		rb.curMode, rb.curBusy = info.Mode, info.Busy
+		rb.curMode, rb.curBusy, rb.curCwd = info.Mode, info.Busy, info.Workdir
 	}
 	rb.refreshSessions()
 	rb.refreshConfig()
@@ -190,10 +192,19 @@ func (r *remoteBackend) sessions() []agent.SessionInfo {
 }
 
 func (r *remoteBackend) cwd() string {
+	r.mu.Lock()
+	cached := r.curCwd
+	r.mu.Unlock()
+	if cached != "" {
+		return cached
+	}
 	var info struct {
 		Workdir string `json:"workdir"`
 	}
 	if err := r.callInto("server.info", nil, &info); err == nil {
+		r.mu.Lock()
+		r.curCwd = info.Workdir
+		r.mu.Unlock()
 		return info.Workdir
 	}
 	return ""

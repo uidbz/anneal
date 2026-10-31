@@ -135,6 +135,24 @@ func (s *shell) progress(key, text string) *progressLine {
 	return line
 }
 
+// dropProgress removes a live line entirely (the composing indicator is
+// replaced by the real tool row).
+func (s *shell) dropProgress(key string) {
+	line, ok := s.progressLines[key]
+	if !ok {
+		return
+	}
+	delete(s.progressLines, key)
+	s.chatBox.Remove(line.object)
+	for i, obj := range s.visible {
+		if obj == line.object {
+			s.visible = append(s.visible[:i], s.visible[i+1:]...)
+			break
+		}
+	}
+	s.syncTranscriptSize()
+}
+
 // finishProgress turns a live line into a final notice and forgets it, so the
 // next pass starts a new line.
 func (s *shell) finishProgress(key string, k noticeKind, text string) {
@@ -170,10 +188,30 @@ func (s *shell) appendBlock(obj fyne.CanvasObject) {
 		s.chatBox.Add(s.tail)
 	}
 	s.trimVisible()
-	s.chatBox.Refresh()
+	s.syncTranscriptSize()
 	if s.scroll != nil {
 		s.scroll.ScrollToBottom()
 	}
+}
+
+// syncTranscriptSize re-runs layout from the scroll content down without
+// refreshing every block. Container.Refresh() recurses into every child, and
+// a word-wrapped label re-wraps its whole text on Refresh — with 300 blocks
+// that turned each streamed delta into a full transcript re-layout.
+func (s *shell) syncTranscriptSize() {
+	if s.scroll == nil || s.scroll.Content == nil {
+		return
+	}
+	content := s.scroll.Content
+	w := content.Size().Width
+	if w <= 0 {
+		w = s.win.Canvas().Size().Width
+	}
+	h := content.MinSize().Height
+	if viewport := s.scroll.Size().Height; h < viewport {
+		h = viewport
+	}
+	content.Resize(fyne.NewSize(w, h))
 }
 
 // trimVisible bounds the rendered transcript. Older blocks are detached from
@@ -269,7 +307,7 @@ func (s *shell) ensureTail() {
 		s.tail.Wrapping = fyne.TextWrapWord
 		s.tail.Selectable = true
 		s.chatBox.Add(s.tail)
-		s.chatBox.Refresh()
+		s.syncTranscriptSize()
 	}
 }
 
@@ -295,7 +333,7 @@ func (s *shell) flushTail() {
 	}
 	s.tail.SetText(s.tailBuf)
 	s.tail.Refresh()
-	s.chatBox.Refresh()
+	s.syncTranscriptSize()
 	if s.scroll != nil {
 		s.scroll.ScrollToBottom()
 	}
@@ -333,7 +371,7 @@ func (s *shell) closeTail(final string) {
 	s.tailBuf = ""
 	s.streamBlocks = nil
 	if removed {
-		s.chatBox.Refresh()
+		s.syncTranscriptSize()
 	}
 	if strings.TrimSpace(final) != "" {
 		s.addMarkdown(final)

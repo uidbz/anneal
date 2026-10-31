@@ -273,6 +273,18 @@ func (r *toolRowRenderer) Refresh() {
 
 func (r *toolRowRenderer) Destroy() {}
 
+// humanBytes renders a streamed tool-call size compactly.
+func humanBytes(n float64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", n/(1<<20))
+	case n >= 1024:
+		return fmt.Sprintf("%.1f kB", n/1024)
+	default:
+		return fmt.Sprintf("%d B", int(n))
+	}
+}
+
 func formatElapsed(d time.Duration) string {
 	switch {
 	case d < time.Second:

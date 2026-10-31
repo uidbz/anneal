@@ -417,10 +417,52 @@ func (s *shell) railObject() fyne.CanvasObject {
 func (s *shell) start(ctx context.Context) {
 	events := make(chan any, 1024)
 	s.bus.AddTap(func(v any) { events <- v })
+	// One consumer, with coalescing for the high-frequency stream events:
+	// Fyne's main queue is unbounded, so a burst of per-token updates makes
+	// the UI lag behind (and delays the Stop button) instead of dropping.
 	go func() {
-		for v := range events {
-			ev := normalizeEvent(v)
+		ticker := time.NewTicker(40 * time.Millisecond)
+		defer ticker.Stop()
+		var pending map[string]any
+		flush := func() {
+			if pending == nil {
+				return
+			}
+			ev := pending
+			pending = nil
 			fyne.Do(func() { s.handleEvent(ev) })
+		}
+		for {
+			select {
+			case v, ok := <-events:
+				if !ok {
+					flush()
+					return
+				}
+				ev := normalizeEvent(v)
+				typ := str(ev["type"])
+				if typ == "text.delta" || typ == "thinking.delta" || typ == "tool.composing" {
+					if pending != nil && str(pending["type"]) == typ &&
+						str(pending["run"]) == str(ev["run"]) && str(pending["id"]) == str(ev["id"]) {
+						if typ == "tool.composing" {
+							pending["bytes"] = num(pending["bytes"]) + num(ev["bytes"])
+							if name := str(ev["name"]); name != "" {
+								pending["name"] = name
+							}
+						} else {
+							pending["text"] = str(pending["text"]) + str(ev["text"])
+						}
+						continue
+					}
+					flush()
+					pending = ev
+					continue
+				}
+				flush()
+				fyne.Do(func() { s.handleEvent(ev) })
+			case <-ticker.C:
+				flush()
+			}
 		}
 	}()
 

@@ -135,15 +135,19 @@ func (a *App) ReplayState() { a.Runner.ReplayState() }
 // targets a single connection; a broadcast would reset every other GUI).
 func (a *App) StateEvents() []map[string]any { return a.Runner.StateEvents() }
 
-// journeyTap appends self-improvement events to the journey log.
+// journeyTap appends self-improvement events to the journey log. Only a
+// handful of event types matter here, so plain maps (every streaming delta is
+// one) are checked without a JSON round-trip on the agent goroutine.
 func (a *App) journeyTap(v any) {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return
-	}
-	var e map[string]any
-	if json.Unmarshal(data, &e) != nil {
-		return
+	e, ok := v.(map[string]any)
+	if !ok {
+		data, err := json.Marshal(v)
+		if err != nil {
+			return
+		}
+		if json.Unmarshal(data, &e) != nil {
+			return
+		}
 	}
 	switch e["type"] {
 	case "memory.updated":

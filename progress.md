@@ -51,6 +51,26 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-11-01 — performance fixes (Phase 3)
+- Foreground work now preempts background learning (first keystroke cancels
+  a running improve pass too, not just the reviewer); default idle windows
+  are 10 min (review) / 30 min (auto-improve).
+- tie indexing moved off the post-run path (background worker; drops instead
+  of blocking; index remains rebuildable).
+- TextEditor tool removed (duplicate of Read/Write/Edit); mutating tools are
+  marked sequential while read-only batches run in parallel
+  (`agent.parallel_tools`, default true).
+- Prompt: read with Read/Grep/Glob (no approval), prefer Edit over whole-file
+  Write, batch independent reads, no `cd <project> &&`.
+- Transcript refresh scoping + streaming coalescing: **2.23 ms → 0.45 ms**
+  per delta at 300 blocks, **366 ms → 44.5 ms** to open a 600-block session
+  (benchmarks in `cmd/anneal/shell_bench_test.go`). Thinking events are
+  coalesced at the source; journey logging skips the JSON round-trip for
+  plain-map events; session list is cached and filtering no longer re-parses
+  every session file; remote cwd is fetched once at connect.
+- Live composing indicator (`tool.composing`) for streamed tool arguments
+  (Strata streams them, verified).
+
 ### 2026-11-01 — performance baseline (Phase 2)
 - New per-run tracer (`core/agent/perf.go`, dive `Tracer`): per model call
   TTFT/duration/tokens (in, cached, out, reasoning), per tool duration,

@@ -125,3 +125,28 @@ func TestToolSummaryKeepsPrimaryArgument(t *testing.T) {
 		t.Fatalf("toolDisplayName = %q", got)
 	}
 }
+
+// TestComposingIndicatorReplacedByToolRow: while a big tool call is being
+// written the UI shows a live "Composing" line, which must turn into exactly
+// one tool row (not a leftover progress block).
+func TestComposingIndicatorReplacedByToolRow(t *testing.T) {
+	sh := newTestShell(t)
+	sh.handleEvent(normalizeEvent(map[string]any{
+		"type": "tool.composing", "run": 1, "name": "Write", "bytes": 4096,
+	}))
+	if _, ok := sh.progressLines["compose"]; !ok {
+		t.Fatal("no composing progress line")
+	}
+	if len(sh.visible) != 1 {
+		t.Fatalf("blocks after composing = %d", len(sh.visible))
+	}
+	sh.handleEvent(normalizeEvent(map[string]any{
+		"type": "tool.start", "run": 1, "id": "t1", "name": "Write", "input": `{"file_path":"x"}`,
+	}))
+	if _, ok := sh.progressLines["compose"]; ok {
+		t.Fatal("composing line survived tool.start")
+	}
+	if len(sh.visible) != 1 || sh.toolRows["t1"] == nil {
+		t.Fatalf("blocks after tool.start = %d (rows=%v)", len(sh.visible), sh.toolRows)
+	}
+}

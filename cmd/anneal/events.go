@@ -111,9 +111,14 @@ func (s *shell) handleEvent(e map[string]any) {
 	case "thinking.delta":
 		s.status.SetText("Thinking…")
 		s.runDot.setToken(colorWarn)
+	case "tool.composing":
+		s.progress("compose", fmt.Sprintf("Composing %s… %s",
+			toolDisplayName(str(e["name"])), humanBytes(num(e["bytes"]))))
 	case "message.final":
+		s.dropProgress("compose")
 		s.closeTail(str(e["text"]))
 	case "tool.start":
+		s.dropProgress("compose")
 		s.closeTail("")
 		s.addTool(str(e["id"]), str(e["name"]), str(e["input"]))
 	case "tool.result":
@@ -398,8 +403,15 @@ func oneLine(s string) string {
 
 // normalizeEvent converts any event value (maps, review.Event structs, nested
 // structs) into a JSON-shaped map so the UI has one consistent value model.
+// Hot streaming events already carry only plain values; skipping the JSON
+// round-trip for them keeps per-token overhead out of the event path.
 func normalizeEvent(v any) map[string]any {
 	if m, ok := v.(map[string]any); ok {
+		switch m["type"] {
+		case "text.delta", "thinking.delta", "tool.composing", "model.wait",
+			"model.first_token", "tool.start", "tool.result", "run.started", "run.busy":
+			return m
+		}
 		// Core events are already maps, but nested values may be structs.
 		b, err := json.Marshal(m)
 		if err == nil {

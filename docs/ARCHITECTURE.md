@@ -113,6 +113,7 @@ on missing keys is a hard error. The Go shell consumes the same values as maps
 | `review.flag` | reviewer queued a harness deficiency (M16 → improve hints) |
 | `improve.auto` + `improve.start/propose/probe/compose/iterdone/library/selector/budget/done/error` | improvement step (`auto` = scheduled pass began; selector/budget only k>1) |
 | `harness.warn` / `harness.warning` / `harness.promoted` / `harness.overlay` | component save re-validation, bad subagent file, library promote result, session overlay installed |
+| `gortex.untracked` / `gortex.tracked` | working directory not tracked by gortex (tools omitted, Track action offered) / tracking succeeded |
 | `compaction.done` | context compaction (before/after tokens, msgs) |
 | `server.shutting_down` | anneald idle/quit shutdown started (reason, eta_s) |
 

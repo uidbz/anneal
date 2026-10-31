@@ -205,6 +205,14 @@ func (r *remoteBackend) removeSavedGrant(action, resource string) error {
 	return err
 }
 
+func (r *remoteBackend) trackGortex() error {
+	// Tracking can index a repository: allow more than the usual RPC bound.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	_, err := r.c.Call(ctx, "gortex.track", nil)
+	return err
+}
+
 func (r *remoteBackend) sessions() []agent.SessionInfo {
 	r.mu.Lock()
 	out := append([]agent.SessionInfo(nil), r.sess...)

@@ -51,6 +51,18 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-11-01 — gortex untracked-cwd handling (issue #13, Phase 8)
+- Boot detection via `gortex repos --json`: when the working directory is not
+  tracked, gortex tools are omitted for that project (fewer prompt tokens, no
+  failing calls); a "Code intelligence off" card offers **Track this project**
+  (runs `gortex track <cwd>`; remote via `gortex.track`), replay included.
+- MCP errors gain hints: `repository not tracked` now says to pass path=/repo=
+  for a tracked repo or switch to Grep/Glob, never retry unchanged.
+- A repeated identical tool failure adds "do not retry the same call shape"
+  to the result on the second occurrence (PostToolUseFailure).
+- Prompt: gortex paragraph now names the untracked failure and the fix.
+- Upstream issue filed with permission: zzet/gortex#1237.
+
 ### 2026-11-01 — todo ergonomics and staleness (issue #16, Phase 7)
 - `todo` without `action` but with items is treated as `set`; a bare call
   returns the schema/example in the error; statuses and "at most one

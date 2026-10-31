@@ -89,6 +89,14 @@ type Runner struct {
 	sessCache   []SessionInfo
 	sessCacheAt time.Time
 
+	// gortex status: its tools only work in tracked repositories. When the
+	// working directory is untracked they are omitted (saving prompt tokens
+	// and failing calls) until the user tracks the project.
+	gortexMu        sync.Mutex
+	gortexChecked   bool
+	gortexUntracked bool
+	gortexTracked   []string
+
 	// Input queue (see queue.go): messages sent while a run is active.
 	queue       []QueuedInput
 	queuePaused bool
@@ -287,6 +295,9 @@ func (r *Runner) StateEvents() []map[string]any {
 	}
 	events = append(events, r.PendingPermEvents()...)
 	events = append(events, r.queueStateEvent())
+	if ev := r.gortexEvent(); ev != nil {
+		events = append(events, ev)
+	}
 	if r.mem != nil {
 		if ops, err := r.mem.ListPending(); err == nil {
 			for _, op := range ops {
@@ -483,7 +494,7 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string, co
 	if skillExt != nil {
 		exts = append(exts, skillExt)
 	}
-	tools = append(tools, mcpTools(r.mcpManager())...)
+	tools = append(tools, mcpTools(r.mcpManager(), r.isGortexUntracked())...)
 	if r.cfg.Agent.Subagents {
 		tools = append(tools, seq(r.agentTool(provider, tools)))
 	}
@@ -494,8 +505,10 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string, co
 		layers = append(layers, r.sessionOverlayLayers()...)
 	}
 	prompt := SystemPrompt(r.cwd, r.Mode(), layers)
+	guard := newRepeatGuard()
 	hooks := dive.Hooks{
-		PreToolUse: []dive.PreToolUseHook{r.permissionHook},
+		PreToolUse:         []dive.PreToolUseHook{r.permissionHook},
+		PostToolUseFailure: []dive.PostToolUseFailureHook{guard.hook()},
 	}
 	hooks.PreGeneration = []dive.PreGenerationHook{r.memoryReminderHook()}
 	if r.cfg.Compaction.Enabled {

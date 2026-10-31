@@ -122,6 +122,20 @@ func (s *shell) handleEvent(e map[string]any) {
 			s.notice(noticeInfo, fmt.Sprintf("Turn budget: %ds of %ds used — checkpointing",
 				int(num(e["used_s"])), int(num(e["budget_s"]))))
 		}
+	case "gortex.untracked":
+		if !s.gortexNotice {
+			s.gortexNotice = true
+			text := fmt.Sprintf("gortex does not track %s, so its navigation tools are "+
+				"off for this project (they would fail with \"repository not tracked\"). "+
+				"Tracked repositories: %s.", str(e["cwd"]),
+				strings.Join(stringList(e["tracked"]), ", "))
+			s.appendBlock(s.actionBlock("Code intelligence off", text,
+				"Track this project", s.trackGortex))
+		}
+	case "gortex.tracked":
+		s.gortexNotice = false
+		s.notice(noticeSuccess, "gortex now tracks "+str(e["cwd"])+
+			"; its tools are available from the next run.")
 	case "tool.recovered":
 		s.notice(noticeWarn, "Cancelled "+str(e["tool"])+
 			" input saved: "+str(e["path"])+" (ask the agent to re-apply it instead of regenerating)")

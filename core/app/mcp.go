@@ -6,9 +6,14 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os/exec"
+	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/uidbz/anneal/core/config"
 
@@ -88,7 +93,70 @@ func (a *App) ConnectMCP(ctx context.Context) {
 	}
 	a.MCP = mgr
 	a.Runner.SetMCP(mgr)
+	a.detectGortex()
 	a.emitMCPState()
+}
+
+// detectGortex asks the gortex CLI which repositories it tracks. Its tools
+// only work in tracked repositories: when the working directory is not one,
+// they are omitted from runs (fewer prompt tokens, no repeated failures) and
+// the UI offers to track the project.
+func (a *App) detectGortex() {
+	if _, ok := a.Cfg.MCP.Servers[gortexMCPName]; !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "gortex", "repos", "--json").Output()
+	if err != nil {
+		return // best effort: keep tools rather than hide them on a probe error
+	}
+	var repos []struct {
+		Path string `json:"path"`
+	}
+	if json.Unmarshal(out, &repos) != nil {
+		return
+	}
+	cwd := a.Runner.Cwd()
+	tracked := make([]string, 0, len(repos))
+	untracked := true
+	for _, repo := range repos {
+		if repo.Path == "" {
+			continue
+		}
+		tracked = append(tracked, filepath.Clean(repo.Path))
+		if pathWithin(cwd, repo.Path) {
+			untracked = false
+		}
+	}
+	a.Runner.SetGortexStatus(untracked, tracked)
+	if untracked {
+		a.Bus.Emit(map[string]any{"type": "gortex.untracked", "cwd": cwd, "tracked": tracked})
+	}
+}
+
+// TrackGortex registers the current working directory with gortex (user
+// action from the "Code intelligence off" card).
+func (a *App) TrackGortex() error {
+	cwd := a.Runner.Cwd()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "gortex", "track", cwd).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("gortex track: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	a.detectGortex()
+	a.Bus.Emit(map[string]any{"type": "gortex.tracked", "cwd": cwd})
+	return nil
+}
+
+// pathWithin reports whether base is inside dir (or equal to it).
+func pathWithin(base, dir string) bool {
+	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(base))
+	if err != nil || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 func (a *App) emitMCPState() {

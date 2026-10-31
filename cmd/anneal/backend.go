@@ -55,6 +55,7 @@ type backend interface {
 	saveConfig(doc string) error
 	savedGrants() ([]permission.Rule, error)
 	removeSavedGrant(action, resource string) error
+	trackGortex() error
 
 	// queries (must not block the UI thread for long)
 	sessions() []agent.SessionInfo
@@ -134,6 +135,7 @@ func (l *localBackend) savedGrants() ([]permission.Rule, error) {
 func (l *localBackend) removeSavedGrant(action, resource string) error {
 	return l.a.Runner.RemoveSavedGrant(action, resource)
 }
+func (l *localBackend) trackGortex() error { return l.a.TrackGortex() }
 func (l *localBackend) sessions() []agent.SessionInfo {
 	return l.a.Runner.Sessions()
 }

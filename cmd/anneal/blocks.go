@@ -127,6 +127,36 @@ func outcomeDetails(out map[string]any) string {
 	return sb.String()
 }
 
+// actionBlock is a warn-washed notice with one action button (used for
+// "gortex is not tracking this project").
+func (s *shell) actionBlock(title, text, label string, fn func()) fyne.CanvasObject {
+	t := newThemedText(title, colorWarn)
+	t.bold = true
+	body := selectableLabel(text, false)
+	btn := widget.NewButton(label, fn)
+	btn.Importance = widget.HighImportance
+	panel := newSurface(colorWarnWash,
+		container.New(&padLayout{l: spaceM, r: spaceM, t: spaceS, b: spaceS},
+			container.NewVBox(t, body, vgap(spaceXS), btn))).
+		border(colorWarn, 1)
+	bar := newThemedRect(colorWarn, 3, 0)
+	return container.NewBorder(nil, nil,
+		container.New(&padLayout{l: 0, r: 0, t: 0, b: 0}, bar), nil, panel)
+}
+
+// trackGortex runs the consent action off the UI thread.
+func (s *shell) trackGortex() {
+	s.notice(noticeInfo, "Tracking this project in gortex…")
+	go func() {
+		err := s.b.trackGortex()
+		fyne.Do(func() {
+			if err != nil {
+				s.notice(noticeWarn, "gortex track: "+err.Error())
+			}
+		})
+	}()
+}
+
 // noticeKind selects the marker and color of a system line.
 type noticeKind int
 

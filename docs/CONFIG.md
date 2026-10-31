@@ -372,6 +372,13 @@ without a daemon, `gortex mcp` exits unless its own `mcp.allow_embedded` is
 enabled. Set `"auto_detect": false` or define your own `gortex` entry to opt
 out.
 
+At boot Anneal asks `gortex repos --json` which repositories are tracked. When
+the working directory is not one, the gortex tools are omitted from runs (they
+would only fail) and the UI offers **Track this project**; errors that still
+say `repository not tracked` carry the fix hint and a repeated identical
+failure adds "do not retry this call unchanged" (upstream request:
+zzet/gortex#1237).
+
 Tools are exposed as `mcp__<server>__<tool>` and use that name as their
 permission action (so `"mcp__gortex__explore": "allow"` works). Unlisted MCP
 tools default to `ask`. State is shown in the header (`mcp: 1/1 up, N tools`).

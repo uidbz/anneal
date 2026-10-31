@@ -132,6 +132,21 @@ small IDE.
 For UI smoke tests without typing, `anneal -send "task" -quit-after-run` fills
 the composer, submits it, and exits after the run finishes.
 
+### Code intelligence (gortex)
+
+When the `gortex` binary is installed and `mcp.auto_detect` is on, anneal
+registers its read-only localization tools (`explore`, `batch_symbols`,
+`find_implementations`, …). gortex only answers for **tracked** repositories:
+if the project directory is not tracked, those tools are left out for that
+run (fewer prompt tokens, no failing calls) and a **"Code intelligence off"**
+card offers **Track this project** (runs `gortex track <cwd>`).
+
+If a gortex call still fails with `repository not tracked`, the error carries
+the fix (pass `path=`/`repo=` for a tracked repo, or use Grep/Glob) and a
+repeated identical failure adds "do not retry this call unchanged" to the
+result. The upstream request for a structured error is
+[zzet/gortex#1237](https://github.com/zzet/gortex/issues/1237).
+
 ### Stopping and continuing
 
 - **Stop is graceful** (Ctrl+D or the Stop button): the tool that is running

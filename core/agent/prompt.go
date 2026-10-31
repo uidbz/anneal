@@ -53,6 +53,10 @@ Code intelligence:
   explore (one-shot working set), batch_symbols (signatures + callers), and
   find_implementations, then read only the needed range. They are read-only
   and return far less context than grepping whole trees.
+- gortex only searches tracked repositories. If a call fails with
+  "repository not tracked", do not retry it unchanged: pass an explicit
+  path=/repo= for a tracked repository (list them with gortex repos) or
+  switch to Grep/Glob.
 
 Learning loop:
 - When the user corrects you, states a preference, or you discover a durable

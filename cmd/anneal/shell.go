@@ -102,6 +102,7 @@ type shell struct {
 	userFooters      map[string]*themedText
 	runRefs          map[int]string
 	refSeq           int
+	gortexNotice     bool
 	scroll           *container.Scroll
 	chatBox          *fyne.Container // visible transcript blocks (append-only)
 	earlier          *widget.Button  // "show earlier messages" when the window is capped

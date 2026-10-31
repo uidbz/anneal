@@ -395,6 +395,9 @@ func (s *Server) methods() map[string]handler {
 		a.PreemptBackground()
 		return nil, nil
 	}
+	m["gortex.track"] = func(json.RawMessage) (any, error) {
+		return map[string]any{"ok": true}, a.TrackGortex()
+	}
 	m["run.status"] = func(json.RawMessage) (any, error) {
 		return map[string]any{"busy": a.Runner.Busy(), "mode": a.Runner.Mode(),
 			"session": a.Runner.SessionID()}, nil

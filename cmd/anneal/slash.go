@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -14,36 +13,46 @@ func (s *shell) slash(line string) {
 	cmd := fields[0]
 	switch cmd {
 	case "/help":
-		s.showText("commands", "/new /sessions /plan /build /stop /textsize /memory /skills /journey /activity /runs /index /learn /improve /harness /quit")
+		s.showText("commands", "/new /sessions /plan /build /stop /textsize /memory /skills /journey /activity /runs /index /learn /improve /harness /backend /quit")
 	case "/new":
-		s.a.Runner.NewSession()
+		s.b.newSession()
 	case "/sessions":
 		s.showSessions()
 	case "/plan":
-		s.a.Runner.SetMode("plan")
+		s.b.setMode("plan")
 	case "/build":
-		s.a.Runner.SetMode("default")
+		s.b.setMode("default")
 	case "/stop", "/interrupt":
-		s.a.Runner.Interrupt()
+		s.b.interrupt()
 	case "/textsize":
 		s.textSizeCommand(fields[1:])
 	case "/theme":
 		if len(fields) < 2 {
-			s.notice(noticeInfo, "Theme: "+s.a.Cfg.UI.ThemeMode()+" (system|light|dark)")
+			s.notice(noticeInfo, "Theme: "+s.cfg.UI.ThemeMode()+" (system|light|dark)")
 			return
 		}
 		s.setThemeMode(fields[1])
 	case "/cwd", "/pwd":
-		s.notice(noticeInfo, "Working directory: "+s.a.Runner.Cwd())
+		s.notice(noticeInfo, "Working directory: "+s.b.cwd())
+	case "/backend":
+		s.backendCommand(fields[1:])
 	case "/memory":
-		m, _ := s.a.Mem.Read("memory")
-		u, _ := s.a.Mem.Read("user")
+		view, err := s.b.memoryView()
+		if err != nil {
+			s.addNotice("⚠ memory: " + err.Error())
+			return
+		}
+		m, u := str(view["memory"]), str(view["user"])
 		s.showText("memory", fmt.Sprintf("MEMORY.md (%d/%d):\n%s\n\nUSER.md (%d/%d):\n%s",
-			len(m), s.a.Cfg.Memory.MemoryCharLimit, m,
-			len(u), s.a.Cfg.Memory.UserCharLimit, u))
+			len(m), int(num(view["memory_cap"])), m,
+			len(u), int(num(view["user_cap"])), u))
 	case "/skills":
 		var b strings.Builder
-		list := s.a.Skills.List()
+		list, err := s.b.skillsList()
+		if err != nil {
+			s.addNotice("⚠ skills: " + err.Error())
+			return
+		}
 		if len(list) == 0 {
 			b.WriteString("skills: none installed")
 		}
@@ -52,8 +61,13 @@ func (s *shell) slash(line string) {
 		}
 		s.showText("skills", b.String())
 	case "/journey":
+		entries, err := s.b.journeyTail(25)
+		if err != nil {
+			s.addNotice("⚠ journey: " + err.Error())
+			return
+		}
 		var b strings.Builder
-		for _, e := range s.a.Journey.Tail(25) {
+		for _, e := range entries {
 			fmt.Fprintf(&b, "%s  %s\n", e.TS, e.Kind)
 		}
 		s.showText("journey", b.String())
@@ -61,17 +75,10 @@ func (s *shell) slash(line string) {
 		s.refreshActivity()
 		s.showView(viewActivity)
 	case "/index":
-		go func() {
-			n, err := s.a.Runner.RebuildIndex(context.Background())
-			msg := map[string]any{"type": "tie.rebuilt", "sessions": n, "error": ""}
-			if err != nil {
-				msg["error"] = err.Error()
-			}
-			s.a.Bus.Emit(msg)
-		}()
+		s.b.rebuildIndex()
 		s.addNotice("index rebuild requested")
 	case "/learn":
-		s.a.Review.LearnNow()
+		s.b.learnNow()
 		s.addNotice("learning pass queued")
 	case "/improve":
 		s.improveNow()
@@ -84,6 +91,71 @@ func (s *shell) slash(line string) {
 	}
 }
 
+// backendCommand implements /backend:
+//
+//	/backend            show the active backend and the registry
+//	/backend <name|addr>  choose the backend for the next launch
+//
+// Switching is a restart boundary, not a hot swap: the whole session view
+// (transcript, sidebar, pane bridge) belongs to the current backend, and
+// one-instance-per-project is the tenancy model (docs/USING.md).
+func (s *shell) backendCommand(args []string) {
+	cur := s.b.describe()
+	if len(args) == 0 {
+		var b strings.Builder
+		fmt.Fprintf(&b, "backend: %s\nworkdir: %s\n", cur, s.b.cwd())
+		if len(s.cfg.UI.Backends) == 0 {
+			b.WriteString("registry: empty (add ui.backends entries in config.json)")
+		} else {
+			b.WriteString("registry:")
+			for _, be := range s.cfg.UI.Backends {
+				marker := " "
+				if be.Name == cur || be.Addr == cur {
+					marker = "*"
+				}
+				addr := be.Addr
+				if addr == "" {
+					addr = "embedded core"
+				}
+				fmt.Fprintf(&b, "\n %s %s  %s", marker, be.Name, addr)
+			}
+		}
+		s.showText("backend", b.String())
+		return
+	}
+	want := args[0]
+	found := false
+	for _, be := range s.cfg.UI.Backends {
+		if be.Name == want || be.Addr == want {
+			s.cfg.UI.Backend = be.Addr
+			found = true
+			break
+		}
+	}
+	if !found {
+		if want == "local" {
+			s.cfg.UI.Backend = ""
+			found = true
+		} else if strings.Contains(want, ":") || strings.HasPrefix(want, "unix:") {
+			s.cfg.UI.Backend = want
+			found = true
+		}
+	}
+	if !found {
+		s.addNotice("⚠ unknown backend " + want + " — try /backend")
+		return
+	}
+	if err := s.cfg.Save(); err != nil {
+		s.addNotice("⚠ backend save: " + err.Error())
+		return
+	}
+	next := "embedded core"
+	if s.cfg.UI.Backend != "" {
+		next = s.cfg.UI.Backend
+	}
+	s.addNotice("backend for next launch: " + next + " — restart anneal to switch")
+}
+
 // textSizeCommand implements /textsize:
 //
 //	/textsize             show the current size
@@ -94,7 +166,7 @@ func (s *shell) slash(line string) {
 func (s *shell) textSizeCommand(args []string) {
 	if len(args) == 0 {
 		s.addNotice(fmt.Sprintf("text size: %.0f%% (range %.0f–%.0f%%)",
-			s.a.Cfg.UI.TextScale*100, config.MinTextScale*100, config.MaxTextScale*100))
+			s.cfg.UI.TextScale*100, config.MinTextScale*100, config.MaxTextScale*100))
 		return
 	}
 	arg := strings.TrimSpace(strings.ToLower(args[0]))
@@ -116,10 +188,10 @@ func (s *shell) textSizeCommand(args []string) {
 	case percent:
 		scale = v / 100
 		if relative {
-			scale += s.a.Cfg.UI.TextScale
+			scale += s.cfg.UI.TextScale
 		}
 	case relative:
-		scale = s.a.Cfg.UI.TextScale + v
+		scale = s.cfg.UI.TextScale + v
 	}
 	s.setTextScale(scale)
 }

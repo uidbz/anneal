@@ -129,6 +129,7 @@ accepted — their effects arrive as events).
 | `config.get` | – | full config document |
 | `config.set` | `{doc}` (full document; omitted keys = defaults; the `server` group takes effect only on restart) | `{"ok":true}` |
 | `learn.now` | – | null (result via `review.done`) |
+| `improve.runs` | `{n}` | `[{run_id,session_id,task,decisions,successor,…}]` (improvement records, newest first) |
 | `memory.view` / `memory.pending` | – | store views |
 | `memory.respond` | `{id,action}` `approve\|reject` | null |
 | `skills.list` / `skills.pending` | – | store views |

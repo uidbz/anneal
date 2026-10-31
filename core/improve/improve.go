@@ -119,6 +119,35 @@ func loadStep(dir string) (*Result, bool) {
 	return &r, true
 }
 
+// LoadRuns lists improvement records under root (one directory per run,
+// step.json inside), newest first. Corrupt or partial records are skipped.
+// limit <= 0 means all.
+func LoadRuns(root string, limit int) []Result {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(names)))
+	out := make([]Result, 0, len(names))
+	for _, name := range names {
+		r, ok := loadStep(filepath.Join(root, name))
+		if !ok {
+			continue
+		}
+		out = append(out, *r)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
 // tokens sums reported usage across an iteration's executions.
 func tokens(r *Result) int {
 	n := r.StageTokens

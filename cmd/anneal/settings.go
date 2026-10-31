@@ -39,7 +39,7 @@ type settingsPanel struct {
 
 func newSettingsPanel(s *shell) *settingsPanel {
 	p := &settingsPanel{s: s, bad: map[string]bool{}, controls: map[string]fyne.CanvasObject{}}
-	p.draft = *s.a.Cfg
+	p.draft, _ = s.configDraft()
 	p.object = p.buildPage()
 	p.installHeader()
 	return p
@@ -62,7 +62,7 @@ func (p *settingsPanel) installHeader() {
 
 // reload replaces the draft with the live config and rebuilds the form.
 func (p *settingsPanel) reload() {
-	p.draft = *p.s.a.Cfg
+	p.draft, _ = p.s.configDraft()
 	p.dirty = false
 	p.bad = map[string]bool{}
 	if p.body != nil {
@@ -87,13 +87,13 @@ func (p *settingsPanel) save() {
 		return
 	}
 	p.inSave = true
-	err = p.s.a.SaveConfig(string(doc))
+	err = p.s.b.saveConfig(string(doc))
 	p.inSave = false
 	if err != nil {
 		p.s.notice(noticeWarn, "Settings: "+err.Error())
 		return
 	}
-	p.draft = *p.s.a.Cfg
+	p.draft, _ = p.s.configDraft()
 	p.dirty = false
 	p.updateButtons()
 	p.s.notice(noticeSuccess, "Settings saved.")
@@ -339,7 +339,7 @@ func (p *settingsPanel) appearanceCard() fyne.CanvasObject {
 	}
 	slider.OnChangeEnded = func(v float64) {
 		p.s.setTextScale(v / 100)
-		p.draft.UI.TextScale = p.s.a.Cfg.UI.TextScale
+		p.draft.UI.TextScale = p.s.cfg.UI.TextScale
 	}
 
 	themeSel := widget.NewSelect([]string{"System", "Light", "Dark"}, nil)
@@ -347,7 +347,7 @@ func (p *settingsPanel) appearanceCard() fyne.CanvasObject {
 	p.controls["Theme"] = themeSel
 	themeSel.OnChanged = func(choice string) {
 		p.s.setThemeMode(strings.ToLower(choice))
-		p.draft.UI.Theme = p.s.a.Cfg.UI.Theme
+		p.draft.UI.Theme = p.s.cfg.UI.Theme
 	}
 	form := widget.NewForm(
 		widget.NewFormItem("Theme", themeSel),

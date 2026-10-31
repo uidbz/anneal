@@ -111,8 +111,8 @@ func newComposer(s *shell) *composer {
 	c.entry.onSend = s.submit
 	c.entry.onCtrlCR = s.allowOldest
 
-	c.buildBtn = widget.NewButton("Build", func() { s.a.Runner.SetMode("default") })
-	c.planBtn = widget.NewButton("Plan", func() { s.a.Runner.SetMode("plan") })
+	c.buildBtn = widget.NewButton("Build", func() { s.b.setMode("default") })
+	c.planBtn = widget.NewButton("Plan", func() { s.b.setMode("plan") })
 	c.buildBtn.Importance = widget.HighImportance
 	c.planBtn.Importance = widget.LowImportance
 
@@ -166,7 +166,7 @@ func (c *composer) setRunning(running bool) {
 		c.actionBtn.Importance = widget.MediumImportance
 		c.actionBtn.OnTapped = func() {
 			c.s.status.SetText("Stopping…")
-			c.s.a.Runner.Interrupt()
+			c.s.b.interrupt()
 		}
 	} else {
 		c.actionBtn.SetText("Send")

@@ -25,7 +25,7 @@ func newTestShell(t *testing.T) *shell {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := newShell(a, fyneApp, win, src)
+	sh, err := newShell(a, &localBackend{a: a}, a.Cfg, fyneApp, win, src)
 	if err != nil {
 		t.Fatal(err)
 	}

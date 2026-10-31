@@ -38,7 +38,12 @@ func (s *shell) showText(title, body string) {
 // showSettingsJSON is the advanced escape hatch: edit the whole config
 // document with the same validation as the form.
 func (s *shell) showSettingsJSON() {
-	b, err := json.MarshalIndent(s.a.Cfg, "", "  ")
+	doc, err := s.b.configDoc()
+	if err != nil {
+		s.addNotice("⚠ settings: " + err.Error())
+		return
+	}
+	b, err := json.MarshalIndent(json.RawMessage(doc), "", "  ")
 	if err != nil {
 		s.addNotice("⚠ settings: " + err.Error())
 		return
@@ -54,7 +59,7 @@ func (s *shell) showSettingsJSON() {
 			if !ok {
 				return
 			}
-			if err := s.a.SaveConfig(ed.Text); err != nil {
+			if err := s.b.saveConfig(ed.Text); err != nil {
 				s.addNotice("⚠ settings: " + err.Error())
 				return
 			}
@@ -77,6 +82,7 @@ func (s *shell) showCommands() {
 		"  /memory /skills /journey\n" +
 		"  /learn /improve /index\n" +
 		"Other\n" +
+		"  /backend            show/choose the backend (restart to switch)\n" +
 		"  /help /quit"
 	s.showText("Commands", body)
 }

@@ -13,6 +13,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/uidbz/anneal/core/improve"
+	"github.com/uidbz/anneal/core/paths"
 )
 
 const (
@@ -434,6 +437,17 @@ func (s *Server) methods() map[string]handler {
 	m["learn.now"] = func(json.RawMessage) (any, error) {
 		a.Review.LearnNow()
 		return nil, nil
+	}
+	m["improve.runs"] = func(params json.RawMessage) (any, error) {
+		var p pN
+		limit := 20
+		if len(params) > 0 && json.Unmarshal(params, &p) == nil && p.N > 0 {
+			limit = p.N
+		}
+		if l := improve.LoadRuns(paths.Improvements(), limit); l != nil {
+			return l, nil
+		}
+		return []any{}, nil
 	}
 	m["memory.view"] = func(json.RawMessage) (any, error) {
 		mem, _ := a.Mem.Read("memory")

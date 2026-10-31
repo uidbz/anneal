@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,6 +14,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	coreapp "github.com/uidbz/anneal/core/app"
+	"github.com/uidbz/anneal/core/config"
+	"github.com/uidbz/anneal/core/events"
 )
 
 // textScaleStep is the A-/A+ (Ctrl+= / Ctrl+-) increment for ui.text_scale.
@@ -49,26 +52,32 @@ func (v viewID) String() string {
 
 // shell owns the Go/Fyne UI state. All widget mutation happens on the Fyne
 // thread (via fyne.Do); the event consumer is a single ordered goroutine.
+// The core is reached through b (local App or remote anneald); a stays for
+// client-side concerns (local config/UI prefs) and is nil-safe in remote mode.
 type shell struct {
 	a   *coreapp.App
+	b   backend
+	cfg *config.Config // client config: UI prefs + backend registry (always local)
+	bus *events.Bus    // shell-side event stream (backend-forwarded + local notices)
 	app fyne.App
 	win fyne.Window
 
 	// Global status bar.
-	status     *themedText // run state: Ready/Running…/Improving…
-	runDot     *statusDot
-	usage      *themedText
-	elapsed    *themedText
-	modelChip  *chip
-	tieChip    *chip
-	mcpChip    *chip
-	improveBtn *widget.Button
-	clockStop  chan struct{}
-	runStarted time.Time
-	ctxWindow  int
-	mcpServers []map[string]any
-	tieShown   bool
-	mcpShown   bool
+	status      *themedText // run state: Ready/Running…/Improving…
+	runDot      *statusDot
+	usage       *themedText
+	elapsed     *themedText
+	modelChip   *chip
+	tieChip     *chip
+	mcpChip     *chip
+	backendChip *chip
+	improveBtn  *widget.Button
+	clockStop   chan struct{}
+	runStarted  time.Time
+	ctxWindow   int
+	mcpServers  []map[string]any
+	tieShown    bool
+	mcpShown    bool
 
 	// Navigation and frame.
 	frame     *chromeframe
@@ -125,19 +134,23 @@ type shell struct {
 	sessionID string
 }
 
-func newShell(a *coreapp.App, app fyne.App, win fyne.Window, paneSrc string) (*shell, error) {
+func newShell(a *coreapp.App, b backend, cfg *config.Config, app fyne.App, win fyne.Window, paneSrc string) (*shell, error) {
 	s := &shell{
 		a:          a,
+		b:          b,
+		cfg:        cfg,
+		bus:        events.New(),
 		app:        app,
 		win:        win,
 		permRows:   map[string]fyne.CanvasObject{},
-		mode:       a.Runner.Mode(),
+		mode:       b.mode(),
 		paneSrc:    paneSrc,
 		maxVisible: defaultVisibleBlocks,
 		navRail:    map[viewID]*railItem{},
 		views:      map[viewID]fyne.CanvasObject{},
 	}
-	applyTheme(app, a.Cfg.UI)
+	b.attach(s.bus)
+	applyTheme(app, cfg.UI)
 	win.SetPadded(false)
 	s.wireFrame()
 	if err := s.buildHarness(paneSrc); err != nil {
@@ -150,7 +163,7 @@ func newShell(a *coreapp.App, app fyne.App, win fyne.Window, paneSrc string) (*s
 
 func (s *shell) build() {
 	s.improveBtn = labeledButton("Improve", theme.MoveUpIcon(), s.improveNow)
-	if !s.a.Cfg.Improve.Enabled {
+	if !s.b.improveEnabled() {
 		s.improveBtn.Hide()
 	}
 
@@ -210,7 +223,7 @@ func (s *shell) wireFrame() {
 // harnessView is the Harness page: Go header, scripted pane underneath.
 func (s *shell) harnessView() fyne.CanvasObject {
 	refresh := iconButton(theme.ViewRefreshIcon(), func() {
-		s.a.Bus.Emit(map[string]any{"type": "harness.refresh"})
+		s.bus.Emit(map[string]any{"type": "harness.refresh"})
 	})
 	improve := labeledButton("Improve", theme.MoveUpIcon(), s.improveNow)
 	s.harnessHeader.setActions(refresh, improve)
@@ -252,22 +265,36 @@ func (s *shell) showView(v viewID) {
 }
 
 func (s *shell) toggleSidebar() {
-	open := !s.a.Cfg.UI.SidebarOpen
-	s.a.Cfg.UI.SidebarOpen = open
+	open := !s.cfg.UI.SidebarOpen
+	s.cfg.UI.SidebarOpen = open
 	s.frame.SetSidebar(open)
 	s.saveUIPrefs()
 }
 
 func (s *shell) toggleInspector() {
-	open := !s.a.Cfg.UI.InspectorOpen
-	s.a.Cfg.UI.InspectorOpen = open
+	open := !s.cfg.UI.InspectorOpen
+	s.cfg.UI.InspectorOpen = open
 	s.frame.SetInspector(open)
 	s.saveUIPrefs()
 }
 
+// configDraft decodes the backend's live config document into a Config for
+// the settings form (works for local and remote backends).
+func (s *shell) configDraft() (config.Config, error) {
+	doc, err := s.b.configDoc()
+	if err != nil {
+		return *config.Default(), err
+	}
+	var cfg config.Config
+	if err := json.Unmarshal([]byte(doc), &cfg); err != nil {
+		return *config.Default(), err
+	}
+	return cfg, nil
+}
+
 // saveUIPrefs persists panel visibility/width without emitting a notice.
 func (s *shell) saveUIPrefs() {
-	if err := s.a.Cfg.Save(); err != nil {
+	if err := s.cfg.Save(); err != nil {
 		s.addNotice("⚠ settings save: " + err.Error())
 	}
 }
@@ -275,7 +302,7 @@ func (s *shell) saveUIPrefs() {
 // showSessions focuses the chat view with the session list open.
 func (s *shell) showSessions() {
 	s.showView(viewChat)
-	if !s.a.Cfg.UI.SidebarOpen {
+	if !s.cfg.UI.SidebarOpen {
 		s.toggleSidebar()
 	}
 }
@@ -312,20 +339,14 @@ func (s *shell) setRunState(text string, dot fyne.ThemeColorName, alarm bool) {
 }
 
 // improveNow runs one harness-improvement pass (header button, Ctrl+I, and
-// /improve). Guards live in ImproveWith; failures arrive as improve.error.
+// /improve). The backend guards double starts; failures arrive as improve.error.
 func (s *shell) improveNow() {
 	s.addNotice("Harness improvement started")
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
-		defer cancel()
-		if _, err := s.a.Improve(ctx); err != nil {
-			s.a.Bus.Emit(map[string]any{"type": "improve.error", "error": err.Error()})
-		}
-	}()
+	s.b.improveStart()
 }
 
 func (s *shell) buildHarness(src string) error {
-	p, err := newScriptPane(s.win, src, harnessPaneCaps, s.a.Bus, s.a.HarnessAPI(), paneEvent)
+	p, err := newScriptPane(s.win, src, harnessPaneCaps, s.bus, s.b.paneAPI(), paneEvent)
 	if err != nil {
 		return fmt.Errorf("harness pane: %w", err)
 	}
@@ -341,18 +362,18 @@ func (s *shell) wireLayout() {
 	s.showView(viewChat)
 
 	s.frame = newChromeFrame(s.side.Object(), s.viewStack(),
-		s.inspector.Object(), float32(s.a.Cfg.UI.SidebarWidth), float32(s.a.Cfg.UI.InspectorWidth))
+		s.inspector.Object(), float32(s.cfg.UI.SidebarWidth), float32(s.cfg.UI.InspectorWidth))
 	s.frame.onPanelResize = func(sidebar bool, width float32) {
 		if sidebar {
-			s.a.Cfg.UI.SidebarWidth = float64(width)
+			s.cfg.UI.SidebarWidth = float64(width)
 		} else {
-			s.a.Cfg.UI.InspectorWidth = float64(width)
+			s.cfg.UI.InspectorWidth = float64(width)
 		}
 		s.saveUIPrefs()
 	}
 	s.frame.onWidth = func(w float32) { s.updateCompact() }
-	s.frame.SetSidebar(s.a.Cfg.UI.SidebarOpen)
-	s.frame.SetInspector(s.a.Cfg.UI.InspectorOpen)
+	s.frame.SetSidebar(s.cfg.UI.SidebarOpen)
+	s.frame.SetInspector(s.cfg.UI.InspectorOpen)
 
 	s.root = container.NewBorder(nil, s.statusbar, s.railObject(), nil, s.frame)
 	s.refreshActivity()
@@ -393,7 +414,7 @@ func (s *shell) railObject() fyne.CanvasObject {
 
 func (s *shell) start(ctx context.Context) {
 	events := make(chan any, 1024)
-	s.a.Bus.AddTap(func(v any) { events <- v })
+	s.bus.AddTap(func(v any) { events <- v })
 	go func() {
 		for v := range events {
 			ev := normalizeEvent(v)
@@ -401,11 +422,10 @@ func (s *shell) start(ctx context.Context) {
 		}
 	}()
 
-	// app.New resumed the session before the Go tap existed.
-	s.a.ReplayState()
-
 	s.harness.Execute()
-	s.a.Start(ctx)
+	// The backend replays the resumed session once the tap exists (no-op
+	// for remote: the server replays on connect).
+	s.b.start(ctx)
 	fyne.Do(func() { s.win.Canvas().Focus(s.entry) })
 	// Some Wayland compositors ignore pre-show resize hints and open at a
 	// smaller size, which would auto-collapse the panels. Re-apply the
@@ -442,7 +462,7 @@ func (s *shell) submit() {
 		return
 	}
 	s.addUser(text)
-	s.a.Runner.Send(text)
+	s.b.send(text)
 	s.win.Canvas().Focus(s.entry)
 	s.scroll.ScrollToBottom()
 }
@@ -452,8 +472,14 @@ func (s *shell) submit() {
 // config save makes it survive restart. The config.changed event appends the
 // user-facing notice.
 func (s *shell) setTextScale(scale float64) {
-	scale = s.a.SetTextScale(scale) // clamp + persist + config.changed
-	applyTheme(s.app, s.a.Cfg.UI.WithTextScale(scale))
+	scale = config.ClampTextScale(scale)
+	s.cfg.UI.TextScale = scale
+	out := map[string]any{"type": "config.changed", "text_scale": scale}
+	if err := s.cfg.Save(); err != nil {
+		out["error"] = err.Error()
+	}
+	s.bus.Emit(out)
+	applyTheme(s.app, s.cfg.UI.WithTextScale(scale))
 	s.updateCompact()
 }
 
@@ -461,7 +487,7 @@ func (s *shell) setTextScale(scale float64) {
 // window or the text is too large for everything to fit.
 func (s *shell) updateCompact() {
 	w := s.win.Canvas().Size().Width
-	compact := (w > 0 && w < 1000) || s.a.Cfg.UI.TextScale > 1.2
+	compact := (w > 0 && w < 1000) || s.cfg.UI.TextScale > 1.2
 	s.cmp.setCompact(compact)
 	if compact {
 		s.tieChip.Hide()
@@ -478,23 +504,23 @@ func (s *shell) updateCompact() {
 
 // nudgeTextScale steps the text size by delta (A-/A+ buttons, Ctrl+= / Ctrl+-).
 func (s *shell) nudgeTextScale(delta float64) {
-	s.setTextScale(s.a.Cfg.UI.TextScale + delta)
+	s.setTextScale(s.cfg.UI.TextScale + delta)
 }
 
 // setThemeMode applies and persists ui.theme (system/light/dark).
 func (s *shell) setThemeMode(mode string) {
-	s.a.Cfg.UI.Theme = normMode(mode)
-	applyTheme(s.app, s.a.Cfg.UI)
-	if err := s.a.Cfg.Save(); err != nil {
+	s.cfg.UI.Theme = normMode(mode)
+	applyTheme(s.app, s.cfg.UI)
+	if err := s.cfg.Save(); err != nil {
 		s.addNotice("⚠ theme save: " + err.Error())
 	}
-	s.addNotice("Theme: " + s.a.Cfg.UI.ThemeMode())
+	s.addNotice("Theme: " + s.cfg.UI.ThemeMode())
 }
 
 // reloadPane re-reads the pane script from disk (or the embedded copy),
 // recompiles it, and restarts the embedded runtime without touching the shell.
 func (s *shell) reloadPane() {
-	src, err := paneSource(s.a.Cfg.UI.PaneDir)
+	src, err := paneSource(s.cfg.UI.PaneDir)
 	if err != nil {
 		s.addNotice("⚠ pane reload: " + err.Error())
 		return
@@ -530,7 +556,7 @@ func (s *shell) setWindowTitle() {
 // refreshSessionMeta re-reads the current session's title (the runner sets it
 // after the first run) and refreshes the sidebar.
 func (s *shell) refreshSessionMeta() {
-	for _, info := range s.a.Runner.Sessions() {
+	for _, info := range s.b.sessions() {
 		if info.ID == s.sessionID {
 			s.title = info.Title
 			s.setWindowTitle()

@@ -28,7 +28,10 @@ func (s *shell) refreshActivity() {
 	s.activity.Add(newSectionLabel("JOURNEY"))
 	s.activity.Add(newThemedText("Newest last · memory, skills, reviews, and improvements", colorMuted))
 
-	entries := s.a.Journey.Tail(60)
+	entries, err := s.b.journeyTail(60)
+	if err != nil {
+		s.activity.Add(newThemedText("Journey unavailable: "+err.Error(), colorMuted))
+	}
 	if len(entries) == 0 {
 		s.activity.Add(newThemedText("Nothing yet — memory, skill, review, and improve events land here.", colorMuted))
 	}
@@ -38,7 +41,10 @@ func (s *shell) refreshActivity() {
 
 	s.activity.Add(vgap(spaceS))
 	s.activity.Add(newSectionLabel("IMPROVEMENT RUNS"))
-	runs := loadImprovementRuns(20)
+	runs, err := s.b.improvementRuns(20)
+	if err != nil {
+		s.activity.Add(newThemedText("Improvement records unavailable: "+err.Error(), colorMuted))
+	}
 	if len(runs) == 0 {
 		s.activity.Add(newThemedText("No runs yet — improvements are recorded under "+paths.Improvements(), colorMuted))
 	}

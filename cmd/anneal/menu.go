@@ -27,7 +27,7 @@ func (s *shell) installMenu() {
 	quit.IsQuit = true
 
 	file := fyne.NewMenu("File",
-		item("New session", shortcut(fyne.KeyN), func() { s.a.Runner.NewSession() }),
+		item("New session", shortcut(fyne.KeyN), func() { s.b.newSession() }),
 		item("Settings…", shortcut(fyne.KeyComma), s.showSettings),
 		fyne.NewMenuItemSeparator(),
 		quit,
@@ -52,15 +52,15 @@ func (s *shell) installMenu() {
 	session := fyne.NewMenu("Session",
 		item("Toggle plan/build mode", shortcut(fyne.KeyM), func() {
 			if s.mode == "plan" {
-				s.a.Runner.SetMode("default")
+				s.b.setMode("default")
 			} else {
-				s.a.Runner.SetMode("plan")
+				s.b.setMode("plan")
 			}
 		}),
-		item("Stop", shortcut(fyne.KeyD), func() { s.a.Runner.Interrupt() }),
+		item("Stop", shortcut(fyne.KeyD), func() { s.b.interrupt() }),
 		fyne.NewMenuItemSeparator(),
 		item("Improve harness", shortcut(fyne.KeyI), s.improveNow),
-		item("Learn now", nil, func() { s.a.Review.LearnNow(); s.addNotice("Learning pass queued") }),
+		item("Learn now", nil, func() { s.b.learnNow(); s.addNotice("Learning pass queued") }),
 		item("Rebuild search index", nil, func() { s.slash("/index") }),
 		fyne.NewMenuItemSeparator(),
 		item("Focus composer", shortcut(fyne.KeyL), func() { s.win.Canvas().Focus(s.entry) }),
@@ -96,9 +96,9 @@ func (s *shell) themeMenu() *fyne.MenuItem {
 func (s *shell) showOverflow() {
 	item := func(label string, fn func()) *fyne.MenuItem { return fyne.NewMenuItem(label, fn) }
 	menu := fyne.NewMenu("",
-		item("New session", func() { s.a.Runner.NewSession() }),
+		item("New session", func() { s.b.newSession() }),
 		item("Rebuild search index", func() { s.slash("/index") }),
-		item("Learn now", func() { s.a.Review.LearnNow(); s.addNotice("Learning pass queued") }),
+		item("Learn now", func() { s.b.learnNow(); s.addNotice("Learning pass queued") }),
 		fyne.NewMenuItemSeparator(),
 		item("Memory…", func() { s.slash("/memory") }),
 		item("Skills…", func() { s.slash("/skills") }),

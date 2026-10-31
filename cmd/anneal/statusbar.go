@@ -110,14 +110,16 @@ func (s *shell) buildStatusBar() fyne.CanvasObject {
 	s.modelChip = newChip(newStatusDot(), "model: connecting…", s.showSettings)
 	s.tieChip = newChip(newStatusDot(), "", s.confirmRebuildIndex)
 	s.mcpChip = newChip(newStatusDot(), "", s.showSettings)
+	s.backendChip = newChip(newStatusDot(), "", s.slashBackend)
 	s.tieChip.Hide()
 	s.mcpChip.Hide()
+	s.updateBackendChip()
 
 	s.usage = newThemedText("", colorMuted)
 	s.usage.size = theme.SizeNameCaptionText
 
 	right := container.New(&rowLayout{gap: spaceS},
-		s.modelChip, newVDividerSized(), s.tieChip, s.mcpChip, newVDividerSized(), s.usage)
+		s.modelChip, newVDividerSized(), s.backendChip, s.tieChip, s.mcpChip, newVDividerSized(), s.usage)
 
 	inner := container.NewBorder(nil, nil, left, right, nil)
 	return newSurface(colorRail,
@@ -130,6 +132,25 @@ func newVDividerSized() fyne.CanvasObject {
 	d.Resize(fyne.NewSize(1, statusBarH-10))
 	return container.New(&padLayout{l: spaceXS, r: spaceXS, t: 5, b: 5}, d)
 }
+
+// updateBackendChip shows which backend the shell is attached to: hidden for
+// the embedded core (local mode is the default, no news), shown for remote
+// anneald so the project boundary is always visible.
+func (s *shell) updateBackendChip() {
+	if s.backendChip == nil {
+		return
+	}
+	if !s.b.remote() {
+		s.backendChip.Hide()
+		return
+	}
+	s.backendChip.SetText("backend: " + trunc(s.b.describe(), 18))
+	s.backendChip.dot.setToken(colorOK)
+	s.backendChip.Show()
+}
+
+// slashBackend opens the /backend view from the chip.
+func (s *shell) slashBackend() { s.slash("/backend") }
 
 // confirmRebuildIndex asks before re-indexing every session into tie.
 func (s *shell) confirmRebuildIndex() {

@@ -16,6 +16,7 @@ import (
 	"github.com/uidbz/anneal/assets"
 	"github.com/uidbz/anneal/core/agent"
 	coreapp "github.com/uidbz/anneal/core/app"
+	"github.com/uidbz/anneal/core/config"
 )
 
 func main() {
@@ -26,15 +27,39 @@ func main() {
 	checkScriptUI := flag.Bool("check-script-ui", false, "compile the ANNEAL_UI_DIR scripted UI and exit")
 	sendTask := flag.String("send", "", "developer: auto-send this task after boot")
 	quitAfterRun := flag.Bool("quit-after-run", false, "developer: quit after the auto-sent run finishes")
+	serverAddr := flag.String("server", "", "attach to a remote anneald (host:port or unix:/path) instead of embedding the core")
+	token := flag.String("token", "", "auth token for -server (default: $ANNEAL_AUTH_TOKEN)")
 	flag.Parse()
+
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("anneal: %v", err)
+	}
+	if *serverAddr != "" {
+		cfg.UI.Backend = *serverAddr
+	}
+	tok := *token
+	if tok == "" {
+		tok = os.Getenv("ANNEAL_AUTH_TOKEN")
+	}
+
+	paneSrc, err := paneSource(cfg.UI.PaneDir)
+	if err != nil {
+		log.Fatalf("anneal: pane missing: %v", err)
+	}
+
+	// Remote mode: the GUI is a thin client over the wire protocol; no local
+	// core is constructed (one instance == one project, docs/USING.md).
+	if cfg.UI.Backend != "" {
+		if err := runRemote(cfg, paneSrc, tok, *sendTask, *quitAfterRun); err != nil {
+			log.Fatalf("anneal: %v", err)
+		}
+		return
+	}
 
 	a, err := coreapp.New()
 	if err != nil {
 		log.Fatalf("anneal: %v", err)
-	}
-	paneSrc, err := paneSource(a.Cfg.UI.PaneDir)
-	if err != nil {
-		log.Fatalf("anneal: pane missing: %v", err)
 	}
 	if *scriptUI || *checkScriptUI {
 		if err := runScriptUI(a, *checkScriptUI); err != nil {
@@ -70,7 +95,7 @@ func main() {
 
 	fyneApp := fyneapp.New()
 	win := fyneApp.NewWindow("Anneal")
-	sh, err := newShell(a, fyneApp, win, paneSrc)
+	sh, err := newShell(a, &localBackend{a: a}, a.Cfg, fyneApp, win, paneSrc)
 	if err != nil {
 		log.Fatalf("anneal: UI: %v", err)
 	}
@@ -83,6 +108,32 @@ func main() {
 	defer cancel()
 	sh.start(ctx)
 	win.ShowAndRun()
+}
+
+// runRemote boots the same shell against a remote anneald backend.
+func runRemote(cfg *config.Config, paneSrc, token, sendTask string, quitAfterRun bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	rb, err := dialRemote(ctx, "", cfg.UI.Backend, token)
+	if err != nil {
+		return fmt.Errorf("connect %s: %w", cfg.UI.Backend, err)
+	}
+	fyneApp := fyneapp.New()
+	win := fyneApp.NewWindow("Anneal")
+	sh, err := newShell(nil, rb, cfg, fyneApp, win, paneSrc)
+	if err != nil {
+		return fmt.Errorf("UI: %w", err)
+	}
+	sh.autoSend = sendTask
+	sh.autoQuit = quitAfterRun
+	win.SetContent(sh.root)
+	win.Resize(fyne.NewSize(1280, 800))
+
+	runCtx, stop := context.WithCancel(context.Background())
+	defer stop()
+	sh.start(runCtx)
+	win.ShowAndRun()
+	return nil
 }
 
 // paneSource prefers an on-disk pane script (config `ui.pane_dir`, then the

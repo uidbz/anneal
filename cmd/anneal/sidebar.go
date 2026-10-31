@@ -40,13 +40,13 @@ type sessionRow struct {
 
 func newSessionsSidebar(s *shell) *sessionsSidebar {
 	sb := &sessionsSidebar{s: s, now: time.Now,
-		load: func() []agent.SessionInfo { return s.a.Runner.Sessions() }}
+		load: func() []agent.SessionInfo { return s.b.sessions() }}
 
 	sb.filter = widget.NewEntry()
 	sb.filter.PlaceHolder = "Filter sessions"
 	sb.filter.OnChanged = func(string) { sb.refresh() }
 
-	newBtn := iconButton(theme.ContentAddIcon(), func() { s.a.Runner.NewSession() })
+	newBtn := iconButton(theme.ContentAddIcon(), func() { s.b.newSession() })
 
 	sb.count = newBadge("", colorRaised, colorMuted)
 	head := container.NewBorder(nil, nil,
@@ -72,7 +72,7 @@ func newSessionsSidebar(s *shell) *sessionsSidebar {
 		if row.heading != "" || row.info.ID == "" {
 			return
 		}
-		s.a.Runner.OpenSession(row.info.ID)
+		s.b.openSession(row.info.ID)
 	}
 
 	sb.empty = newThemedText("No sessions yet", colorMuted)
@@ -266,7 +266,7 @@ func (it *sessionRowItem) Tapped(*fyne.PointEvent) {
 	if it.row.heading != "" || it.row.info.ID == "" {
 		return
 	}
-	it.sb.s.a.Runner.OpenSession(it.row.info.ID)
+	it.sb.s.b.openSession(it.row.info.ID)
 }
 
 func (it *sessionRowItem) CreateRenderer() fyne.WidgetRenderer {

@@ -2,16 +2,12 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-
-	"github.com/uidbz/anneal/core/paths"
 )
 
 // inspectorPanel is the right-hand column: tasks, context usage, and session
@@ -75,7 +71,7 @@ func newInspectorPanel(s *shell) *inspectorPanel {
 	idRow := container.NewBorder(nil, nil, nil, copyBtn, p.sessID)
 
 	cwdCopy := iconButton(theme.ContentCopyIcon(), func() {
-		s.win.Clipboard().SetContent(s.a.Runner.Cwd())
+		s.win.Clipboard().SetContent(s.b.cwd())
 		s.notice(noticeSuccess, "Working directory copied.")
 	})
 	cwdCopy.Importance = widget.LowImportance
@@ -116,7 +112,7 @@ func (p *inspectorPanel) refresh() {
 		p.ctxComp.SetText("")
 	}
 	p.sessID.SetText(shortSessionID(p.s.sessionID))
-	p.sessCwd.SetText(shortPath(p.s.a.Runner.Cwd(), 34))
+	p.sessCwd.SetText(shortPath(p.s.b.cwd(), 34))
 	p.sessMode.SetText(modeLabel(p.s.mode))
 	p.harness.SetText(harnessLabel(p.s))
 	p.object.Refresh()
@@ -152,13 +148,13 @@ func modeLabel(mode string) string {
 }
 
 // harnessLabel reports whether this session runs the base harness or an
-// improvement successor overlay.
+// improvement successor overlay (asked of the backend, so it is correct for
+// remote backends too).
 func harnessLabel(s *shell) string {
 	if s.sessionID == "" {
 		return "Harness: base"
 	}
-	dir := filepath.Join(paths.Overlays(), s.sessionID)
-	if _, err := os.Stat(dir); err == nil {
+	if s.b.harnessOverlay() {
 		return "Harness: improvement overlay"
 	}
 	return "Harness: base"

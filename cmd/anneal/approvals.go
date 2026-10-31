@@ -43,12 +43,12 @@ func (s *shell) addPerm(e map[string]any) {
 	s.addApprovalCard(pendingApproval{
 		id:     id,
 		kind:   "permission",
-		allow:  func() { s.a.Runner.RespondPerm(id, "allow") },
-		reject: func() { s.a.Runner.RespondPerm(id, "deny") },
+		allow:  func() { s.b.respondPerm(id, "allow") },
+		reject: func() { s.b.respondPerm(id, "deny") },
 	}, title, str(e["message"]), detail, grant,
-		approvalButton("Reject", widget.LowImportance, func() { s.a.Runner.RespondPerm(id, "deny") }),
-		approvalButton("Always allow", widget.MediumImportance, func() { s.a.Runner.RespondPerm(id, "session") }),
-		approvalButton("Allow once", widget.HighImportance, func() { s.a.Runner.RespondPerm(id, "allow") }),
+		approvalButton("Reject", widget.LowImportance, func() { s.b.respondPerm(id, "deny") }),
+		approvalButton("Always allow", widget.MediumImportance, func() { s.b.respondPerm(id, "session") }),
+		approvalButton("Allow once", widget.HighImportance, func() { s.b.respondPerm(id, "allow") }),
 	)
 }
 
@@ -60,11 +60,11 @@ func (s *shell) addMemoryCard(e map[string]any) {
 	s.addApprovalCard(pendingApproval{
 		id:     id,
 		kind:   "memory",
-		allow:  func() { s.a.RespondMemory(id, "approve") },
-		reject: func() { s.a.RespondMemory(id, "reject") },
+		allow:  func() { s.b.respondMemory(id, "approve") },
+		reject: func() { s.b.respondMemory(id, "reject") },
 	}, title, "Proposed by "+str(op["source"]), memoryOpText(op), "",
-		approvalButton("Reject", widget.LowImportance, func() { s.a.RespondMemory(id, "reject") }),
-		approvalButton("Approve", widget.HighImportance, func() { s.a.RespondMemory(id, "approve") }),
+		approvalButton("Reject", widget.LowImportance, func() { s.b.respondMemory(id, "reject") }),
+		approvalButton("Approve", widget.HighImportance, func() { s.b.respondMemory(id, "approve") }),
 	)
 }
 
@@ -76,11 +76,11 @@ func (s *shell) addSkillCard(e map[string]any) {
 	s.addApprovalCard(pendingApproval{
 		id:     id,
 		kind:   "skill",
-		allow:  func() { s.a.RespondSkill(id, "approve") },
-		reject: func() { s.a.RespondSkill(id, "reject") },
+		allow:  func() { s.b.respondSkill(id, "approve") },
+		reject: func() { s.b.respondSkill(id, "reject") },
 	}, title, "Proposed by "+str(op["source"]), oneLine(str(e["preview"])), "",
-		approvalButton("Reject", widget.LowImportance, func() { s.a.RespondSkill(id, "reject") }),
-		approvalButton("Approve", widget.HighImportance, func() { s.a.RespondSkill(id, "approve") }),
+		approvalButton("Reject", widget.LowImportance, func() { s.b.respondSkill(id, "reject") }),
+		approvalButton("Approve", widget.HighImportance, func() { s.b.respondSkill(id, "approve") }),
 	)
 }
 

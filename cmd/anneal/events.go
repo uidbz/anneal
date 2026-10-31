@@ -292,7 +292,12 @@ func (s *shell) handleEvent(e map[string]any) {
 	case "config.changed":
 		// Covers edits from the settings dialog, scripts (agent.saveConfig),
 		// and theme/text-size changes; re-applying the theme is idempotent.
-		applyTheme(s.app, s.a.Cfg.UI)
+		// Local mode: the core's config is authoritative (shared file), so
+		// point the client copy at it. Remote: s.cfg stays client-only.
+		if !s.b.remote() && s.a != nil {
+			s.cfg = s.a.Cfg
+		}
+		applyTheme(s.app, s.cfg.UI)
 		if s.settingsForm != nil {
 			s.settingsForm.onExternalChange(e)
 		}
@@ -306,6 +311,16 @@ func (s *shell) handleEvent(e map[string]any) {
 		}
 	case "skill.error":
 		s.notice(noticeWarn, "Skill loader: "+str(e["error"]))
+	case "backend.disconnected":
+		s.setRunState("Backend offline", colorErr, true)
+		if s.backendChip != nil {
+			s.backendChip.dot.setToken(colorErr)
+			s.backendChip.Refresh()
+		}
+		s.addNotice("⚠ disconnected from backend " + str(e["backend"]) +
+			" — restart anneal to reconnect")
+	case "server.shutting_down":
+		s.notice(noticeWarn, "Backend shutting down ("+str(e["reason"])+")")
 	case "tie.rebuilt":
 		if str(e["error"]) != "" {
 			s.notice(noticeWarn, "Index rebuild: "+str(e["error"]))

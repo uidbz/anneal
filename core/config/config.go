@@ -104,14 +104,26 @@ type MCP struct {
 }
 
 type UI struct {
-	UIDir          string  `json:"ui_dir"`          // full-window script UI override (ANNEAL_UI_DIR)
-	PaneDir        string  `json:"pane_dir"`        // scripted-pane override
-	TextScale      float64 `json:"text_scale"`      // UI text size multiplier (0.6–2.5)
-	Theme          string  `json:"theme"`           // system (default) | light | dark
-	SidebarOpen    bool    `json:"sidebar_open"`    // sessions sidebar visible
-	InspectorOpen  bool    `json:"inspector_open"`  // tasks/context inspector visible
-	SidebarWidth   float64 `json:"sidebar_width"`   // px, clamped by the shell
-	InspectorWidth float64 `json:"inspector_width"` // px, clamped by the shell
+	UIDir          string    `json:"ui_dir"`          // full-window script UI override (ANNEAL_UI_DIR)
+	PaneDir        string    `json:"pane_dir"`        // scripted-pane override
+	TextScale      float64   `json:"text_scale"`      // UI text size multiplier (0.6–2.5)
+	Theme          string    `json:"theme"`           // system (default) | light | dark
+	SidebarOpen    bool      `json:"sidebar_open"`    // sessions sidebar visible
+	InspectorOpen  bool      `json:"inspector_open"`  // tasks/context inspector visible
+	SidebarWidth   float64   `json:"sidebar_width"`   // px, clamped by the shell
+	InspectorWidth float64   `json:"inspector_width"` // px, clamped by the shell
+	Backend        string    `json:"backend"`         // active backend addr ("" = embedded core)
+	Backends       []Backend `json:"backends"`        // named backend registry (GUI switcher)
+}
+
+// Backend names an anneal backend the GUI can attach to. Addr "" (or the
+// name "local") means the embedded core; otherwise host:port or unix:/path.
+// TokenEnv names the env var holding the hello-frame token (default
+// ANNEAL_AUTH_TOKEN).
+type Backend struct {
+	Name     string `json:"name"`
+	Addr     string `json:"addr"`
+	TokenEnv string `json:"token_env"`
 }
 
 // ThemeMode returns the normalized UI theme mode: system, light, or dark.

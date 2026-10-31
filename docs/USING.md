@@ -76,6 +76,7 @@ small IDE.
 | `/plan`, `/build` | permission mode |
 | `/textsize [120%\|+10%\|1.2\|reset]` | show/change the UI text size |
 | `/cwd`, `/pwd` | show the agent's working directory (also in the inspector) |
+| `/backend [name\|addr]` | show the attached backend / choose it for the next launch |
 | `/skills` | list installed skills |
 | `/memory` | show MEMORY.md / USER.md with usage vs caps |
 | `/journey` | self-improvement timeline |
@@ -108,6 +109,73 @@ small IDE.
 
 For UI smoke tests without typing, `anneal -send "task" -quit-after-run` fills
 the composer, submits it, and exits after the run finishes.
+
+## Deployment & tenancy (recommended usage pattern)
+
+Anneal's unit of isolation is the **instance**: one backend process == one
+environment == one project (or one user's workspace). Scoping is achieved by
+*which instance/mount you connect to*, never by switching projects inside a
+running backend. There is deliberately no `/cd`: the permission jail, saved
+grants, project skills, and audit trail are all anchored to the instance's
+work dir, and moving them at runtime would weaken the isolation that makes
+the container model safe.
+
+Three tiers, simplest first:
+
+1. **Local, single project** — run `anneal` from the project directory. The
+   core is embedded in the GUI process; state lives in `~/.anneal`. Fine for
+   solo work on one project at a time.
+2. **Container per scope (the main way)** — one bind mount + one `anneald`
+   container per project/user (see [CONTAINERS.md](CONTAINERS.md)). Idle
+   auto-shutdown (`ANNEAL_IDLE_TIMEOUT_S`) makes each instance near-free;
+   history persists in the mount. Switching projects = starting/attaching a
+   different instance.
+3. **One frontend, many backends** — the GUI can attach to a remote
+   `anneald` instead of embedding a core:
+
+   ```sh
+   anneal -server 127.0.0.1:7777            # ANNEAL_AUTH_TOKEN in env
+   anneal -server unix:/anneal/state/anneal.sock
+   ```
+
+   Everything (sessions, permissions, harness, learning loop) then lives on
+   the backend; the GUI is a thin client over the same wire protocol the
+   headless CLI uses. Register several backends in `config.json` under
+   `ui.backends` and switch between them with the status-bar backend chip or
+   `/backend`:
+
+   ```json
+   "ui": {
+     "backends": [
+       {"name": "local"},
+       {"name": "proj-a", "addr": "127.0.0.1:7777", "token_env": "ANNEAL_AUTH_TOKEN"},
+       {"name": "proj-b", "addr": "unix:/home/me/anneal-env/b/state/anneal.sock"}
+     ]
+   }
+   ```
+
+   `"name": "local"` means the embedded core. The inspector shows the
+   connected backend's work dir, so you always know which project you are
+   touching.
+
+**Project-switch recipe (containers):** keep one env directory per project
+(`~/anneal-env/<proj>/{state,work}`) and a launcher:
+
+```sh
+anneal-up() {
+  local proj=$1
+  docker run -d --rm --name "anneal-$proj" \
+    -e ANNEAL_AUTH_TOKEN="$(cat ~/anneal-env/$proj/token)" \
+    -e ANNEAL_LISTEN=127.0.0.1:7777 \
+    -e ANNEAL_IDLE_TIMEOUT_S=900 \
+    -v "$HOME/anneal-env/$proj:/anneal" \
+    -p 127.0.0.1:7777:7777 anneal:dev
+}
+```
+
+…then `anneal -server 127.0.0.1:7777` (or switch backends in the GUI). One
+host port per running instance; idle containers exit themselves, so several
+projects can share a port over time.
 
 ## Headless (`anneal-headless`)
 

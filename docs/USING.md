@@ -7,9 +7,11 @@
 2. (Optional) start the tie triplestore and make sure `~/.config/tie/config.toml`
    points at it — session search + cross-session recall need it; everything
    else runs without it.
-3. `./bin/anneal` (or `anneal` after `make install`) — the header shows model
-   health, the tie index state, and MCP server status. `make install` also adds
-   an `Anneal` desktop launcher through the XDG applications directory.
+3. `anneal -C /path/to/project` (or plain `anneal` from the project directory)
+   — the header shows model health, the tie index state, and MCP server status.
+   `make install` also adds an `Anneal` desktop launcher through the XDG
+   applications directory; from the launcher use **File ▸ Open project…** so
+   the instance does not start in your home directory.
 
 Config resolution: `~/.anneal/config.json` (created with defaults on first
 run) → env overrides (see `docs/CONFIG.md`). The Settings view edits the
@@ -191,6 +193,13 @@ running backend. There is deliberately no `/cd`: the permission jail, saved
 grants, project skills, and audit trail are all anchored to the instance's
 work dir, and moving them at runtime would weaken the isolation that makes
 the container model safe.
+
+**"One backend per project" does not mean one project at a time.** Run as many
+instances as you need side by side — one window or terminal per project — and
+switch between them instead of switching projects inside one. When a task in
+project A needs a change in project B, either approve outside-project access
+from A or hand the work to B's instance; both patterns, with recipes and
+trade-offs, are in **[PROJECTS.md](PROJECTS.md)**.
 
 Three tiers, simplest first:
 

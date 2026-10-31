@@ -32,8 +32,10 @@ decoupling, and the shell was redesigned into a professional IDE-style layout
 | | |
 |---|---|
 | Streaming chat with tool calls | dive toolkit: Read/Write/Edit/Bash/Glob/Grep/WebFetch + todo |
-| Sessions | JSONL truth under `~/.anneal/sessions`, replay, resume-at-boot |
-| Permissions | OpenCode-style allow/ask/deny rules (last match wins, wildcards), approval inbox (once / always / reject), saved project grants, plan/build modes |
+| Sessions | JSONL truth under `~/.anneal/sessions`, replay, resume-per-project at boot |
+| Message queue | type while a task runs: queued (visible tray + delivery state), auto-started after a clean run, paused after stop |
+| Permissions | OpenCode-style allow/ask/deny rules (last match wins, wildcards), read-only Bash allowlist, approval inbox (once / session / always / reject), saved project grants with a Settings manager, plan/build modes |
+| Turn budget | active-time budget that excludes approval waits, checkpoint warning at 80 %, hand-off summary at 100 %, Continue for interrupted turns |
 | Cross-session recall | `session_search` over the tie index (word tokens, AND, newest-first) |
 | Memory | `MEMORY.md`/`USER.md` with caps, dup-guard, injection scan, optional write approval |
 | Skills | SKILL.md authoring (`skill_manage`), auto-discovery via dive skill loader, staging |
@@ -83,6 +85,7 @@ hicolor icon under `$PREFIX/share/icons/hicolor/scalable/apps`.
 
 ```sh
 ./bin/anneal                       # hybrid Go shell + scripted harness pane
+./bin/anneal -C ~/src/project      # run the instance in another project
 ./bin/anneal-headless -p "…"       # one-shot task, exit 0/1
 ./bin/anneal-headless -i           # REPL
 ./bin/anneald                      # backend server (docs/PROTOCOL.md)
@@ -106,6 +109,7 @@ disabled (`index: offline`); Strata cold ⇒ health status and auto-reconnect.
 | doc | contents |
 |-----|----------|
 | [docs/USING.md](docs/USING.md) | GUI tour, slash commands, shortcuts, headless CLI, learning-loop operations |
+| [docs/PROJECTS.md](docs/PROJECTS.md) | one instance per project: running several side by side, shared vs separate state, and what to do when one project needs a change in another |
 | [docs/CONFIG.md](docs/CONFIG.md) | every config key, defaults, env overrides, state dir layout |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | packages, hybrid UI/threading rules, event table, permission/learning/MCP design |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | anneald wire protocol (normative) |

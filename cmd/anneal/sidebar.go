@@ -27,8 +27,14 @@ type sessionsSidebar struct {
 	empty *themedText
 	rows  []sessionRow
 	infos []agent.SessionInfo
-	now   func() time.Time // injectable clock for tests
-	load  func() []agent.SessionInfo
+	scope *widget.Button
+
+	// projectOnly limits the list to this instance's project (sessions
+	// record their cwd; legacy sessions without one are shown everywhere).
+	projectOnly bool
+
+	now  func() time.Time // injectable clock for tests
+	load func() []agent.SessionInfo
 }
 
 // sessionRow is either a group heading or a session entry in the flat list.
@@ -39,7 +45,7 @@ type sessionRow struct {
 }
 
 func newSessionsSidebar(s *shell) *sessionsSidebar {
-	sb := &sessionsSidebar{s: s, now: time.Now,
+	sb := &sessionsSidebar{s: s, now: time.Now, projectOnly: true,
 		load: func() []agent.SessionInfo { return s.b.sessions() }}
 
 	sb.filter = widget.NewEntry()
@@ -51,8 +57,21 @@ func newSessionsSidebar(s *shell) *sessionsSidebar {
 	newBtn := iconButton(theme.ContentAddIcon(), func() { s.b.newSession() })
 
 	sb.count = newBadge("", colorRaised, colorMuted)
+	sb.scope = widget.NewButton("This project", nil)
+	sb.scope.Importance = widget.LowImportance
+	sb.scope.OnTapped = func() {
+		sb.projectOnly = !sb.projectOnly
+		if sb.projectOnly {
+			sb.scope.SetText("This project")
+		} else {
+			sb.scope.SetText("All sessions")
+		}
+		sb.scope.Refresh()
+		sb.apply(sb.infos)
+	}
 	head := container.NewBorder(nil, nil,
-		container.New(&rowLayout{gap: spaceS}, newSectionLabel("SESSIONS"), sb.count), newBtn, nil)
+		container.New(&rowLayout{gap: spaceS}, newSectionLabel("SESSIONS"), sb.count),
+		container.New(&rowLayout{gap: spaceXS}, sb.scope, newBtn), nil)
 
 	sb.list = widget.NewList(
 		func() int { return len(sb.rows) },
@@ -98,9 +117,21 @@ func (sb *sessionsSidebar) refresh() {
 
 // apply rebuilds the rows from an already loaded list.
 func (sb *sessionsSidebar) apply(infos []agent.SessionInfo) {
+	// Filter a copy: the cache is also used by the unfiltered view.
+	visible := append([]agent.SessionInfo(nil), infos...)
+	if sb.projectOnly {
+		cwd := sb.s.b.cwd()
+		kept := visible[:0]
+		for _, info := range visible {
+			if info.Cwd == "" || info.Cwd == cwd {
+				kept = append(kept, info)
+			}
+		}
+		visible = kept
+	}
 	query := strings.ToLower(strings.TrimSpace(sb.filter.Text))
 	now := sb.now()
-	rows := groupSessions(sb.infos, now)
+	rows := groupSessions(visible, now)
 	if query != "" {
 		filtered := rows[:0]
 		for _, r := range rows {
@@ -115,7 +146,7 @@ func (sb *sessionsSidebar) apply(infos []agent.SessionInfo) {
 		rows = filtered
 	}
 	sb.rows = rows
-	sb.count.SetText(fmt.Sprintf("%d", len(infos)))
+	sb.count.SetText(fmt.Sprintf("%d", len(visible)))
 	sb.empty.Hide()
 	if len(rows) == 0 {
 		sb.empty.Show()

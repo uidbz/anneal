@@ -31,7 +31,17 @@ func main() {
 	quitAfterRun := flag.Bool("quit-after-run", false, "developer: quit after the auto-sent run finishes")
 	serverAddr := flag.String("server", "", "attach to a remote anneald (host:port or unix:/path) instead of embedding the core")
 	token := flag.String("token", "", "auth token for -server (default: $ANNEAL_AUTH_TOKEN)")
+	workDir := flag.String("C", "", "project directory to work in (same meaning as anneald -work)")
+	workAlias := flag.String("work", "", "alias for -C")
 	flag.Parse()
+
+	// The instance's project is its working directory; chdir before the core
+	// is built so permissions, skills, MCP and tie all see the right root.
+	if dir := firstNonEmpty(*workDir, *workAlias); dir != "" {
+		if err := os.Chdir(dir); err != nil {
+			log.Fatalf("anneal: -C %s: %v", dir, err)
+		}
+	}
 
 	// Developer profiling: ANNEAL_PPROF=127.0.0.1:6060 exposes net/http/pprof.
 	// Off by default; the endpoint is plain HTTP with no auth, so bind loopback.
@@ -150,6 +160,15 @@ func runRemote(cfg *config.Config, paneSrc, token, sendTask string, quitAfterRun
 // paneSource prefers an on-disk pane script (config `ui.pane_dir`, then the
 // full script-UI dir for co-located development) and falls back to the
 // embedded copy.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func paneSource(configDir string) (string, error) {
 	dirs := []string{
 		configDir,

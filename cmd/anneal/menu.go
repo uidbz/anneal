@@ -28,6 +28,7 @@ func (s *shell) installMenu() {
 
 	file := fyne.NewMenu("File",
 		item("New session", shortcut(fyne.KeyN), func() { s.b.newSession() }),
+		item("Open project…", nil, s.chooseProject),
 		item("Settings…", shortcut(fyne.KeyComma), s.showSettings),
 		fyne.NewMenuItemSeparator(),
 		quit,
@@ -58,6 +59,7 @@ func (s *shell) installMenu() {
 			}
 		}),
 		item("Stop", shortcut(fyne.KeyD), func() { s.b.interrupt() }),
+		item("Continue stopped turn", nil, func() { s.b.continueRun() }),
 		fyne.NewMenuItemSeparator(),
 		item("Improve harness", shortcut(fyne.KeyI), s.improveNow),
 		item("Learn now", nil, func() { s.b.learnNow(); s.addNotice("Learning pass queued") }),
@@ -97,6 +99,7 @@ func (s *shell) showOverflow() {
 	item := func(label string, fn func()) *fyne.MenuItem { return fyne.NewMenuItem(label, fn) }
 	menu := fyne.NewMenu("",
 		item("New session", func() { s.b.newSession() }),
+		item("Open project…", s.chooseProject),
 		item("Rebuild search index", func() { s.slash("/index") }),
 		item("Learn now", func() { s.b.learnNow(); s.addNotice("Learning pass queued") }),
 		fyne.NewMenuItemSeparator(),

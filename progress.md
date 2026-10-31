@@ -51,6 +51,25 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-11-01 — multi-project workflow (Phase 9)
+- `anneal -C <dir>` / `-work` (parity with anneald): chdir before the core is
+  built, so jail, skills, MCP and tie see the project root.
+- Home-directory guard: starting in `$HOME` or `/` shows a "Working in your
+  home directory" card with **Choose project…** (restarts in the picked dir);
+  File ▸ Open project… too.
+- Project identity everywhere: window title, `project:` status chip (local and
+  remote), inspector CWD.
+- Sessions record their cwd; boot resumes the newest session **for this
+  project** (legacy sessions without cwd still resume), and the sidebar has a
+  This project / All sessions toggle.
+- Config saves and permission grants take an inter-process file lock, so two
+  local windows sharing `~/.anneal` cannot corrupt permissions.json.
+- New docs/PROJECTS.md: one instance per project is isolation, not
+  one-at-a-time; setup matrix; recipes (local windows, per-project
+  ANNEAL_HOME, per-project anneald, containers); and the cross-project
+  patterns (approved outside-project edit, hand-off with HANDOFF.md, scripted
+  hand-off, workspace-as-project) with caveats. USING/CONTAINERS/README link it.
+
 ### 2026-11-01 — gortex untracked-cwd handling (issue #13, Phase 8)
 - Boot detection via `gortex repos --json`: when the working directory is not
   tracked, gortex tools are omitted for that project (fewer prompt tokens, no

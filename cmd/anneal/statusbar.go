@@ -108,6 +108,9 @@ func (s *shell) buildStatusBar() fyne.CanvasObject {
 	left := container.New(&rowLayout{gap: spaceS}, s.runDot, s.status, s.elapsed)
 
 	s.modelChip = newChip(newStatusDot(), "model: connecting…", s.showSettings)
+	s.projectChip = newChip(newStatusDot(), "", func() { s.slash("/cwd") })
+	s.projectChip.dot.setToken(theme.ColorNamePrimary)
+	s.updateProjectChip()
 	s.tieChip = newChip(newStatusDot(), "", s.confirmRebuildIndex)
 	s.mcpChip = newChip(newStatusDot(), "", s.showSettings)
 	s.backendChip = newChip(newStatusDot(), "", s.slashBackend)
@@ -119,7 +122,8 @@ func (s *shell) buildStatusBar() fyne.CanvasObject {
 	s.usage.size = theme.SizeNameCaptionText
 
 	right := container.New(&rowLayout{gap: spaceS},
-		s.modelChip, newVDividerSized(), s.backendChip, s.tieChip, s.mcpChip, newVDividerSized(), s.usage)
+		s.projectChip, newVDividerSized(), s.modelChip, newVDividerSized(),
+		s.backendChip, s.tieChip, s.mcpChip, newVDividerSized(), s.usage)
 
 	inner := container.NewBorder(nil, nil, left, right, nil)
 	return newSurface(colorRail,
@@ -131,6 +135,22 @@ func newVDividerSized() fyne.CanvasObject {
 	d := newVDivider()
 	d.Resize(fyne.NewSize(1, statusBarH-10))
 	return container.New(&padLayout{l: spaceXS, r: spaceXS, t: 5, b: 5}, d)
+}
+
+// updateProjectChip always shows the current project (the instance's working
+// directory), local or remote: with several windows open this is the only
+// always-visible answer to "which project is this?".
+func (s *shell) updateProjectChip() {
+	if s.projectChip == nil {
+		return
+	}
+	base := previewBase(s.b.cwd())
+	if base == "" {
+		s.projectChip.Hide()
+		return
+	}
+	s.projectChip.SetText("project: " + trunc(base, 20))
+	s.projectChip.Show()
 }
 
 // updateBackendChip shows which backend the shell is attached to: hidden for

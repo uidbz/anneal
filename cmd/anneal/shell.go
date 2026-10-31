@@ -68,6 +68,7 @@ type shell struct {
 	usage       *themedText
 	elapsed     *themedText
 	modelChip   *chip
+	projectChip *chip
 	tieChip     *chip
 	mcpChip     *chip
 	backendChip *chip
@@ -481,6 +482,11 @@ func (s *shell) start(ctx context.Context) {
 	// The backend replays the resumed session once the tap exists (no-op
 	// for remote: the server replays on connect).
 	s.b.start(ctx)
+	// The home-directory warning must come after the resumed transcript (a
+	// session.opened replay resets the chat), and only for a local core.
+	time.AfterFunc(300*time.Millisecond, func() {
+		fyne.Do(func() { s.showHomeDirNotice() })
+	})
 	fyne.Do(func() { s.win.Canvas().Focus(s.entry) })
 	// Some Wayland compositors ignore pre-show resize hints and open at a
 	// smaller size, which would auto-collapse the panels. Re-apply the
@@ -632,13 +638,31 @@ func modeBadge(mode string) (string, fyne.ThemeColorName, fyne.ThemeColorName) {
 
 // setWindowTitle reflects the session title in the OS window title.
 func (s *shell) setWindowTitle() {
+	// The project is part of the window title so several instances (one per
+	// project) are distinguishable in the task bar.
+	prefix := "Anneal"
+	if project := previewBase(s.b.cwd()); project != "" {
+		prefix += " — " + project
+	}
 	if s.title == "" {
-		s.win.SetTitle("Anneal")
+		s.win.SetTitle(prefix)
 		s.header.setTitle("New session")
 		return
 	}
-	s.win.SetTitle("Anneal — " + s.title)
+	s.win.SetTitle(prefix + " — " + s.title)
 	s.header.setTitle(trunc(s.title, 80))
+}
+
+// previewBase is the last path element ("" for an empty path).
+func previewBase(path string) string {
+	path = strings.TrimRight(path, "/")
+	if path == "" {
+		return ""
+	}
+	if i := strings.LastIndexByte(path, '/'); i >= 0 {
+		return path[i+1:]
+	}
+	return path
 }
 
 // refreshSessionMeta re-reads the current session's title (the runner sets it

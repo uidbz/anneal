@@ -34,9 +34,29 @@ func (r *Runner) initStore() error {
 	r.store = store
 
 	ctx := context.Background()
+	// Resume the newest session that belongs to this project. One state dir
+	// can hold several projects' sessions; resuming another project's
+	// conversation would silently mix jails. Legacy sessions without cwd are
+	// a fallback so an upgrade does not look like data loss.
 	id := ""
-	if res, err := store.List(ctx, &session.ListOptions{Limit: 1}); err == nil && len(res.Sessions) > 0 {
-		id = res.Sessions[0].ID
+	fallback := ""
+	if res, err := store.List(ctx, nil); err == nil {
+		for _, s := range res.Sessions {
+			cwd := ""
+			if s.Metadata != nil {
+				cwd, _ = s.Metadata["cwd"].(string)
+			}
+			if cwd == "" && fallback == "" {
+				fallback = s.ID
+			}
+			if cwd == r.cwd {
+				id = s.ID
+				break
+			}
+		}
+	}
+	if id == "" {
+		id = fallback
 	}
 	if id == "" {
 		id = newSessionID()
@@ -47,6 +67,11 @@ func (r *Runner) initStore() error {
 	}
 	r.sess, r.sessID = sess, id
 	r.restoreTodos(sess)
+	// Record the project so the next boot can resume the right session.
+	if md := sess.Metadata(); md == nil || md["cwd"] == nil {
+		sess.SetMetadata("cwd", r.cwd)
+		_ = store.Put(ctx, sess)
+	}
 	return nil
 }
 
@@ -79,6 +104,9 @@ type SessionInfo struct {
 	Title   string `json:"title"`
 	Updated string `json:"updated"`
 	Events  int    `json:"events"`
+	// Cwd is the project directory the session was created in ("" for
+	// sessions recorded before this was tracked).
+	Cwd string `json:"cwd,omitempty"`
 }
 
 // Sessions lists sessions (newest first) for UI code. FileStore.List parses
@@ -100,11 +128,16 @@ func (r *Runner) Sessions() []SessionInfo {
 	}
 	out := make([]SessionInfo, 0, len(res.Sessions))
 	for _, s := range res.Sessions {
+		cwd := ""
+		if s.Metadata != nil {
+			cwd, _ = s.Metadata["cwd"].(string)
+		}
 		out = append(out, SessionInfo{
 			ID:      s.ID,
 			Title:   s.Title,
 			Updated: s.UpdatedAt.Format("2006-01-02 15:04"),
 			Events:  s.EventCount,
+			Cwd:     cwd,
 		})
 	}
 	r.sessMu.Lock()
@@ -142,6 +175,8 @@ func (r *Runner) NewSession() {
 		r.emit(map[string]any{"type": "session.error", "id": id, "error": err.Error()})
 		return
 	}
+	sess.SetMetadata("cwd", r.cwd)
+	_ = r.store.Put(context.Background(), sess)
 	// Queued messages belong to the session that was active when typed.
 	r.ClearQueue()
 	r.mu.Lock()

@@ -458,6 +458,9 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string, co
 	r.mu.Lock()
 	sess := r.sess
 	r.mu.Unlock()
+	if sess.Metadata() == nil || sess.Metadata()["cwd"] == nil {
+		sess.SetMetadata("cwd", r.cwd)
+	}
 	if !cont && sess.Title() == "" {
 		sess.SetTitle(clip(input, 60))
 	}

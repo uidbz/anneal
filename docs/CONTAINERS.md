@@ -16,6 +16,12 @@ per project/user with its own mount and `docker run` flags, and each gets a
 fully independent config, session history, and permission grants. Idle
 auto-shutdown keeps the cost of that near zero.
 
+Several containers run **at the same time**, one per project: give each a
+distinct host port (`-p 127.0.0.1:7777`, `-p 127.0.0.1:7778`, …) or, better, a
+socket inside its own mount (`ANNEAL_LISTEN=unix:/anneal/state/anneal.sock`).
+Working across projects — including handing a required change from one
+project's agent to another — is covered in [PROJECTS.md](PROJECTS.md).
+
 ## The mount
 
 ```
@@ -99,7 +105,7 @@ Instance-per-scope, not multi-tenancy inside one process:
 
 | need | how |
 |------|-----|
-| per-project config, sessions, permissions | one mount + one container per project |
+| per-project config, sessions, permissions | one mount + one container per project (distinct port or Unix socket per container; run them concurrently) |
 | per-user isolation | one mount + one container per user (distinct `-p` host ports) |
 | shared model server | all instances point `ANNEAL_ENDPOINT` at the same inference server; that server is the shared GPU resource and has its own queueing |
 

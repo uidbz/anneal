@@ -119,3 +119,40 @@ func TestSessionsSidebarObject(t *testing.T) {
 	}
 	_ = fyne.NewSize(0, 0)
 }
+
+// TestSidebarProjectScope: the session list defaults to this instance's
+// project and can be widened to every session in the shared state dir.
+func TestSidebarProjectScope(t *testing.T) {
+	sh := newTestShell(t)
+	sb := sh.side
+	cwd := sh.b.cwd()
+	sb.infos = []agent.SessionInfo{
+		{ID: "here", Title: "here", Updated: "2026-11-01 10:00", Cwd: cwd},
+		{ID: "other", Title: "other", Updated: "2026-11-01 09:00", Cwd: "/somewhere/else"},
+		{ID: "legacy", Title: "legacy", Updated: "2026-11-01 08:00"},
+	}
+	sb.projectOnly = true
+	sb.apply(sb.infos)
+	sessions := 0
+	for _, row := range sb.rows {
+		if row.heading == "" {
+			sessions++
+		}
+	}
+	if sessions != 2 { // this project + legacy (unknown cwd)
+		t.Fatalf("project scope rows = %d, want 2", sessions)
+	}
+	sb.scope.OnTapped()
+	if sb.projectOnly {
+		t.Fatal("scope toggle did not switch to all sessions")
+	}
+	sessions = 0
+	for _, row := range sb.rows {
+		if row.heading == "" {
+			sessions++
+		}
+	}
+	if sessions != 3 {
+		t.Fatalf("all-sessions rows = %d, want 3", sessions)
+	}
+}

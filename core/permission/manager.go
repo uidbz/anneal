@@ -364,29 +364,32 @@ func (m *Manager) persist() error {
 	m.persistMu.Lock()
 	defer m.persistMu.Unlock()
 
-	// Read-modify-write so other projects' grants survive.
-	doc := savedFile{Projects: map[string][]Rule{}}
-	if data, err := os.ReadFile(m.savedPath); err == nil {
-		_ = json.Unmarshal(data, &doc)
-	}
-	if doc.Projects == nil {
-		doc.Projects = map[string][]Rule{}
-	}
+	// Read-modify-write under an inter-process lock so two local windows
+	// sharing ~/.anneal cannot drop each other's grants.
+	return fsutil.WithFileLock(m.savedPath, func() error {
+		doc := savedFile{Projects: map[string][]Rule{}}
+		if data, err := os.ReadFile(m.savedPath); err == nil {
+			_ = json.Unmarshal(data, &doc)
+		}
+		if doc.Projects == nil {
+			doc.Projects = map[string][]Rule{}
+		}
 
-	m.mu.RLock()
-	rules := append([]Rule(nil), m.saved...)
-	m.mu.RUnlock()
-	if len(rules) == 0 {
-		delete(doc.Projects, m.project)
-	} else {
-		doc.Projects[m.project] = rules
-	}
+		m.mu.RLock()
+		rules := append([]Rule(nil), m.saved...)
+		m.mu.RUnlock()
+		if len(rules) == 0 {
+			delete(doc.Projects, m.project)
+		} else {
+			doc.Projects[m.project] = rules
+		}
 
-	data, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return err
-	}
-	return fsutil.WriteFileAtomic(m.savedPath, data, 0o600)
+		data, err := json.MarshalIndent(doc, "", "  ")
+		if err != nil {
+			return err
+		}
+		return fsutil.WriteFileAtomic(m.savedPath, data, 0o600)
+	})
 }
 
 func canonicalProject(path string) string {

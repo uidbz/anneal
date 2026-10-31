@@ -360,11 +360,13 @@ func (c *Config) save() error {
 	if c.path == "" {
 		c.path = paths.Config()
 	}
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err
-	}
-	return fsutil.WriteFileAtomic(c.path, data, 0o600)
+	return fsutil.WithFileLock(c.path, func() error {
+		data, err := json.MarshalIndent(c, "", "  ")
+		if err != nil {
+			return err
+		}
+		return fsutil.WriteFileAtomic(c.path, data, 0o600)
+	})
 }
 
 func (c *Config) normalize() {

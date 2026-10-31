@@ -51,6 +51,12 @@ type Agent struct {
 	Script             bool              `json:"script"`         // Risor data-glue script tool
 	ParallelTools      bool              `json:"parallel_tools"` // run read-only tool batches concurrently
 	ReadonlyBash       bool              `json:"readonly_bash"`  // auto-allow classified read-only shell commands
+	// TurnBudgetS is active model/tool time per run (approval waits are
+	// excluded): at 80% the model is told to wrap up, at 100% it gets one
+	// final, tool-free call to write a hand-off summary.
+	TurnBudgetS int `json:"turn_budget_s"`
+	// TurnHardLimitS is the backstop deadline for the whole run (all time).
+	TurnHardLimitS int `json:"turn_hard_limit_s"`
 }
 
 type Compaction struct {
@@ -233,6 +239,8 @@ func Default() *Config {
 			Script:             true,
 			ParallelTools:      true,
 			ReadonlyBash:       true,
+			TurnBudgetS:        1800,
+			TurnHardLimitS:     14400,
 		},
 		Compaction: Compaction{Enabled: true, ThresholdPct: 82, KeepRecentTurns: 4},
 		Memory:     Memory{Enabled: true, MemoryCharLimit: 2200, UserCharLimit: 1375, WriteApproval: false},
@@ -375,6 +383,12 @@ func (c *Config) normalize() {
 	}
 	if c.Agent.ToolIterationLimit <= 0 {
 		c.Agent.ToolIterationLimit = d.Agent.ToolIterationLimit
+	}
+	if c.Agent.TurnBudgetS <= 0 {
+		c.Agent.TurnBudgetS = d.Agent.TurnBudgetS
+	}
+	if c.Agent.TurnHardLimitS < c.Agent.TurnBudgetS {
+		c.Agent.TurnHardLimitS = d.Agent.TurnHardLimitS
 	}
 	switch c.Agent.PermissionMode {
 	case "default", "plan", "acceptEdits", "bypassPermissions", "dontAsk":

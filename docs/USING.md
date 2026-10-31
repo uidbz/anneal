@@ -113,7 +113,7 @@ small IDE.
 | Ctrl+B | toggle the sessions sidebar |
 | Ctrl+J | toggle the inspector |
 | Ctrl+M | toggle plan/build mode |
-| Ctrl+D | stop the current run |
+| Ctrl+D | stop the current run (once: after the running step; twice: now) |
 | Ctrl+I | improve the harness |
 | Ctrl+L | focus the composer |
 | Ctrl+R | reload the scripted harness pane |
@@ -128,6 +128,26 @@ small IDE.
 
 For UI smoke tests without typing, `anneal -send "task" -quit-after-run` fills
 the composer, submits it, and exits after the run finishes.
+
+### Stopping and continuing
+
+- **Stop is graceful** (Ctrl+D or the Stop button): the tool that is running
+  finishes, no new one starts, and the status line says "Stopping after this
+  step…". Press Stop again to force an immediate cancel (for a wedged tool or
+  a hung model stream).
+- **Turn budget** (`agent.turn_budget_s`, default 30 min of active time;
+  approval waits are excluded). At 80 % the agent is told to checkpoint; at
+  100 % it gets one final, tool-free call to write a hand-off summary instead
+  of dying mid-write.
+- If a turn stops anyway (time limit, provider error, step limit), the
+  transcript shows **"Turn stopped"** with what completed, what was not run
+  and what is unknown, plus **Continue** and **Details**. Continue resumes from
+  the recorded history — completed tools are not re-run. The same markers are
+  replayed when you reopen the session.
+- A cancelled Write/Edit keeps its composed content under
+  `~/.anneal/recovery/<session>/`; the tool error points at the file so the
+  next turn re-applies it instead of regenerating a large file. Stashes are
+  pruned after 7 days.
 
 ### Sending while a task runs
 

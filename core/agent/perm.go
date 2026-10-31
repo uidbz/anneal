@@ -39,6 +39,13 @@ func (r *Runner) permissionHook(ctx context.Context, hctx *dive.HookContext) err
 		case permission.Ask:
 			outcome, err := r.askPermission(ctx, req)
 			if err != nil {
+				// The call was composed but never ran (stop/time limit while
+				// the approval card waited): keep its input so the next turn
+				// can re-apply it instead of regenerating a large write.
+				if path := r.stashCall(hctx); path != "" {
+					return fmt.Errorf("%w — proposed %s input saved at %s; "+
+						"re-apply it instead of regenerating", err, hctx.Tool.Name(), path)
+				}
 				return err
 			}
 			if outcome == permission.Reject {

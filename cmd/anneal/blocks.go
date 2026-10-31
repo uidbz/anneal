@@ -82,6 +82,51 @@ func (s *shell) markdownBlock(seg mdSegment) fyne.CanvasObject {
 		border(colorBorder, 1)
 }
 
+// outcomeBlock explains a stopped turn (time limit, provider error, step
+// limit) and offers Continue, which resumes from the recorded history.
+func (s *shell) outcomeBlock(out map[string]any) fyne.CanvasObject {
+	title := newThemedText("Turn stopped", colorWarn)
+	title.bold = true
+	body := selectableLabel(str(out["summary"]), false)
+	cont := widget.NewButtonWithIcon("Continue", theme.MediaPlayIcon(), func() { s.b.continueRun() })
+	cont.Importance = widget.HighImportance
+	details := widget.NewButton("Details", func() { s.showText("turn outcome", outcomeDetails(out)) })
+	details.Importance = widget.LowImportance
+	actions := container.New(&rowLayout{gap: spaceS}, details, cont)
+	panel := newSurface(colorWarnWash,
+		container.New(&padLayout{l: spaceM, r: spaceM, t: spaceS, b: spaceS},
+			container.NewVBox(title, body, vgap(spaceXS), actions))).
+		border(colorWarn, 1)
+	bar := newThemedRect(colorWarn, 3, 0)
+	return container.NewBorder(nil, nil,
+		container.New(&padLayout{l: 0, r: 0, t: 0, b: 0}, bar), nil, panel)
+}
+
+// outcomeNotice is the replay form (no Continue button: the turn is history).
+func (s *shell) outcomeNotice(text string) fyne.CanvasObject {
+	lbl := selectableLabel("Turn stopped · "+text, false)
+	return newSurface(colorWarnWash,
+		container.New(&padLayout{l: spaceM, r: spaceM, t: 2, b: 2}, lbl)).
+		border(colorWarn, 1)
+}
+
+func outcomeDetails(out map[string]any) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Reason: %s\nNext: %s\n", str(out["reason"]), str(out["next"]))
+	if e := str(out["error"]); e != "" {
+		fmt.Fprintf(&sb, "Error: %s\n", e)
+	}
+	sb.WriteString("\n" + str(out["summary"]))
+	if calls, ok := out["tool_calls"].([]any); ok && len(calls) > 0 {
+		sb.WriteString("\n\nTool calls:")
+		for _, raw := range calls {
+			c := obj(raw)
+			fmt.Fprintf(&sb, "\n- %s: %s", str(c["name"]), str(c["state"]))
+		}
+	}
+	return sb.String()
+}
+
 // noticeKind selects the marker and color of a system line.
 type noticeKind int
 

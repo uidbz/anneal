@@ -12,7 +12,8 @@ State lives under `~/.anneal/` (override with `ANNEAL_HOME`).
 | `pending/` | staged writes awaiting approval: `pending/memory/`, `pending/skills/` |
 | `permissions.json` | project-scoped `always` grants saved by the approval inbox |
 | `journey.jsonl` | self-improvement timeline (memory/skill writes, review batches) |
-| `logs/` | reserved |
+| `recovery/` | inputs of cancelled file writes keyed by session (re-apply instead of regenerating; pruned after 7 days) |
+| `logs/perf.jsonl` | per-run timing records (`run.stats`) |
 
 ## Environment overrides
 
@@ -251,6 +252,8 @@ above. A new-style rule appended later can therefore override them.
 | `script` | true | register the `script` tool (sandboxed Risor data-glue runner, see below) |
 | `parallel_tools` | true | run batches of read-only tool calls concurrently; tools that change state are marked sequential, so a mixed batch stays ordered. Results of a parallel batch arrive in completion order, not call order |
 | `readonly_bash` | true | auto-allow shell commands classified read-only (see Permissions); explicit ask rules and denies still win |
+| `turn_budget_s` | 1800 | active model+tool time per turn; approval waits are excluded. At 80% the model is told to checkpoint, at 100% it gets one final tool-free call to write a hand-off summary |
+| `turn_hard_limit_s` | 14400 | backstop wall-clock deadline for the whole run (4 h); normally the budget ends the turn first |
 
 Legacy rule strings support tool-name patterns and specifiers:
 `"Bash(go test *)"`. They are canonicalized to the actions above

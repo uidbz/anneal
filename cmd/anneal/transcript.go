@@ -417,6 +417,8 @@ func (s *shell) renderBlock(b map[string]any) {
 		// Stored results carry no call id, so replay pairs them with the
 		// oldest open tool call (the order they were produced in).
 		s.finishTool("", str(b["name"]), str(b["text"]), boolean(b["error"]))
+	case "outcome":
+		s.appendBlock(s.outcomeNotice(str(b["text"])))
 	}
 }
 

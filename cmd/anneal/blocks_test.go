@@ -150,3 +150,31 @@ func TestComposingIndicatorReplacedByToolRow(t *testing.T) {
 		t.Fatalf("blocks after tool.start = %d (rows=%v)", len(sh.visible), sh.toolRows)
 	}
 }
+
+// TestTurnOutcomeShown: a stopped turn explains what happened and offers
+// Continue instead of an opaque "context deadline exceeded".
+func TestTurnOutcomeShown(t *testing.T) {
+	sh := newTestShell(t)
+	sh.handleEvent(normalizeEvent(map[string]any{"type": "run.started", "run": 1}))
+	before := len(sh.visible)
+	sh.handleEvent(normalizeEvent(map[string]any{
+		"type": "run.stopping", "mode": "soft",
+	}))
+	if !strings.Contains(sh.status.Text(), "Stopping after this step") {
+		t.Fatalf("stopping status = %q", sh.status.Text())
+	}
+	sh.handleEvent(normalizeEvent(map[string]any{
+		"type": "run.finished", "run": 1, "ok": false, "stopped": true,
+		"outcome": map[string]any{
+			"reason":  "budget",
+			"next":    "continue",
+			"summary": "Turn budget exhausted · 2 step(s) completed · not run: Write",
+		},
+	}))
+	if len(sh.visible) != before+1 {
+		t.Fatalf("outcome block not appended (%d -> %d)", before, len(sh.visible))
+	}
+	if sh.status.Text() != "Time limit reached" {
+		t.Fatalf("status = %q", sh.status.Text())
+	}
+}

@@ -91,7 +91,10 @@ on missing keys is a hard error. The Go shell consumes the same values as maps
 | event | when |
 |-------|------|
 | `provider.state` | health monitor change |
-| `run.started` / `run.finished` / `run.busy` | run lifecycle (started carries text/ref/input_id; finished includes ok/text/error/usage/ctx_pct) |
+| `run.started` / `run.finished` / `run.busy` | run lifecycle (started carries text/ref/input_id/continue; finished includes ok/stopped/text/error/usage/ctx_pct and `outcome{reason,next,summary,tool_calls}` when a turn stopped short) |
+| `run.stopping` | Stop pressed: `mode:soft` finishes the running step, `mode:hard` cancels immediately |
+| `turn.budget` | active turn budget warning (80%) / exhaustion (100%) |
+| `tool.recovered` | cancelled Write/Edit input saved under `~/.anneal/recovery/` |
 | `input.queued` / `input.dequeued` / `input.cancelled` / `input.failed` | message delivery state (queued input, picked up by a run, cancelled, rejected by the backend) |
 | `queue.state` / `queue.paused` / `queue.resumed` / `queue.promoted` / `queue.cleared` | queue tray (replay snapshot; paused after stop/error; ordering; clear) |
 | `text.delta` / `message.final` | streaming + final assistant text |

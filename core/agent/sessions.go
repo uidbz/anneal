@@ -10,6 +10,7 @@ import (
 
 	"github.com/uidbz/anneal/core/paths"
 
+	"github.com/deepnoodle-ai/dive"
 	"github.com/deepnoodle-ai/dive/llm"
 	"github.com/deepnoodle-ai/dive/session"
 )
@@ -195,6 +196,13 @@ func transcriptBlocks(ctx context.Context, sess *session.Session) []map[string]a
 	}
 	blocks := []map[string]any{}
 	for _, m := range msgs {
+		// A turn that stopped short carries its outcome as a recorded
+		// reminder; replay it as a transcript notice so a resumed session
+		// shows where and why work was interrupted.
+		if out, ok := dive.FindTurnOutcome(m); ok && out != nil {
+			blocks = append(blocks, block("outcome",
+				summarizeTurnOutcome(string(out.Reason), out.ToolCalls), "", "", false))
+		}
 		for _, c := range m.Content {
 			switch v := c.(type) {
 			case *llm.TextContent:

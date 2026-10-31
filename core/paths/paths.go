@@ -35,9 +35,13 @@ func HarnessQueue() string { return filepath.Join(Root(), "harness-queue.json") 
 func Improvements() string { return filepath.Join(Root(), "improvements") }
 func Overlays() string     { return filepath.Join(Root(), "overlays") }
 
+// Recovery holds tool inputs that were cancelled or never run (a large Write
+// interrupted by a stop or time limit), so the work can be re-applied.
+func Recovery() string { return filepath.Join(Root(), "recovery") }
+
 // Ensure creates the standard state directories.
 func Ensure() error {
-	for _, d := range []string{Root(), Sessions(), Memories(), Skills(), SkillsArchive(), Pending(), Logs(), Harness(), HarnessLib(), Overlays()} {
+	for _, d := range []string{Root(), Sessions(), Memories(), Skills(), SkillsArchive(), Pending(), Logs(), Harness(), HarnessLib(), Overlays(), Recovery()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
 		}

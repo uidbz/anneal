@@ -108,6 +108,23 @@ func (s *shell) handleEvent(e map[string]any) {
 		s.setUsageText(0, 0, 0)
 		s.cmp.setRunning(true)
 		s.startRunClock()
+	case "run.stopping":
+		if str(e["mode"]) == "hard" {
+			s.setRunState("Stopping now…", colorWarn, false)
+		} else {
+			s.setRunState("Stopping after this step… (Ctrl+D again to force)", colorWarn, false)
+		}
+	case "turn.budget":
+		if str(e["phase"]) == "exhausted" {
+			s.notice(noticeWarn, fmt.Sprintf("Turn budget exhausted (%ds of %ds) — finishing with a hand-off summary",
+				int(num(e["used_s"])), int(num(e["budget_s"]))))
+		} else {
+			s.notice(noticeInfo, fmt.Sprintf("Turn budget: %ds of %ds used — checkpointing",
+				int(num(e["used_s"])), int(num(e["budget_s"]))))
+		}
+	case "tool.recovered":
+		s.notice(noticeWarn, "Cancelled "+str(e["tool"])+
+			" input saved: "+str(e["path"])+" (ask the agent to re-apply it instead of regenerating)")
 	case "model.wait":
 		s.setRunState(fmt.Sprintf("Waiting for model… (~%s context)", humanK(int(num(e["input_est"])))), colorWarn, false)
 	case "model.first_token":
@@ -166,6 +183,20 @@ func (s *shell) handleEvent(e map[string]any) {
 			s.setRunState("Error", colorErr, true)
 			if msg := str(e["error"]); msg != "" {
 				s.addNotice("⚠ " + msg)
+			}
+		}
+		if outcome, ok := e["outcome"].(map[string]any); ok {
+			reason := str(outcome["reason"])
+			switch reason {
+			case "budget", "deadline":
+				s.setRunState("Time limit reached", colorWarn, true)
+			case "iteration_limit":
+				s.setRunState("Step limit reached", colorWarn, true)
+			}
+			// A user stop already has its own "Stopped" status; every other
+			// interruption gets an explanation with Continue/Details.
+			if reason != "canceled" && str(outcome["summary"]) != "" {
+				s.appendBlock(s.outcomeBlock(outcome))
 			}
 		}
 		s.cmp.setRunning(false)

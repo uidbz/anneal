@@ -387,6 +387,10 @@ func (s *Server) methods() map[string]handler {
 		a.Runner.Interrupt()
 		return nil, nil
 	}
+	m["agent.continue"] = func(json.RawMessage) (any, error) {
+		id, ok := a.Runner.Continue()
+		return map[string]any{"id": id, "ok": ok}, nil
+	}
 	m["background.preempt"] = func(json.RawMessage) (any, error) {
 		a.PreemptBackground()
 		return nil, nil

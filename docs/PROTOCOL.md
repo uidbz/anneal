@@ -114,7 +114,8 @@ accepted — their effects arrive as events).
 | `server.info` | – | `{version,proto,workdir,mode,session,busy,idle_timeout_s,uptime_s}` |
 | `server.quit` | `{reason}` | `{"ok":true}` |
 | `agent.send` | `{text}` or `{text,ref,queue:true}` | legacy: `{id,ok}` (run id; `ok:false` if busy). With `queue:true`: `{ok:true,id:<input id>,run,queued,position}` — never rejected for a busy runner |
-| `agent.interrupt` | – | null |
+| `agent.interrupt` | – | null (first call: soft stop after the running step; second: hard cancel) |
+| `agent.continue` | – | `{id,ok}` (resume a stopped/failed turn from the recorded history) |
 | `queue.list` | – | `{items:[{id,text,ref,at}],paused,reason}` |
 | `queue.cancel` | `{id}` | `{input,removed}` |
 | `queue.clear` | – | `{inputs:[…]}` |

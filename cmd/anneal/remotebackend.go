@@ -155,6 +155,7 @@ func (r *remoteBackend) cancelQueued(id string) {
 func (r *remoteBackend) clearQueue()             { r.fire("queue.clear", nil) }
 func (r *remoteBackend) resumeQueue()            { r.fire("queue.resume", nil) }
 func (r *remoteBackend) promoteQueued(id string) { r.fire("queue.promote", map[string]any{"id": id}) }
+func (r *remoteBackend) continueRun()            { r.fire("agent.continue", nil) }
 func (r *remoteBackend) interrupt()              { r.fire("agent.interrupt", nil) }
 func (r *remoteBackend) preempt()                { r.fire("background.preempt", nil) }
 func (r *remoteBackend) newSession()             { r.fire("sessions.new", nil) }

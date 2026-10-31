@@ -51,6 +51,25 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-11-01 — turn budget, graceful stop, interrupted turns (issue #15, Phase 6)
+- `agent.turn_budget_s` (default 1800) counts active model/tool time and
+  **excludes approval waits**; `turn_hard_limit_s` (4 h) is the backstop.
+  Meanwhile dive's default 30-minute wall deadline used to fire while a card
+  waited — three turns in session `…38ae96` hit exactly that.
+- At 80% the model gets a checkpoint reminder; at 100% `FinalCall` disables
+  tools for one hand-off call; a runaway tool is soft-cancelled after 3 min.
+- Stop is now graceful: first press finishes the running tool (soft cancel,
+  `run.stopping{soft}`), second forces a hard cancel. `dive.SoftCanceled` is
+  checked so a soft stop reports "stopped", not a provider error.
+- `run.finished.outcome` carries reason/next/summary/tool-call states; the
+  transcript shows "Turn stopped · N completed · not run/unknown X" with
+  **Continue** (dive `WithContinue`, no new user message) and Details.
+  Stored turn-incomplete reminders are replayed as notices.
+- Cancelled Write/Edit inputs are stashed in `~/.anneal/recovery/<session>/`
+  (7-day TTL) and the tool error points at the file (`tool.recovered`).
+- Prompt guidance: bounded turns, skeleton-then-Edit for big files, `-F` for
+  long commit messages.
+
 ### 2026-11-01 — message queue + delivery state (Phase 5)
 - `Runner.Submit` starts when idle, otherwise queues (max 20). A clean run
   starts the next input; stop/error pauses the queue. Cancel / clear / promote

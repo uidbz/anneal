@@ -49,17 +49,19 @@ type Runner struct {
 	mcp     *mcp.Manager
 	lastAct time.Time
 
-	mu       sync.Mutex
-	sess     *session.Session
-	sessID   string
-	lastTask string
-	todos    []todoItem
-	cancel   context.CancelFunc
-	runSeq   int
-	running  bool
-	permWait time.Duration // time blocked on approval cards, per run
-	lastPerf *perfSummary
-	preempt  func() // cancels background model work (review/improve)
+	mu         sync.Mutex
+	sess       *session.Session
+	sessID     string
+	lastTask   string
+	todos      []todoItem
+	cancel     context.CancelFunc
+	softCancel func() // graceful stop: finish the running tool, start no new one
+	stopping   bool
+	runSeq     int
+	running    bool
+	permWait   time.Duration // time blocked on approval cards, per run
+	lastPerf   *perfSummary
+	preempt    func() // cancels background model work (review/improve)
 
 	permMu       sync.Mutex // guards pendingPerms and doom counts
 	permSeq      int
@@ -307,20 +309,27 @@ func (r *Runner) Send(input string) {
 // already active (a run.busy event is still emitted). Callers that must
 // correlate events with the run they started use this instead of Send.
 func (r *Runner) StartTask(input string) (id int, ok bool) {
-	return r.startTask(input, "", "")
+	return r.startTask(input, "", "", false)
 }
 
 // StartTaskRef starts a run for a known input (direct send or dequeued item).
 // The id/ref travel in run.started so every attached client can reconcile the
 // message it rendered optimistically.
 func (r *Runner) StartTaskRef(q QueuedInput) (id int, ok bool) {
-	return r.startTask(q.Text, q.ID, q.Ref)
+	return r.startTask(q.Text, q.ID, q.Ref, false)
 }
 
-func (r *Runner) startTask(input, inputID, ref string) (id int, ok bool) {
-	// Create the cancellable context before the goroutine starts so a stop
-	// click that races the run's startup is never lost.
-	ctx, cancel := context.WithCancel(context.Background())
+// Continue resumes a stopped/failed turn from the recorded history, with no
+// new user message. Every completed tool call stays completed.
+func (r *Runner) Continue() (id int, ok bool) {
+	return r.startTask("", "", "", true)
+}
+
+func (r *Runner) startTask(input, inputID, ref string, cont bool) (id int, ok bool) {
+	// A soft-cancel context lets Stop finish the running tool instead of
+	// tearing down a write mid-flight; a second Stop uses the hard cancel.
+	base, softCancel := dive.WithSoftCancel(context.Background())
+	ctx, cancel := context.WithCancel(base)
 	r.mu.Lock()
 	if r.running {
 		r.mu.Unlock()
@@ -330,9 +339,12 @@ func (r *Runner) startTask(input, inputID, ref string) (id int, ok bool) {
 	}
 	r.running = true
 	r.runSeq++
-	r.lastTask = input
+	if !cont {
+		r.lastTask = input
+	}
 	r.lastAct = time.Now()
-	r.cancel = cancel
+	r.cancel, r.softCancel = cancel, softCancel
+	r.stopping = false
 	id = r.runSeq
 	preempt := r.preempt
 	r.mu.Unlock()
@@ -342,7 +354,7 @@ func (r *Runner) startTask(input, inputID, ref string) (id int, ok bool) {
 	if preempt != nil {
 		preempt() // improve passes own the GPU too: cancel, they resume later
 	}
-	go r.run(ctx, id, input, inputID, ref)
+	go r.run(ctx, id, input, inputID, ref, cont)
 	return id, true
 }
 
@@ -360,20 +372,56 @@ func (r *Runner) LastActivity() time.Time {
 	return r.lastAct
 }
 
-// Interrupt soft-cancels the active run (running tool calls finish first).
+// Interrupt stops the active run at the next step boundary: running tool
+// calls finish, no new one starts. A second Interrupt forces an immediate
+// cancel (needed for a wedged tool or a hung model stream).
 func (r *Runner) Interrupt() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.cancel != nil {
-		r.cancel()
+	if !r.running {
+		r.mu.Unlock()
+		return
 	}
+	if !r.stopping {
+		r.stopping = true
+		soft := r.softCancel
+		r.mu.Unlock()
+		if soft != nil {
+			soft()
+		}
+		r.emit(map[string]any{"type": "run.stopping", "mode": "soft"})
+		return
+	}
+	hard := r.cancel
+	r.mu.Unlock()
+	if hard != nil {
+		hard()
+	}
+	r.emit(map[string]any{"type": "run.stopping", "mode": "hard"})
 }
 
-func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string) {
+func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string, cont bool) {
 	defer r.clearRun(id) // safety net for early returns / panics
 	r.resetDoom()
 	r.resetPermWait()
 	tracer := newPerfTracer(r.bus, id)
+
+	// The hard limit is a backstop (dive's own default is 30 minutes, which
+	// used to fire while a permission card was waiting). The active budget
+	// below is the control the user sees.
+	hard := time.Duration(r.cfg.Agent.TurnHardLimitS) * time.Second
+	if hard <= 0 {
+		hard = 4 * time.Hour
+	}
+	ctx, hardCancel := context.WithTimeout(ctx, hard)
+	defer hardCancel()
+	budget := &turnBudget{}
+	runStart := time.Now()
+	r.mu.Lock()
+	soft := r.softCancel
+	r.mu.Unlock()
+	stopWatch := r.watchTurnBudget(ctx, runStart,
+		time.Duration(r.cfg.Agent.TurnBudgetS)*time.Second, budget, soft)
+	defer stopWatch()
 
 	h := r.monitor.Current()
 	if h.State == model.StateConnecting {
@@ -393,7 +441,7 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string) {
 	r.mu.Lock()
 	sess := r.sess
 	r.mu.Unlock()
-	if sess.Title() == "" {
+	if !cont && sess.Title() == "" {
 		sess.SetTitle(clip(input, 60))
 	}
 
@@ -453,6 +501,9 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string) {
 				compaction.WithMidTurnNotify(r.notifyCompaction)),
 		}
 	}
+	// Budget reminders run after compaction so FinalCall/reminders apply to
+	// the call that actually happens.
+	hooks.PreIteration = append(hooks.PreIteration, budget.hook())
 
 	ag, err := dive.NewAgent(dive.AgentOptions{
 		Name:                  "anneal",
@@ -475,13 +526,16 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string) {
 	// The text/id/ref let every attached client render the user's turn and
 	// reconcile the message it showed optimistically.
 	r.emit(map[string]any{"type": "run.started", "run": id, "model": h.Model,
-		"text": clip(input, 400), "input_id": inputID, "ref": ref})
+		"text": clip(input, 400), "input_id": inputID, "ref": ref, "continue": cont})
 
 	sink := &runEventSink{r: r, run: id, deltas: deltas}
-	resp, runErr := ag.CreateResponse(ctx,
-		dive.WithInput(input),
-		dive.WithEventCallback(sink.callback()),
-	)
+	opts := []dive.CreateResponseOption{dive.WithEventCallback(sink.callback())}
+	if cont {
+		opts = append(opts, dive.WithContinue())
+	} else {
+		opts = append(opts, dive.WithInput(input))
+	}
+	resp, runErr := ag.CreateResponse(ctx, opts...)
 	sink.flushThinking()
 	sink.flushCompose()
 	deltas.flush()
@@ -493,8 +547,9 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string) {
 		out["error"] = runErr.Error()
 	}
 	// A user stop is not an error: report it distinctly so the UI can say
-	// "stopped" instead of flashing a provider failure.
-	if ctx.Err() != nil {
+	// "stopped" instead of flashing a provider failure. A soft cancel does
+	// not cancel the context, so it must be checked separately.
+	if ctx.Err() != nil || dive.SoftCanceled(ctx) {
 		out["ok"] = false
 		out["stopped"] = true
 		out["error"] = ""
@@ -508,6 +563,9 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string) {
 				out["ctx_pct"] = 100 * used / h.CtxWindow
 			}
 		}
+	}
+	if oc := turnOutcomeEvent(resp, budget); oc != nil {
+		out["outcome"] = oc
 	}
 	// Persist session-scoped state (title, todo list) — event appends
 	// don't rewrite the header.
@@ -666,6 +724,8 @@ func (r *Runner) clearRun(id int) {
 		r.cancel()
 	}
 	r.running, r.cancel = false, nil
+	r.softCancel = nil
+	r.stopping = false
 	r.lastAct = time.Now()
 }
 

@@ -30,6 +30,12 @@ Working style:
 - Prefer the smallest correct change; match the surrounding code's style.
 - Use the tools for everything file-related; never invent file contents.
 - Run tests/builds to verify changes when available, and report results honestly.
+- Keep a turn bounded: a handful of tool calls, a todo checkpoint, then report.
+  Long single turns risk the turn budget; continue in a follow-up turn instead.
+- For a large new file, write a small skeleton first, then extend it with Edit.
+  Rewriting a big file in one Write is slow and fragile.
+- For long commit messages use git commit -F <message-file> (Bash heredocs of
+  hundreds of lines are fragile).
 - When a task is done, summarize what changed in a few lines.
 - Never write to the anneal state directory (~/.anneal) with file tools.
 - For multi-step work, keep a todo checklist current (todo tool, action=set

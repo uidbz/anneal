@@ -40,6 +40,7 @@ type backend interface {
 	clearQueue()
 	resumeQueue()
 	promoteQueued(id string)
+	continueRun()
 	interrupt()
 	preempt() // stand down background model work (review/improve)
 	newSession()
@@ -91,10 +92,15 @@ func (l *localBackend) cancelQueued(id string)  { l.a.Runner.CancelQueued(id) }
 func (l *localBackend) clearQueue()             { l.a.Runner.ClearQueue() }
 func (l *localBackend) resumeQueue()            { l.a.Runner.ResumeQueue() }
 func (l *localBackend) promoteQueued(id string) { l.a.Runner.Promote(id) }
-func (l *localBackend) interrupt()              { l.a.Runner.Interrupt() }
-func (l *localBackend) preempt()                { l.a.PreemptBackground() }
-func (l *localBackend) newSession()             { l.a.Runner.NewSession() }
-func (l *localBackend) openSession(id string)   { l.a.Runner.OpenSession(id) }
+func (l *localBackend) continueRun() {
+	if _, ok := l.a.Runner.Continue(); !ok {
+		l.a.Bus.Emit(map[string]any{"type": "run.busy"})
+	}
+}
+func (l *localBackend) interrupt()            { l.a.Runner.Interrupt() }
+func (l *localBackend) preempt()              { l.a.PreemptBackground() }
+func (l *localBackend) newSession()           { l.a.Runner.NewSession() }
+func (l *localBackend) openSession(id string) { l.a.Runner.OpenSession(id) }
 func (l *localBackend) respondPerm(id, act string) {
 	l.a.Runner.RespondPerm(id, act)
 }

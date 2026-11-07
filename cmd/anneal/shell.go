@@ -213,9 +213,10 @@ func (s *shell) wireFrame() {
 	s.side = newSessionsSidebar(s)
 	s.inspector = newInspectorPanel(s)
 
-	// Transcript: centered, capped measure inside a scroll.
-	padded := container.New(&padLayout{l: spaceL, r: spaceL, t: spaceS, b: spaceS},
-		container.New(&maxWidthLayout{max: transcriptMaxWidth},
+	// Transcript: left-aligned against the sidebar, capped measure inside a
+	// scroll (centering it left a large dead margin on wide windows).
+	padded := container.New(&padLayout{l: spaceM, r: spaceL, t: spaceS, b: spaceS},
+		container.New(&maxWidthLayout{max: transcriptMaxWidth, left: true},
 			container.NewVBox(s.earlier, s.chatBox)))
 	s.scroll = container.NewVScroll(padded)
 	s.welcome = s.welcomeView()

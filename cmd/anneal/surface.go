@@ -404,10 +404,13 @@ func (l *rowLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	return fyne.NewSize(w, h)
 }
 
-// maxWidthLayout centers one child and caps its width, so prose keeps a
-// readable measure on wide windows.
+// maxWidthLayout caps one child's width, so prose keeps a readable measure
+// on wide windows. By default the child is centered; set left to pin it to
+// the left edge (the transcript hugs the sidebar instead of floating in the
+// middle of a wide window).
 type maxWidthLayout struct {
-	max float32
+	max  float32
+	left bool
 }
 
 func (l *maxWidthLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
@@ -419,6 +422,9 @@ func (l *maxWidthLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 		w = l.max
 	}
 	x := (size.Width - w) / 2
+	if l.left {
+		x = 0
+	}
 	for _, o := range objects {
 		o.Move(fyne.NewPos(x, 0))
 		o.Resize(fyne.NewSize(w, size.Height))

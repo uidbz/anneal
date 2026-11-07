@@ -7,21 +7,18 @@ require (
 	github.com/deepnoodle-ai/dive v1.42.0
 	github.com/deepnoodle-ai/dive/experimental/mcp v1.42.0
 	github.com/deepnoodle-ai/risor/v2 v2.2.0
+	github.com/gorilla/websocket v1.5.3
+	github.com/uidbz/fyne-addons v0.1.3
 	github.com/uidbz/fynerisor v0.9.1-0.20261026124728-058fa5aa952a
 	github.com/uidbz/tie v0.7.4
 )
 
 require (
-	codeberg.org/go-fonts/liberation v0.5.0 // indirect
-	codeberg.org/go-latex/latex v0.2.0 // indirect
-	codeberg.org/go-pdf/fpdf v0.11.1 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4 // indirect
-	git.sr.ht/~sbinet/gg v0.7.0 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/FyshOS/fancyfs v0.0.1 // indirect
 	github.com/STARRY-S/zip v0.2.3 // indirect
-	github.com/ajstarks/svgo v0.0.0-20211024235047-1546f124cd8b // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/anthonynsimon/bild v0.14.0 // indirect
 	github.com/bodgit/plumbing v1.3.0 // indirect
@@ -45,10 +42,8 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
-	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/h2non/filetype v1.1.3 // indirect
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
 	github.com/hack-pad/safejs v0.1.0 // indirect
@@ -100,6 +95,5 @@ require (
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
-	gonum.org/v1/plot v0.17.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

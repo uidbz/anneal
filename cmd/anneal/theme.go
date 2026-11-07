@@ -8,6 +8,8 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/uidbz/fyne-addons/kdefilepicker"
+
 	"github.com/uidbz/anneal/assets"
 	"github.com/uidbz/anneal/core/config"
 )
@@ -302,11 +304,47 @@ func (t *textScaleTheme) Size(name fyne.ThemeSizeName) float32 {
 // configured text scale. Re-applying never compounds wrappers: the theme is
 // rebuilt from theme.DefaultTheme() every time; SetTheme repaints live.
 func applyTheme(app fyne.App, ui config.UI) {
-	var th fyne.Theme = &brandTheme{base: theme.DefaultTheme(), mode: ui.ThemeMode()}
+	bt := &brandTheme{base: theme.DefaultTheme(), mode: ui.ThemeMode()}
+	var th fyne.Theme = bt
 	if scale := config.ClampTextScale(ui.TextScale); scale != 1.0 {
 		th = &textScaleTheme{Theme: th, scale: float32(scale)}
 	}
 	app.Settings().SetTheme(th)
+	applyFilePickerPalette(paletteFor(bt.variant(app.Settings().ThemeVariant())))
+}
+
+// applyFilePickerPalette restyles the KDE file picker (File ▸ Open project…)
+// with the current Anneal palette. The picker paints its own chrome rather
+// than reading the Fyne theme, so its palette has to be pushed explicitly
+// whenever the theme mode changes.
+func applyFilePickerPalette(p *palette) {
+	kdefilepicker.SetPalette(kdefilepicker.Palette{
+		Window:         p.background,
+		View:           p.code,
+		ViewAlternate:  p.raised,
+		Header:         p.raised,
+		Text:           p.foreground,
+		TextMuted:      p.muted,
+		TextDisabled:   p.placeholder,
+		Border:         p.border,
+		BorderLight:    p.inputBorder,
+		Frame:          p.border,
+		Accent:         p.accent,
+		Hover:          p.hover,
+		Pressed:        p.pressed,
+		Selection:      p.selection,
+		SelectionEdge:  p.accent,
+		PlaceSelection: p.accentWash,
+		Button:         p.button,
+		ButtonDisabled: p.disabledBtn,
+		Combo:          p.input,
+		ComboFocus:     p.input,
+		Scroll:         p.scrollBar,
+		ScrollHover:    p.scrollBar,
+		Track:          p.border,
+		Ticks:          p.muted,
+		OverlayDim:     color.NRGBA{R: 0, G: 0, B: 0, A: 0x66},
+	})
 }
 
 // normMode maps a theme mode string to system/light/dark ("" = system).

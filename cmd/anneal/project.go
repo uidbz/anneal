@@ -6,8 +6,9 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
+
+	"github.com/uidbz/fyne-addons/kdefilepicker"
 )
 
 // localProjectWarning reports whether the embedded core is anchored at the
@@ -45,15 +46,23 @@ func (s *shell) showHomeDirNotice() {
 		"Choose project…", s.chooseProject))
 }
 
+// showFolderPicker presents the KDE-style folder picker (fyne-addons
+// kdefilepicker) as an overlay on the main window and hands the chosen
+// directory to onPick. Its palette follows the Anneal theme (see
+// applyFilePickerPalette), so it reads as part of the shell rather than a
+// foreign dialog.
+func (s *shell) showFolderPicker(onPick func(string)) {
+	d := kdefilepicker.NewDirectoryDialog(s.b.cwd())
+	d.SetOpenLabel("Choose")
+	d.SetOnAccept(onPick)
+	d.ShowOverlay(s.win)
+}
+
 // chooseProject restarts the app in another directory: the instance's project
 // is fixed for its lifetime (permissions, skills, session cwd and the MCP
 // server's view are all anchored to it).
 func (s *shell) chooseProject() {
-	dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
-		if err != nil || uri == nil {
-			return
-		}
-		dir := uri.Path()
+	s.showFolderPicker(func(dir string) {
 		dialog.ShowConfirm("Open project",
 			"Restart Anneal in "+dir+"? This window will close.", func(ok bool) {
 				if !ok {
@@ -72,5 +81,5 @@ func (s *shell) chooseProject() {
 				}
 				s.app.Quit()
 			}, s.win)
-	}, s.win)
+	})
 }

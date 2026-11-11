@@ -88,11 +88,23 @@ func (x *Indexer) Connect() error {
 // degrade the index quickly, not block boot).
 var probeHTTP = &http.Client{Timeout: 3 * time.Second}
 
-// probeLive reports whether the triplestore answers HTTP at all. Any status
-// code (even 404) proves the server is up.
+// probeLive reports whether the triplestore answers the tie HTTP protocol.
+// The tie triplestore mounts every protocol request at POST /{request};
+// POSTing the unknown id "live" is answered 404 inside the JSON reply
+// envelope, which proves the request router itself is up (a bare HTTP
+// listener answering 404 is not). GET on that route is rejected 405 by
+// the router and /-/live matches no route at all, so the old GET /-/live
+// probe only ever proved "some TCP listener". Any HTTP answer counts as
+// live; only a transport failure means unreachable (graceful: the index
+// degrades, anneal keeps working without session search).
 func probeLive(base string) error {
-	u := strings.TrimRight(base, "/") + "/-/live"
-	resp, err := probeHTTP.Get(u)
+	u := strings.TrimRight(base, "/") + "/live"
+	req, err := http.NewRequest(http.MethodPost, u, strings.NewReader("{}"))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := probeHTTP.Do(req)
 	if err != nil {
 		return err
 	}

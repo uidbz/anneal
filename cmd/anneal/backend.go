@@ -85,7 +85,7 @@ func (l *localBackend) describe() string { return "local" }
 func (l *localBackend) remote() bool     { return false }
 func (l *localBackend) quit()            {}
 func (l *localBackend) send(t, ref string) {
-	if _, err := l.a.Runner.Submit(t, ref); err != nil {
+	if _, err := l.a.Runner.Submit(t, ref, ""); err != nil {
 		l.a.Bus.Emit(map[string]any{"type": "input.failed", "ref": ref, "error": err.Error()})
 	}
 }

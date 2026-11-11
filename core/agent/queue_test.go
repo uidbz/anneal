@@ -55,7 +55,7 @@ func TestQueuePausesAfterStop(t *testing.T) {
 
 func TestSubmitQueuesWhileBusy(t *testing.T) {
 	r := &Runner{bus: events.New(), running: true, pendingPerms: map[string]*pendingPerm{}, doom: map[string]int{}}
-	res, err := r.Submit("hello", "c1")
+	res, err := r.Submit("hello", "c1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestSubmitQueuesWhileBusy(t *testing.T) {
 	if len(items) != 1 || items[0].Text != "hello" || items[0].Ref != "c1" {
 		t.Fatalf("queue = %+v", items)
 	}
-	if _, err := r.Submit("   ", ""); err == nil {
+	if _, err := r.Submit("   ", "", ""); err == nil {
 		t.Fatal("empty message accepted")
 	}
 }

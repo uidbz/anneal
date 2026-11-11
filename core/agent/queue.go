@@ -19,6 +19,7 @@ type QueuedInput struct {
 	ID   string    `json:"id"`
 	Text string    `json:"text"`
 	Ref  string    `json:"ref,omitempty"` // client correlation id
+	Work string    `json:"work,omitempty"`
 	At   time.Time `json:"at"`
 }
 
@@ -31,15 +32,16 @@ type SubmitResult struct {
 }
 
 // Submit starts a run when idle, or queues the message. It replaces the old
-// "busy => rejected" behaviour for clients that opt in.
-func (r *Runner) Submit(text, ref string) (SubmitResult, error) {
+// "busy => rejected" behaviour for clients that opt in. work is an optional
+// prepared (absolute) work dir for the run, kept with the queued input.
+func (r *Runner) Submit(text, ref, work string) (SubmitResult, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return SubmitResult{}, fmt.Errorf("message is empty")
 	}
 	r.mu.Lock()
 	r.inputSeq++
-	q := QueuedInput{ID: fmt.Sprintf("i%d", r.inputSeq), Text: text, Ref: ref, At: time.Now()}
+	q := QueuedInput{ID: fmt.Sprintf("i%d", r.inputSeq), Text: text, Ref: ref, Work: work, At: time.Now()}
 	r.mu.Unlock()
 
 	if id, ok := r.StartTaskRef(q); ok {

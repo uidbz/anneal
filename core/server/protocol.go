@@ -338,6 +338,7 @@ func (s *Server) methods() map[string]handler {
 			Text  string `json:"text"`
 			Ref   string `json:"ref"`
 			Queue bool   `json:"queue"`
+			Work  string `json:"work"`
 		}
 		if err := decode(params, &p); err != nil {
 			return nil, err
@@ -345,16 +346,27 @@ func (s *Server) methods() map[string]handler {
 		if p.Text == "" {
 			return nil, argErr(fmt.Errorf("text is empty"))
 		}
+		// Optional per-send work dir: work-root-relative, created on
+		// demand; the run executes with it as its working directory
+		// (PROTOCOL.md, "The work tree").
+		work := ""
+		if p.Work != "" {
+			abs, err := s.prepareWorkDir(p.Work)
+			if err != nil {
+				return nil, argErr(err)
+			}
+			work = abs
+		}
 		if p.Queue {
 			// Opt-in queueing: never reject a message because a run is active.
-			res, err := a.Runner.Submit(p.Text, p.Ref)
+			res, err := a.Runner.Submit(p.Text, p.Ref, work)
 			if err != nil {
 				return nil, argErr(err)
 			}
 			return map[string]any{"ok": true, "id": res.Input.ID, "run": res.Run,
 				"queued": res.Queued, "position": res.Position}, nil
 		}
-		id, ok := a.Runner.StartTask(p.Text)
+		id, ok := a.Runner.StartTaskWork(p.Text, work)
 		return map[string]any{"id": id, "ok": ok}, nil
 	}
 	m["queue.list"] = func(json.RawMessage) (any, error) {
@@ -402,6 +414,11 @@ func (s *Server) methods() map[string]handler {
 		return map[string]any{"busy": a.Runner.Busy(), "mode": a.Runner.Mode(),
 			"session": a.Runner.SessionID()}, nil
 	}
+
+	// work-tree transfer (files namespace): stage and collect subtrees
+	// of the instance's work root (PROTOCOL.md, "The work tree")
+	m["files.put"] = s.filesPut
+	m["files.get"] = s.filesGet
 
 	// sessions
 	m["sessions.list"] = func(json.RawMessage) (any, error) {

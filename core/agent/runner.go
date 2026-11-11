@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -65,6 +66,7 @@ type Runner struct {
 	stopping   bool
 	runSeq     int
 	running    bool
+	runWork    string        // per-send work dir for the active run ("" = startup cwd)
 	permWait   time.Duration // time blocked on approval cards, per run
 	lastPerf   *perfSummary
 	preempt    func() // cancels background model work (review/improve)
@@ -326,23 +328,56 @@ func (r *Runner) Send(input string) {
 // already active (a run.busy event is still emitted). Callers that must
 // correlate events with the run they started use this instead of Send.
 func (r *Runner) StartTask(input string) (id int, ok bool) {
-	return r.startTask(input, "", "", false)
+	return r.startTask(input, "", "", false, "")
+}
+
+// StartTaskWork starts a run whose working directory is work (an absolute
+// directory prepared by the caller; "" keeps the server's startup cwd).
+func (r *Runner) StartTaskWork(input, work string) (id int, ok bool) {
+	return r.startTask(input, "", "", false, work)
 }
 
 // StartTaskRef starts a run for a known input (direct send or dequeued item).
 // The id/ref travel in run.started so every attached client can reconcile the
 // message it rendered optimistically.
 func (r *Runner) StartTaskRef(q QueuedInput) (id int, ok bool) {
-	return r.startTask(q.Text, q.ID, q.Ref, false)
+	return r.startTask(q.Text, q.ID, q.Ref, false, q.Work)
 }
 
 // Continue resumes a stopped/failed turn from the recorded history, with no
 // new user message. Every completed tool call stays completed.
 func (r *Runner) Continue() (id int, ok bool) {
-	return r.startTask("", "", "", true)
+	return r.startTask("", "", "", true, "")
 }
 
-func (r *Runner) startTask(input, inputID, ref string, cont bool) (id int, ok bool) {
+// applyRunWork applies the pending per-send work dir: the process chdirs
+// into it for the duration of the run, and the returned restore func puts
+// the process cwd back. It is idempotent (sync.Once), so callers call it
+// inline before marking the run idle AND defer it as a safety net — the
+// queued-follow-up race (next run chdir, then a late restore reverting it)
+// cannot happen on any path that marks the run idle explicitly. Exactly
+// one foreground run is active at a time and every run path flows through
+// startTask -> run, so a process-level chdir is safe; a failed or empty
+// apply is a no-op and the run keeps the server's startup cwd.
+func (r *Runner) applyRunWork() (cwd string, restore func()) {
+	r.mu.Lock()
+	work := r.runWork
+	r.mu.Unlock()
+	prev, err := os.Getwd()
+	if err != nil {
+		return r.cwd, func() {}
+	}
+	if work == "" {
+		return prev, func() {}
+	}
+	if err := os.Chdir(work); err != nil {
+		return prev, func() {}
+	}
+	var once sync.Once
+	return work, func() { once.Do(func() { _ = os.Chdir(prev) }) }
+}
+
+func (r *Runner) startTask(input, inputID, ref string, cont bool, work string) (id int, ok bool) {
 	// A soft-cancel context lets Stop finish the running tool instead of
 	// tearing down a write mid-flight; a second Stop uses the hard cancel.
 	base, softCancel := dive.WithSoftCancel(context.Background())
@@ -356,6 +391,7 @@ func (r *Runner) startTask(input, inputID, ref string, cont bool) (id int, ok bo
 	}
 	r.running = true
 	r.runSeq++
+	r.runWork = work
 	if !cont {
 		r.lastTask = input
 	}
@@ -418,6 +454,11 @@ func (r *Runner) Interrupt() {
 
 func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string, cont bool) {
 	defer r.clearRun(id) // safety net for early returns / panics
+	// Per-send work dir: chdir for the run, restore on every exit path
+	// (idempotent; also called inline before each idle transition so a
+	// queued follow-up run never inherits this run's work dir).
+	cwd, restoreCwd := r.applyRunWork()
+	defer restoreCwd()
 	r.resetDoom()
 	r.resetPermWait()
 	tracer := newPerfTracer(r.bus, id)
@@ -446,6 +487,7 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string, co
 		h = r.monitor.Current()
 	}
 	if !h.IsUsable() {
+		restoreCwd() // idle before next run: cwd back first
 		r.finishRun(id, false, "", fmt.Sprintf("model server not usable (state: %s)", h.State), 0, 0, 0)
 		return
 	}
@@ -507,7 +549,9 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string, co
 		layers = r.harn.Layers(r.cfg.Harness.CharLimit)
 		layers = append(layers, r.sessionOverlayLayers()...)
 	}
-	prompt := SystemPrompt(r.cwd, r.Mode(), layers)
+	// The prompt states the directory the run actually operates in: the
+	// per-send work dir when set (and applied), else the startup cwd.
+	prompt := SystemPrompt(cwd, r.Mode(), layers)
 	guard := newRepeatGuard()
 	hooks := dive.Hooks{
 		PreToolUse:         []dive.PreToolUseHook{r.permissionHook},
@@ -542,6 +586,7 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string, co
 		Tracer:                tracer,
 	})
 	if err != nil {
+		restoreCwd() // idle before next run: cwd back first
 		r.finishRun(id, false, "", err.Error(), 0, 0, 0)
 		return
 	}
@@ -616,6 +661,7 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string, co
 	r.mu.Unlock()
 	// Clear before announcing completion: a UI that chains sends on
 	// run.finished must not hit run.busy.
+	restoreCwd() // cwd back before the run is idle (queue continues below)
 	r.clearRun(id)
 	r.emit(out)
 	// A clean run continues the queue; a stop/error pauses it (the user

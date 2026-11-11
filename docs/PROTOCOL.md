@@ -26,7 +26,8 @@ handshake over it).
 
 ## Framing
 
-Text frames, JSON objects, UTF-8. Max inbound frame 1 MiB.
+Text frames, JSON objects, UTF-8. Max inbound frame 1 MiB — the whole
+`files.put` frame (base64 archive included) must fit inside it.
 
 * **Request** (client → server): JSON-RPC 2.0 —
   `{"jsonrpc":"2.0","id":"7","method":"agent.send","params":{…}}`.
@@ -113,10 +114,10 @@ accepted — their effects arrive as events).
 | `server.ping` | – | `{"ok":true}` |
 | `server.info` | – | `{version,proto,workdir,mode,session,busy,idle_timeout_s,uptime_s}` |
 | `server.quit` | `{reason}` | `{"ok":true}` |
-| `agent.send` | `{text}` or `{text,ref,queue:true}` | legacy: `{id,ok}` (run id; `ok:false` if busy). With `queue:true`: `{ok:true,id:<input id>,run,queued,position}` — never rejected for a busy runner |
+| `agent.send` | `{text}` or `{text,ref,queue:true[,work]}` | legacy: `{id,ok}` (run id; `ok:false` if busy). With `queue:true`: `{ok:true,id:<input id>,run,queued,position}` — never rejected for a busy runner. `work` (either form) is a work-root-relative directory for that run (see "The work tree") |
 | `agent.interrupt` | – | null (first call: soft stop after the running step; second: hard cancel) |
 | `agent.continue` | – | `{id,ok}` (resume a stopped/failed turn from the recorded history) |
-| `queue.list` | – | `{items:[{id,text,ref,at}],paused,reason}` |
+| `queue.list` | – | `{items:[{id,text,ref,work,at}],paused,reason}` (`work` only when the send carried it) |
 | `queue.cancel` | `{id}` | `{input,removed}` |
 | `queue.clear` | – | `{inputs:[…]}` |
 | `queue.resume` | – | `{"ok":true}` (clears the pause; starts the next input when idle) |
@@ -150,9 +151,46 @@ accepted — their effects arrive as events).
 | `harness.save` | `{name,content}` | `{error,warns,restart_for_rules}` |
 | `harness.lib_promote` | `{id}` | `{entry,backup,error,warns}` |
 | `improve.start` | `{k,mode,resume}` | `{"started":true}` (progress via `improve.*` events) |
+| `files.put` | `{path,data:<base64 tar.gz>}` | `{ok:true,path,entries}` (see "The work tree") |
+| `files.get` | `{path}` | `{ok:true,path,data:<base64 tar.gz>,bytes}` (see "The work tree") |
 
 Errors: JSON-RPC codes `-32700` parse, `-32600` invalid, `-32601` unknown
 method, `-32602` bad params, `-32000` handler error, `-32001` shutting down.
+
+## The work tree
+
+Every file-facing param (`files.put`/`files.get` `path`, `agent.send`
+`work`, and the member names inside a `files.put` archive) is a path
+**relative to the instance's work root** — the directory the server runs
+its agent in (`server.info.workdir`): `/`-separated, no absolute paths,
+no drive/UNC forms, no `..` segments, no NULs, and it must name
+something strictly inside the root (`.` is invalid). A violation is
+`-32602`.
+
+* **`files.put` `{path,data}`** — `data` is a base64 `tar.gz` extracted
+  *under* `path` (the target and parent dirs are created; existing files
+  are overwritten). Archive members must be regular files or
+  directories: symlinks, hardlinks, and device members are refused and
+  the call fails with `-32000`. Caps: 64 MiB total file content, 2000
+  members. Extraction is not transactional — a rejected member can
+  leave earlier members applied. Remember the 1 MiB inbound frame limit:
+  the archive payload is at most ~750 KiB before base64 overhead.
+* **`files.get` `{path}`** — archives `path` into a base64 `tar.gz`
+  whose member names are relative to `path` (the inverse of `files.put`:
+  feed the result to `files.put` with the same `path` to move a subtree
+  between instances). A directory is walked recursively; a single
+  regular file yields one member named after its base name (restore it
+  by putting to the file's parent directory). Symlinks in the walked
+  tree abort the call. The same 64 MiB / 2000-member caps apply;
+  `bytes` is the decoded archive size. Outbound frames are not
+  size-capped, so `files.get` can answer larger than 1 MiB.
+* **`agent.send` `work`** — a work-root-relative directory, created on
+  demand (mkdir -p). The run executes with that directory as its
+  working directory and the server restores its startup cwd when the
+  run finishes, on every exit path. It applies per send: a following
+  send without `work` is back at the work root. With `queue:true` the
+  prepared directory rides on the queued input (`queue.list` items
+  carry `work`).
 
 ## Concurrency semantics (unchanged from the core)
 

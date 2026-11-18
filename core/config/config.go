@@ -271,8 +271,10 @@ func Default() *Config {
 	}
 }
 
-// Load reads the config file (writing defaults on first run) and applies
-// env overrides ANNEAL_ENDPOINT / ANNEAL_MODEL.
+// Load reads the config file (applying env overrides ANNEAL_ENDPOINT /
+// ANNEAL_MODEL / ...) and, on first run, persists the EFFECTIVE config —
+// seeding the raw code defaults on disk would strand later env-less runs
+// with a nonexistent 127.0.0.1 provider.
 func Load() (*Config, error) {
 	cfg := Default()
 	cfg.path = paths.Config()
@@ -281,11 +283,10 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	data, err := os.ReadFile(cfg.path)
+	firstRun := false
 	switch {
 	case os.IsNotExist(err):
-		if err := cfg.save(); err != nil {
-			return nil, err
-		}
+		firstRun = true
 	case err != nil:
 		return nil, err
 	default:
@@ -335,6 +336,14 @@ func Load() (*Config, error) {
 		cfg.Server.WorkDir = v
 	}
 	cfg.normalize()
+	// Seed the file only AFTER env overrides: a state file carrying the
+	// default 127.0.0.1 provider makes later runs (which may launch without
+	// those env vars, e.g. headless probes) aim at a nonexistent server.
+	if firstRun {
+		if err := cfg.save(); err != nil {
+			return nil, err
+		}
+	}
 	return cfg, nil
 }
 

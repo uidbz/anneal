@@ -157,3 +157,26 @@ func TestClampTextScale(t *testing.T) {
 		}
 	}
 }
+
+// Regression: first-run seeding used to write the raw code defaults (a
+// 127.0.0.1 provider) to disk BEFORE env overrides, so any later env-less
+// load — e.g. a headless probe inside a container whose entrypoint exports
+// were lost — resolved a provider that never existed and reported the
+// model server as unreachable. The seeded file must carry the EFFECTIVE
+// config.
+func TestFirstRunSeedsEffectiveConfig(t *testing.T) {
+	t.Setenv("ANNEAL_HOME", t.TempDir())
+	t.Setenv("ANNEAL_ENDPOINT", "http://example.invalid/v1/chat/completions")
+
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+	os.Unsetenv("ANNEAL_ENDPOINT")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Provider.Endpoint != "http://example.invalid/v1/chat/completions" {
+		t.Fatalf("seeded file carries raw defaults, not effective config: %q", cfg.Provider.Endpoint)
+	}
+}

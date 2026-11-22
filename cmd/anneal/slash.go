@@ -14,7 +14,7 @@ func (s *shell) slash(line string) {
 	cmd := fields[0]
 	switch cmd {
 	case "/help":
-		s.showText("commands", "/new /sessions /plan /build /stop /textsize /memory /skills /journey /activity /runs /perf /index /learn /improve /harness /backend /quit")
+		s.showText("commands", "/new /sessions /plan /build /stop /textsize /memory /skills /journey /activity /runs /schedules /perf /index /learn /improve /harness /backend /quit")
 	case "/new":
 		s.b.newSession()
 	case "/sessions":
@@ -75,6 +75,8 @@ func (s *shell) slash(line string) {
 	case "/activity", "/runs":
 		s.refreshActivity()
 		s.showView(viewActivity)
+	case "/schedules":
+		s.showView(viewSchedule)
 	case "/perf":
 		s.showText("performance", agent.FormatPerf(s.lastStats))
 	case "/index":

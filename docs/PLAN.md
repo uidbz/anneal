@@ -256,10 +256,12 @@ Milestones:
   `core/schedule` jobs (cron/interval/one-shot, timezone, missed/overlap
   policy, run ledger, single-owner lock), `anneald` worker sessions behind a
   shared run gate, `schedule_manage` agent tool, protocol methods and
-  `annealctl`; `anneal-gateway` with ntfy and plain-text Matrix transports,
-  command/approval routing and durable cursor; rootless `gentoo` build tool
-  using bubblewrap user namespaces, overlayfs, validated atoms and an audit
-  log. Docs: SCHEDULING.md, GATEWAY.md, GENTOO.md, SECURITY.md.
+  `annealctl`; GUI Schedules view (list/create/edit/run/pause/history);
+  `anneal-gateway` with ntfy and Matrix transports (plain HTTP + optional
+  Megolm E2EE), command/approval routing and durable cursor; rootless
+  `gentoo` build tool using bubblewrap user namespaces, overlayfs, validated
+  atoms and an audit log. Docs: SCHEDULING.md, GATEWAY.md, GENTOO.md,
+  SECURITY.md.
 
 Out of scope: editable middleware/plugin component (dive Hooks stay
 compiled Go), benchmark suites, second editor endpoint (config leaves room).

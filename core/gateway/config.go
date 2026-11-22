@@ -50,9 +50,13 @@ type TransportConfig struct {
 	Priority int    `json:"priority,omitempty"`
 	// Matrix.
 	Homeserver string   `json:"homeserver,omitempty"`
-	UserID     string   `json:"user_id,omitempty"`     // bot MXID, ignored as a sender
-	RoomID     string   `json:"room_id,omitempty"`     // one room per transport
-	AllowUsers []string `json:"allow_users,omitempty"` // human MXIDs allowed to command
+	UserID     string   `json:"user_id,omitempty"`        // bot MXID, ignored as a sender
+	RoomID     string   `json:"room_id,omitempty"`        // one room per transport
+	AllowUsers []string `json:"allow_users,omitempty"`    // human MXIDs allowed to command
+	Encrypted  bool     `json:"encrypted,omitempty"`      // E2EE (requires a CGO gateway build)
+	DeviceID   string   `json:"device_id,omitempty"`      // optional; Whoami is used when empty
+	DBPath     string   `json:"db_path,omitempty"`        // crypto SQLite store (default ~/.anneal/matrix/<name>.db)
+	PickleKey  string   `json:"pickle_key_env,omitempty"` // env var with the store pickle secret
 	// HTTPListen enables the optional approval-action endpoint, e.g.
 	// "127.0.0.1:8787". TLS should be terminated by a reverse proxy.
 	HTTPListen string `json:"http_listen,omitempty"`
@@ -156,6 +160,14 @@ func (c *Config) normalize() error {
 			t.Homeserver = strings.TrimRight(t.Homeserver, "/")
 			if t.Title == "" {
 				t.Title = "anneal"
+			}
+			if t.Encrypted {
+				if t.PickleKey == "" {
+					t.PickleKey = "MATRIX_PICKLE_KEY"
+				}
+				if t.DBPath == "" {
+					t.DBPath = filepath.Join(paths.Root(), "matrix", t.Name+".db")
+				}
 			}
 		default:
 			return fmt.Errorf("gateway: unknown transport type %q", t.Type)

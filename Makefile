@@ -1,6 +1,10 @@
 # Anneal — build, test, docs gates
 GO      ?= go
 BIN     := bin
+# Matrix E2EE needs mautrix-go's goolm (pure-Go Olm) plus a C compiler for
+# mattn/go-sqlite3. Set GATEWAY_CGO=0 for a smaller plain-Matrix-only gateway.
+GATEWAY_CGO  ?= 1
+GATEWAY_TAGS ?= goolm
 
 # User-local by default; `make install PREFIX=/usr/local` for a system install.
 PREFIX  ?= $(HOME)/.local
@@ -11,7 +15,7 @@ DATADIR ?= $(PREFIX)/share
 APPDIR  ?= $(DATADIR)/applications
 ICONDIR ?= $(DATADIR)/icons/hicolor/scalable/apps
 
-.PHONY: all build test vet fmt check-ui check-script-ui anneal headless anneald gateway annealctl docker clean install uninstall live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke live-m16-test
+.PHONY: all build test test-e2ee vet fmt check-ui check-script-ui anneal headless anneald gateway gateway-plain annealctl docker clean install uninstall live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke live-m16-test
 
 all: build
 
@@ -27,7 +31,12 @@ anneald:
 	$(GO) build -o $(BIN)/anneald ./cmd/anneald
 
 gateway:
-	$(GO) build -o $(BIN)/anneal-gateway ./cmd/anneal-gateway
+	CGO_ENABLED=$(GATEWAY_CGO) $(GO) build -tags $(GATEWAY_TAGS) -o $(BIN)/anneal-gateway ./cmd/anneal-gateway
+
+# Small CGO-free gateway: ntfy + unencrypted Matrix only (encrypted=true
+# transports report a clear build error).
+gateway-plain:
+	CGO_ENABLED=0 $(GO) build -o $(BIN)/anneal-gateway ./cmd/anneal-gateway
 
 annealctl:
 	$(GO) build -o $(BIN)/annealctl ./cmd/annealctl
@@ -39,6 +48,10 @@ docker:
 # Hermetic tests (no network; live-infrastructure tests skip unless opted in)
 test:
 	$(GO) test ./...
+
+# E2EE transport build/tests (CGO + mautrix goolm).
+test-e2ee:
+	CGO_ENABLED=1 $(GO) test -tags goolm ./core/gateway
 
 # Against the real tie triplestore (uses ~/.config/tie or ANNEAL_* env)
 live-tie-test:

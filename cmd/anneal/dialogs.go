@@ -73,7 +73,7 @@ func (s *shell) showSettingsJSON() {
 func (s *shell) showCommands() {
 	body := "Navigation\n" +
 		"  /new /sessions /plan /build /stop\n" +
-		"  /activity /runs /harness\n" +
+		"  /activity /runs /schedules /harness\n" +
 		"Views\n" +
 		"  /plan /build        switch permission mode\n" +
 		"  /theme system|light|dark\n" +
@@ -96,7 +96,8 @@ func (s *shell) showShortcuts() {
 		"  Ctrl+1   Chat\n" +
 		"  Ctrl+2   Harness\n" +
 		"  Ctrl+3   Activity\n" +
-		"  Ctrl+4   Settings\n" +
+		"  Ctrl+4   Schedules\n" +
+		"  Ctrl+5   Settings\n" +
 		"  Ctrl+,   Settings\n" +
 		"  Ctrl+Q   Quit\n" +
 		"Session\n" +

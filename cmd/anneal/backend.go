@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/uidbz/anneal/core/journey"
 	"github.com/uidbz/anneal/core/paths"
 	"github.com/uidbz/anneal/core/permission"
+	"github.com/uidbz/anneal/core/schedule"
 	"github.com/uidbz/anneal/core/skills"
 )
 
@@ -56,6 +58,15 @@ type backend interface {
 	savedGrants() ([]permission.Rule, error)
 	removeSavedGrant(action, resource string) error
 	trackGortex() error
+
+	// schedules (management; execution stays in anneald)
+	scheduleList() ([]schedule.Job, error)
+	scheduleCreate(job schedule.Job) (schedule.Job, error)
+	scheduleUpdate(job schedule.Job) (schedule.Job, error)
+	scheduleRemove(id string) error
+	scheduleSetEnabled(id string, enabled bool) error
+	scheduleRun(id string) (string, error)
+	scheduleRuns(limit int) ([]schedule.RunRecord, error)
 
 	// queries (must not block the UI thread for long)
 	sessions() []agent.SessionInfo
@@ -179,3 +190,74 @@ func (l *localBackend) harnessOverlay() bool {
 }
 
 func (l *localBackend) paneAPI() map[string]any { return l.a.HarnessAPI() }
+
+func (l *localBackend) scheduleManager() (*schedule.Manager, error) {
+	if l.a.Schedule == nil {
+		return nil, fmt.Errorf("schedule: unavailable")
+	}
+	return l.a.Schedule, nil
+}
+
+func (l *localBackend) scheduleList() ([]schedule.Job, error) {
+	m, err := l.scheduleManager()
+	if err != nil {
+		return nil, err
+	}
+	return m.List(), nil
+}
+
+func (l *localBackend) scheduleCreate(job schedule.Job) (schedule.Job, error) {
+	m, err := l.scheduleManager()
+	if err != nil {
+		return schedule.Job{}, err
+	}
+	return m.Create(job)
+}
+
+func (l *localBackend) scheduleUpdate(job schedule.Job) (schedule.Job, error) {
+	m, err := l.scheduleManager()
+	if err != nil {
+		return schedule.Job{}, err
+	}
+	return m.Update(job)
+}
+
+func (l *localBackend) scheduleRemove(id string) error {
+	m, err := l.scheduleManager()
+	if err != nil {
+		return err
+	}
+	return m.Remove(id)
+}
+
+func (l *localBackend) scheduleSetEnabled(id string, enabled bool) error {
+	m, err := l.scheduleManager()
+	if err != nil {
+		return err
+	}
+	if enabled {
+		_, err = m.Resume(id)
+	} else {
+		_, err = m.Pause(id)
+	}
+	return err
+}
+
+func (l *localBackend) scheduleRun(id string) (string, error) {
+	m, err := l.scheduleManager()
+	if err != nil {
+		return "", err
+	}
+	if !m.Started() {
+		return "", fmt.Errorf("scheduler is not running here; start anneald to execute jobs")
+	}
+	return m.RunNow(id)
+}
+
+func (l *localBackend) scheduleRuns(limit int) ([]schedule.RunRecord, error) {
+	m, err := l.scheduleManager()
+	if err != nil {
+		return nil, err
+	}
+	return m.Runs(limit)
+}

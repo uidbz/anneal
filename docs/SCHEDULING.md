@@ -185,6 +185,23 @@ annealctl schedule runs
 `schedule run` requires the scheduler to be running (it needs the job loop and
 the shared run gate).
 
+### In the GUI
+
+The activity rail has a **Schedules** view (Ctrl+4; Settings moved to Ctrl+5).
+It lists every job with next run, last status, schedule, prompt excerpt, and
+buttons:
+
+- **New task / Edit** — name, id, cron/interval/one-shot, timezone, work dir,
+  session mode, permission mode, delivery targets, timeout, prompt, per-job
+  permission JSON, enabled.
+- **Run now** — queues a manual run (requires the `anneald` scheduler owner).
+- **Pause / Resume**, **History**, **Delete**.
+
+The embedded GUI is management-only: it can create and edit `jobs.json` but
+scheduled execution belongs to `anneald` (the single-owner lock prevents two
+schedulers). When connected to a remote backend the panel uses the same
+`schedule.*` protocol as `annealctl`.
+
 ### Protocol
 
 All methods are additive (protocol revision stays 1):

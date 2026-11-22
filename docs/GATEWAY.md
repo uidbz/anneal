@@ -78,6 +78,9 @@ Default path: `$ANNEAL_HOME/gateway.json` (usually `~/.anneal/gateway.json`).
 | `transports[].user_id` | bot MXID; its own messages are ignored |
 | `transports[].room_id` | one Matrix room per transport |
 | `transports[].allow_users` | required human MXID allowlist |
+| `transports[].encrypted` | E2EE via mautrix Olm/Megolm (CGO + `goolm` build) |
+| `transports[].pickle_key_env` | env var with the crypto-store pickle secret |
+| `transports[].db_path` | crypto SQLite store (default `~/.anneal/matrix/<name>.db`) |
 
 Multiple transports are supported. Multiple instances of the same type are
 allowed, for example `ntfy-phone` and `ntfy-office`; a job can target
@@ -228,11 +231,20 @@ stays on the anneald host.
 
 ## Matrix
 
-The Matrix transport is a small plain-text client: one bot account, one room,
-`/sync` long-polling, and `m.room.message` sends. It does **not** implement
-E2EE; use a private unencrypted room on your own homeserver (or a room where
-the bot is the only non-human member). E2EE would need `mautrix-go` and a
-crypto-store/device-verification design; that is a separate follow-up.
+The Matrix transport is a small plain-text client by default: one bot
+account, one room, `/sync` long-polling, and `m.room.message` sends. Set
+`"encrypted": true` to use mautrix-go's Olm/Megolm machine with an embedded
+SQLite crypto store. The encrypted build is optional:
+
+```sh
+CGO_ENABLED=1 go build -tags goolm -o bin/anneal-gateway ./cmd/anneal-gateway
+# or simply: make gateway
+```
+
+Without CGO (or without `-tags goolm`) the gateway still builds and supports
+ntfy and unencrypted Matrix rooms; an `encrypted: true` transport refuses to
+start with a clear error. Encrypted builds use pure-Go Olm (`goolm`) and the
+bundled mattn/go-sqlite3 C source, so a C compiler is required.
 
 ```json
 {
@@ -242,9 +254,24 @@ crypto-store/device-verification design; that is a separate follow-up.
   "user_id": "@anneal:example.net",
   "room_id": "!anneal:example.net",
   "token_env": "MATRIX_TOKEN",
-  "allow_users": ["@johan:example.net"]
+  "allow_users": ["@johan:example.net"],
+  "encrypted": true,
+  "pickle_key_env": "MATRIX_PICKLE_KEY",
+  "db_path": "/var/lib/anneal-gateway/matrix-home.db"
 }
 ```
+
+`MATRIX_PICKLE_KEY` must be a stable secret (the SQLite store is unpickled with
+it on every start; losing it means re-establishing the device). The database
+holds the Olm account, Megolm sessions, and sync state; keep it mode `0600` and
+back it up. The bot's device is not cross-signed/verified by default, so
+Element may show an "unverified device" notice. That is expected for a bot:
+the room is private and `allow_users` gates commands. If you require verified
+devices, complete Matrix device verification once and back up the crypto
+database; do not rotate or delete it casually.
+
+The E2EE transport uses mautrix's state store for the sync token. The separate
+plain transport keeps a small cursor file; both persist on the gateway host.
 
 1. Create a bot account on your homeserver (registration closed otherwise).
 2. Obtain an access token once, e.g.:
@@ -254,7 +281,8 @@ crypto-store/device-verification design; that is a separate follow-up.
      -d '{"type":"m.login.password","identifier":{"type":"m.id.user","user":"anneal"},"password":"..."}'
    ```
    Store `access_token` in the gateway service environment as `MATRIX_TOKEN`.
-3. Create a room with encryption **off**, invite the bot, and have it join.
+3. Create a private room, invite the bot, and have it join. Use encryption
+   **on** for `encrypted: true`, or **off** for the default plain transport.
 4. Set `room_id` and the human MXIDs in `allow_users`. A Matrix transport
    refuses to start without an allowlist, so a compromised room cannot
    command the agent.

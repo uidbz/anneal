@@ -34,6 +34,7 @@ const (
 	viewChat viewID = iota
 	viewHarness
 	viewActivity
+	viewSchedule
 	viewSettings
 )
 
@@ -43,6 +44,8 @@ func (v viewID) String() string {
 		return "Harness"
 	case viewActivity:
 		return "Activity"
+	case viewSchedule:
+		return "Schedules"
 	case viewSettings:
 		return "Settings"
 	default:
@@ -113,6 +116,8 @@ type shell struct {
 	todoPane         fyne.CanvasObject
 	activity         *fyne.Container
 	activityHeader   *header
+	scheduleHeader   *header
+	schedule         *schedulePanel
 	settingsHeader   *header
 	settings         fyne.CanvasObject
 	settingsForm     *settingsPanel
@@ -228,10 +233,13 @@ func (s *shell) wireFrame() {
 	s.harnessHeader = newHeader("Harness")
 	s.activityHeader = newHeader("Activity")
 	s.activityHeader.setActions(labeledButton("Refresh", theme.ViewRefreshIcon(), s.refreshActivity))
+	s.scheduleHeader = newHeader("Schedules")
+	s.schedule = newSchedulePanel(s)
 	s.settingsHeader = newHeader("Settings")
 
 	s.views[viewChat] = s.chatView
 	s.views[viewActivity] = s.activityView()
+	s.views[viewSchedule] = s.scheduleView()
 	s.views[viewSettings] = s.settingsView()
 }
 
@@ -250,6 +258,10 @@ func (s *shell) activityView() fyne.CanvasObject {
 	return container.NewBorder(s.activityHeader.object, nil, nil, nil,
 		container.NewVScroll(container.New(&padLayout{l: 0, r: 0, t: 0, b: 0},
 			container.New(&maxWidthLayout{max: 900}, body))))
+}
+
+func (s *shell) scheduleView() fyne.CanvasObject {
+	return container.NewBorder(s.scheduleHeader.object, nil, nil, nil, s.schedule.Object())
 }
 
 func (s *shell) settingsView() fyne.CanvasObject {
@@ -276,6 +288,9 @@ func (s *shell) showView(v viewID) {
 	s.view = v
 	if s.frame != nil {
 		s.frame.SetPanels(v == viewChat)
+	}
+	if v == viewSchedule && s.schedule != nil {
+		s.schedule.refresh()
 	}
 }
 
@@ -396,7 +411,7 @@ func (s *shell) wireLayout() {
 
 func (s *shell) viewStack() fyne.CanvasObject {
 	stack := container.NewStack()
-	for _, v := range []viewID{viewChat, viewHarness, viewActivity, viewSettings} {
+	for _, v := range []viewID{viewChat, viewHarness, viewActivity, viewSchedule, viewSettings} {
 		view := s.views[v]
 		view.Hide()
 		stack.Add(view)
@@ -418,10 +433,11 @@ func (s *shell) railObject() fyne.CanvasObject {
 	chat := item(viewChat, theme.DocumentIcon())
 	harness := item(viewHarness, theme.StorageIcon())
 	activity := item(viewActivity, theme.HistoryIcon())
+	schedule := item(viewSchedule, theme.ListIcon())
 	settings := item(viewSettings, theme.SettingsIcon())
 	logo := logoResource()
 	s.rail = newRail(
-		[]fyne.CanvasObject{chat, harness, activity},
+		[]fyne.CanvasObject{chat, harness, activity, schedule},
 		settings, logo)
 	s.navRail[viewChat] = chat
 	return s.rail

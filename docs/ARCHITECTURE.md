@@ -92,11 +92,12 @@ same core behind a WebSocket protocol (docs/PROTOCOL.md).
   shared `agent.RunGate` serializes any two runners because per-run work dirs
   use process-wide `chdir`. Jobs default to `dontAsk` and fresh sessions tagged
   `origin=schedule`; foreground boot resume skips them. Idle shutdown is
-  disabled while schedules are enabled.
+  disabled while schedules are enabled. The GUI has a Schedules view (Ctrl+4)
+  that manages the same store; execution remains the `anneald` owner's job.
 - **Phone gateway.** `cmd/anneal-gateway` is a thin `core/client` consumer that
   fans `schedule.*`, `perm.request`, provider and shutdown events to messaging
-  transports (ntfy and a plain-text Matrix room; Telegram behind the same
-  interface). It persists a delivery cursor, turns inbound chat text into
+  transports (ntfy and Matrix, with optional Megolm E2EE; Telegram behind the
+  same interface). It persists a delivery cursor, turns inbound chat text into
   protocol calls, and never executes tools itself. `cmd/annealctl` is a small
   status/schedule CLI.
 

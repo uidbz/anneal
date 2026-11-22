@@ -25,8 +25,9 @@ settings UIs.
 The `anneal` binary is a plain Fyne shell with scripted panes, laid out like a
 small IDE.
 
-- **Activity rail** (far left): Chat, Harness, Activity, and Settings. The
-  active view gets an accent bar; Settings is pinned to the bottom.
+- **Activity rail** (far left): Chat, Harness, Activity, Schedules, and
+  Settings. The active view gets an accent bar; Settings is pinned to the
+  bottom.
 - **Sessions sidebar** (left, Ctrl+B): stored sessions grouped by Today /
   Yesterday / Previous 7 days / Older, with a filter box. The current session
   is highlighted; right-click a row to copy its session ID. New sessions use
@@ -82,6 +83,11 @@ small IDE.
 - **Activity view**: journey timeline rows (time, kind badge, readable text)
   and one card per improvement run (outcome, candidates, decisions, library
   entry). Refresh-on-demand; no background model work.
+- **Schedules view** (Ctrl+4): durable scheduled tasks with next/last run,
+  create/edit form (schedule, timezone, prompt, work dir, session, permission
+  mode/rules, delivery targets, timeout), Run now, Pause/Resume, History, and
+  Delete. The embedded GUI is management-only; scheduled execution belongs to
+  `anneald`. See [SCHEDULING.md](SCHEDULING.md).
 - **Harness view**: a fynerisor `CanvasObject` pane below a Go header. Edit
   component files inline (Save), review component and guardrail counts, browse
   the improvement library, read experience, promote with a two-click
@@ -103,6 +109,7 @@ small IDE.
 | `/memory` | show MEMORY.md / USER.md with usage vs caps |
 | `/journey` | self-improvement timeline |
 | `/activity`, `/runs` | switch to the Activity view |
+| `/schedules` | switch to the Schedules view |
 | `/index` | rebuild the session search index |
 | `/learn` | queue a background-review pass now (runs when idle) |
 | `/improve` | one contrastive harness-improvement step for the last task |
@@ -124,7 +131,7 @@ small IDE.
 | Ctrl+R | reload the scripted harness pane |
 | Ctrl+, | Settings |
 | Ctrl+= / Ctrl+- / Ctrl+0 | text size up / down / reset |
-| Ctrl+1/2/3/4 | Chat / Harness / Activity / Settings |
+| Ctrl+1/2/3/4/5 | Chat / Harness / Activity / Schedules / Settings |
 | Ctrl+Q | quit |
 | Enter / Shift+Enter | send (or queue while a run is active) / newline in the composer |
 | Ctrl+Enter | allow the oldest pending approval once |

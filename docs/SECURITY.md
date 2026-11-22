@@ -107,10 +107,12 @@ shell.
   gateway terminates TLS.
 - The gateway outbound queue is bounded; a failed transport never blocks the
   agent. Durable schedule results remain in the run ledger.
-- The Matrix transport is plain text and refuses to start without an
-  `allow_users` list. Use a private unencrypted room on your own homeserver;
-  do not put it in an encrypted room (E2EE is a separate follow-up). The room
-  membership and the allowlist are the authorization boundary.
+- The Matrix transport refuses to start without an `allow_users` list. The
+  default is a private plain-text room; set `encrypted: true` for Megolm
+  E2EE. The encrypted store (`db_path`) and `pickle_key_env` are secrets:
+  keep the database `0600`, back it up, and don't rotate the pickle key
+  casually. The bot device may show as unverified in Element; verify it once
+  if your policy requires it.
 - Never expose an unauthenticated agent port; the gateway connects outbound
   over a token-protected WS or Unix socket.
 

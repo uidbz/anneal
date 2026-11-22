@@ -23,7 +23,7 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 - [x] **M15** Go harness panel (now a scripted `CanvasObject` pane)
 - [x] **M16** review→improve bridge via `harness_flag`
 - [x] **M17** backend/frontend split: `anneald` + wire protocol, remote headless, container image with idle lifecycle
-- [x] **M18** scheduled tasks + `anneal-gateway` (ntfy/Matrix) + rootless Gentoo chroot builds
+- [x] **M18** scheduled tasks + `anneal-gateway` (ntfy/Matrix, optional E2EE) + Schedules GUI + rootless Gentoo chroot builds
 - [~] **H1** hybrid Go shell + scripted panes (rename to Anneal)
 
 Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes below).
@@ -52,6 +52,19 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 
 ## Notes (newest first)
 
+### 2026-11-22 — M18 follow-up: Schedules GUI + Matrix E2EE
+- New Schedules view (Ctrl+4; Settings moved to Ctrl+5) with job cards,
+  create/edit form (schedule/timezone/prompt/work/session/permission/rules/
+  deliver/timeout/enabled), Run now, Pause/Resume, History, and Delete.
+  Local GUI is management-only; remote uses `schedule.*`.
+- Gateway Matrix transport can now use Megolm E2EE via mautrix-go
+  (`encrypted: true`, `pickle_key_env`, SQLite crypto store). Built with
+  `CGO_ENABLED=1 -tags goolm` (pure-Go Olm); `make gateway-plain` remains
+  CGO-free for ntfy/plain Matrix. `make test-e2ee` covers the encrypted
+  constructor and build.
+- Docs updated: GATEWAY (E2EE setup, pickle/db handling), SECURITY, USING,
+  SCHEDULING, README, CONTAINERS, ARCHITECTURE.
+
 ### 2026-11-22 — M18: scheduled tasks, phone gateway, rootless Gentoo builds
 - `core/schedule`: durable job store (`~/.anneal/schedules/jobs.json`), cron
   (`robfig/cron/v3`)/interval/one-shot parsing with per-job timezones, run
@@ -64,11 +77,14 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - `core/app`: scheduled jobs execute in a fresh worker Runner with a private
   bus; results are summarized on the main bus, approvals are namespaced and
   routed back to the active worker.
-- `cmd/anneal-gateway` + `core/gateway`: ntfy and plain-text Matrix
-  transports with reconnect/cursor, command routing (`/status`, `/schedule`,
-  `/approve`, numeric approval replies), schedule/approval/health
-  notifications, multi-server and multi-transport config. `cmd/annealctl` adds
-  a small status/schedule CLI.
+- `cmd/anneal-gateway` + `core/gateway`: ntfy and Matrix transports
+  (plain HTTP + optional Megolm E2EE via mautrix-go/goolm), command routing
+  (`/status`, `/schedule`, `/approve`, numeric approval replies),
+  schedule/approval/health notifications, multi-server and multi-transport
+  config. `cmd/annealctl` adds a small status/schedule CLI.
+- GUI: Schedules view (Ctrl+4) with list, create/edit, run, pause/resume,
+  history, and delete; local core is management-only, remote uses the
+  `schedule.*` protocol.
 - `core/agent/gentoo.go`: rootless chroot builds via bwrap user namespaces +
   overlayfs; validated atoms, `--buildpkgonly`, binpkg/distfiles bind mounts,
   audit log, preflight. No host root; docs explain clone and ACL setup.

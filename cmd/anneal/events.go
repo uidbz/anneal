@@ -18,6 +18,12 @@ func (s *shell) handleEvent(e map[string]any) {
 		}
 	}()
 	switch str(e["type"]) {
+	case "schedule.state", "schedule.created", "schedule.updated", "schedule.removed",
+		"schedule.paused", "schedule.resumed", "schedule.started", "schedule.finished",
+		"schedule.error", "schedule.missed":
+		if s.schedule != nil {
+			s.schedule.refresh()
+		}
 	case "provider.state":
 		h := obj(e["health"])
 		state := str(h["state"])

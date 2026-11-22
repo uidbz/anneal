@@ -17,6 +17,7 @@ import (
 	"github.com/uidbz/anneal/core/improve"
 	"github.com/uidbz/anneal/core/journey"
 	"github.com/uidbz/anneal/core/permission"
+	"github.com/uidbz/anneal/core/schedule"
 	"github.com/uidbz/anneal/core/skills"
 )
 
@@ -324,6 +325,60 @@ func (r *remoteBackend) paneAPI() map[string]any {
 }
 
 // refreshSessions pulls sessions.list, debounced so a repaint storm cannot
+// ---- schedules ----------------------------------------------------------
+
+func (r *remoteBackend) scheduleList() ([]schedule.Job, error) {
+	var out []schedule.Job
+	err := r.callInto("schedule.list", nil, &out)
+	if out == nil {
+		out = []schedule.Job{}
+	}
+	return out, err
+}
+
+func (r *remoteBackend) scheduleCreate(job schedule.Job) (schedule.Job, error) {
+	var out schedule.Job
+	err := r.callInto("schedule.create", job, &out)
+	return out, err
+}
+
+func (r *remoteBackend) scheduleUpdate(job schedule.Job) (schedule.Job, error) {
+	var out schedule.Job
+	err := r.callInto("schedule.update", job, &out)
+	return out, err
+}
+
+func (r *remoteBackend) scheduleRemove(id string) error {
+	_, err := r.call("schedule.remove", map[string]any{"id": id})
+	return err
+}
+
+func (r *remoteBackend) scheduleSetEnabled(id string, enabled bool) error {
+	method := "schedule.pause"
+	if enabled {
+		method = "schedule.resume"
+	}
+	_, err := r.call(method, map[string]any{"id": id})
+	return err
+}
+
+func (r *remoteBackend) scheduleRun(id string) (string, error) {
+	var out struct {
+		ID string `json:"id"`
+	}
+	err := r.callInto("schedule.run", map[string]any{"id": id}, &out)
+	return out.ID, err
+}
+
+func (r *remoteBackend) scheduleRuns(limit int) ([]schedule.RunRecord, error) {
+	var out []schedule.RunRecord
+	err := r.callInto("schedule.runs", map[string]any{"limit": limit}, &out)
+	if out == nil {
+		out = []schedule.RunRecord{}
+	}
+	return out, err
+}
+
 // fan out RPCs.
 func (r *remoteBackend) refreshSessions() {
 	r.refreshMu.Lock()

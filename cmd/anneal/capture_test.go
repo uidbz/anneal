@@ -13,6 +13,7 @@ import (
 
 	coreapp "github.com/uidbz/anneal/core/app"
 	"github.com/uidbz/anneal/core/paths"
+	"github.com/uidbz/anneal/core/schedule"
 )
 
 // TestUICapture renders the shell with a representative session through the
@@ -55,13 +56,14 @@ func TestUICapture(t *testing.T) {
 	win.Resize(fyne.NewSize(1280, 800))
 	feedSampleSession(sh)
 	seedActivity(t, a)
+	seedSchedule(t, a)
 	sh.refreshActivity()
 	win.Canvas().Unfocus() // show the composer placeholder
 	// The harness pane is a scripted view; run it so the capture shows it.
 	sh.harness.Execute()
 	waitPaneReady(t, sh)
 	capture(t, win, filepath.Join(dir, "chat-"+mode+".png"))
-	for _, v := range []viewID{viewHarness, viewActivity, viewSettings} {
+	for _, v := range []viewID{viewHarness, viewActivity, viewSchedule, viewSettings} {
 		sh.showView(v)
 		capture(t, win, filepath.Join(dir, strings.ToLower(v.String())+"-"+mode+".png"))
 	}
@@ -201,6 +203,21 @@ func waitPaneReady(t *testing.T, sh *shell) {
 }
 
 // seedActivity gives the Activity view a journey and one improvement run.
+func seedSchedule(t *testing.T, a *coreapp.App) {
+	t.Helper()
+	enabled := true
+	_, err := a.Schedule.Create(schedule.Job{
+		ID: "daily-brief", Name: "Daily brief",
+		Prompt:   "Summarize unread notifications and the build queue. Reply [SILENT] if nothing changed.",
+		Schedule: "0 7 * * MON-FRI", Timezone: "Europe/Amsterdam",
+		PermissionMode: "dontAsk", Deliver: []string{"ntfy"},
+		Enabled: &enabled, LastStatus: schedule.StatusOK,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func seedActivity(t *testing.T, a *coreapp.App) {
 	t.Helper()
 	a.Journey.Append("review", map[string]any{"session": "s1", "lessons": 3})

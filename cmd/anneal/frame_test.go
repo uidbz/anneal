@@ -8,7 +8,7 @@ import (
 
 func TestShowViewSwitchesAndTracksRail(t *testing.T) {
 	sh := newTestShell(t)
-	for _, v := range []viewID{viewHarness, viewActivity, viewSettings, viewChat} {
+	for _, v := range []viewID{viewHarness, viewActivity, viewSchedule, viewSettings, viewChat} {
 		sh.showView(v)
 		if sh.view != v {
 			t.Fatalf("view = %v, want %v", sh.view, v)

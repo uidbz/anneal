@@ -104,7 +104,13 @@ func New(cfg Config) (*Gateway, error) {
 			}
 			g.transports[t.Name()] = t
 		case "matrix":
-			t, err := newMatrixTransport(tc)
+			var t Transport
+			var err error
+			if tc.Encrypted {
+				t, err = newMatrixE2EETransport(tc)
+			} else {
+				t, err = newMatrixTransport(tc)
+			}
 			if err != nil {
 				return nil, err
 			}

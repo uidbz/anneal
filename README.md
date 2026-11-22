@@ -51,8 +51,8 @@ rootless Gentoo chroot builds:
 | Subagents | `Agent` tool (general-purpose/explore/plan) inheriting permission hooks |
 | Headless | `anneal-headless -p … / -i / -json` with permission policy flags |
 | Backend/frontend split | `anneald` server + WebSocket protocol ([docs/PROTOCOL.md](docs/PROTOCOL.md)); `anneal-headless -server <addr>` drives it remotely; container deployment with idle auto-shutdown ([docs/CONTAINERS.md](docs/CONTAINERS.md)) |
-| Scheduled tasks | durable cron/interval/one-shot jobs in `anneald`, isolated worker sessions, run ledger, `schedule_manage` agent tool, `annealctl` CLI ([docs/SCHEDULING.md](docs/SCHEDULING.md)) |
-| Phone gateway | `anneal-gateway` bridges events to ntfy and plain-text Matrix (Telegram planned): job summaries, approvals, status/commands, multi-server/multi-transport ([docs/GATEWAY.md](docs/GATEWAY.md)) |
+| Scheduled tasks | durable cron/interval/one-shot jobs in `anneald`, isolated worker sessions, run ledger, `schedule_manage` agent tool, Schedules GUI panel (Ctrl+4), `annealctl` CLI ([docs/SCHEDULING.md](docs/SCHEDULING.md)) |
+| Phone gateway | `anneal-gateway` bridges events to ntfy and Matrix (plain or Megolm E2EE): job summaries, approvals, status/commands, multi-server/multi-transport ([docs/GATEWAY.md](docs/GATEWAY.md)) |
 | Rootless Gentoo builds | `gentoo` tool compiles inside a chroot with bubblewrap user namespaces, overlayfs, validated atoms and a binhost output; no host root ([docs/GENTOO.md](docs/GENTOO.md)) |
 | Scripted panes | `CanvasObject`-embedded Risor (harness editor now; more panes later) |
 | Script tool | sandboxed Risor v2 data glue for the agent (fynerisor headless `core`; confined fs, no exec/net) |
@@ -66,12 +66,17 @@ rootless Gentoo chroot builds:
   the `script` tool uses fynerisor's GUI-free `core` package), so it builds
   and runs without GUI libraries. Same for `anneald` (the backend server) —
   it is the CGO-free container binary.
+- `anneal-gateway` builds CGO-free with `make gateway-plain` (ntfy and
+  unencrypted Matrix). Encrypted Matrix needs CGO plus `-tags goolm`; `make
+  gateway` does that by default.
 
 ## Build
 
 ```sh
 make build            # bin/anneal, bin/anneal-headless, bin/anneald, bin/anneal-gateway, bin/annealctl
+make gateway-plain    # CGO-free gateway (ntfy + unencrypted Matrix)
 make test             # hermetic unit tests
+make test-e2ee        # encrypted Matrix transport tests (CGO + goolm)
 make ci               # vet + test + pane/script-UI compile gates
 make live-tie-test    # tie round-trip against the real triplestore (opt-in)
 ```

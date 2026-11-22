@@ -99,6 +99,12 @@ fails → launch → reconnect). Nothing in the design assumes the container
 process survives: config, sessions, and learning state are all in the
 mount.
 
+**Exception: scheduled tasks.** `anneald` disables idle shutdown when
+`schedules.enabled` is true. A container that must fire jobs needs an
+always-on profile (no idle exit, restart policy), not the ephemeral one.
+The phone gateway normally runs outside the agent container and can connect
+over a Unix socket or an authenticated WS listener; see [GATEWAY.md](GATEWAY.md).
+
 ## Multiple users / many projects
 
 Instance-per-scope, not multi-tenancy inside one process:

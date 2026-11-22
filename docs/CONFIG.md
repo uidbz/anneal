@@ -13,6 +13,9 @@ State lives under `~/.anneal/` (override with `ANNEAL_HOME`).
 | `permissions.json` | project-scoped `always` grants saved by the approval inbox |
 | `journey.jsonl` | self-improvement timeline (memory/skill writes, review batches) |
 | `recovery/` | inputs of cancelled file writes keyed by session (re-apply instead of regenerating; pruned after 7 days) |
+| `schedules/` | scheduled job definitions (`jobs.json`), execution ledger (`runs.jsonl`), scheduler lock |
+| `gentoo/` | rootless chroot overlay uppers and `audit.jsonl` |
+| `gateway.json` | `anneal-gateway` config (written by `-init`) |
 | `logs/perf.jsonl` | per-run timing records (`run.stats`) |
 
 ## Environment overrides
@@ -29,6 +32,7 @@ State lives under `~/.anneal/` (override with `ANNEAL_HOME`).
 | `ANNEAL_IDLE_TIMEOUT_S` | anneald idle auto-shutdown seconds (0 = off) |
 | `ANNEAL_WORK_DIR` | anneald agent working directory |
 | `ANNEAL_AUTH_TOKEN` | anneald bearer token (see `server.auth_token_env`) |
+| `ANNEAL_ALLOW_ROOT` | `1` permits anneald to run as root (strongly discouraged; disposable sandboxes only) |
 
 ## `server` — anneald backend (server only; GUI/headless ignore it)
 
@@ -139,6 +143,8 @@ expanded when the config is loaded.
 | `session_search` | session_search | `*` |
 | `task` | Agent tool | subagent type (`explore`, `plan`, ...) |
 | `script` | sandboxed Risor script tool | `*` |
+| `schedule` | `schedule_manage` (create/pause/remove durable jobs) | job id or `*` |
+| `gentoo` | rootless chroot build tool | configured root name or `*` |
 | `webfetch` | WebFetch | URL |
 | `external_directory` | any path outside the working directory | `<dir>/*` |
 | `doom_loop` | the same tool call repeated 3× | tool name |
@@ -337,6 +343,43 @@ The reviewer cannot edit harness files — flagging is its only output here.
 The next `/improve` consumes up to 6 pending flags as hints for its
 editors/composer (framed as claims to CHECK; probe evidence still decides).
 The GUI harness panel and headless `/harness` list pending flags.
+
+## `schedule` — durable scheduled tasks
+
+Full guide: [SCHEDULING.md](SCHEDULING.md). Jobs live in
+`~/.anneal/schedules/jobs.json`, not in `config.json`. The scheduler runs only
+in `anneald`; it is opt-in and disables idle shutdown while enabled.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | false | start the scheduler |
+| `timezone` | system local | default IANA timezone for jobs |
+| `tick_s` | 15 | due-scan interval |
+| `default_timeout_s` | 1800 | fallback per-run limit |
+| `grace_s` | 900 | catch-up window for `missed: run_once` |
+| `max_jobs` | 50 | job cap |
+
+Jobs use cron (`0 7 * * MON-FRI`), intervals (`every 2h`), one-shots
+(`30m` / ISO timestamp), per-job `work`, `session` (`fresh`/`sticky`),
+`permission_mode` (default `dontAsk`), per-job permission rules, and delivery
+targets (`ntfy`, `matrix`, `all`). See the guide for the full document.
+
+## `gentoo` — rootless chroot builds
+
+Full guide and one-time setup: [GENTOO.md](GENTOO.md). The agent never runs as
+root; `bwrap` creates a user namespace, the real chroot is a read-only lower,
+and build changes go to a user-owned overlay.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | false | register the `gentoo` tool |
+| `bwrap_path` | `bwrap` | bubblewrap binary |
+| `timeout_s` | 7200 | build timeout |
+| `tmpfs_mb` | 16384 | `/dev/shm` size inside the sandbox |
+| `roots` | — | list of `{name, source, base, overlay_dir, pkgdir, distdir, binpkg_dir, distfiles_dir, no_network, features, emerge_args, env}` |
+
+Check the setup with `gentoo action=preflight`, then `pretend`, then `build`.
+Package atoms are validated and every invocation is audited.
 
 ## `tie` — cross-session search index
 

@@ -23,6 +23,7 @@ add dated notes, and record decisions/deviations from `docs/PLAN.md`.
 - [x] **M15** Go harness panel (now a scripted `CanvasObject` pane)
 - [x] **M16** review→improve bridge via `harness_flag`
 - [x] **M17** backend/frontend split: `anneald` + wire protocol, remote headless, container image with idle lifecycle
+- [x] **M18** scheduled tasks + `anneal-gateway` (ntfy/Matrix) + rootless Gentoo chroot builds
 - [~] **H1** hybrid Go shell + scripted panes (rename to Anneal)
 
 Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes below).
@@ -50,6 +51,29 @@ Legend: mark `[~]` in progress, `[x]` done (note the commit hash in the notes be
 - [ ] (nice) constants exposure for `fyne.TextWrap*` instead of raw ints
 
 ## Notes (newest first)
+
+### 2026-11-22 — M18: scheduled tasks, phone gateway, rootless Gentoo builds
+- `core/schedule`: durable job store (`~/.anneal/schedules/jobs.json`), cron
+  (`robfig/cron/v3`)/interval/one-shot parsing with per-job timezones, run
+  ledger (`runs.jsonl`), single-owner flock, missed-run and overlap policies,
+  manual runs, `schedule.*` events, and protocol methods. `anneald` starts the
+  scheduler; idle shutdown is disabled while schedules are enabled.
+- `core/agent`: shared `RunGate` (two runners share process-wide `chdir`),
+  per-run permission profiles, session `origin`/`job_id` metadata, and a
+  `schedule_manage` tool. Foreground boot resume skips scheduled sessions.
+- `core/app`: scheduled jobs execute in a fresh worker Runner with a private
+  bus; results are summarized on the main bus, approvals are namespaced and
+  routed back to the active worker.
+- `cmd/anneal-gateway` + `core/gateway`: ntfy and plain-text Matrix
+  transports with reconnect/cursor, command routing (`/status`, `/schedule`,
+  `/approve`, numeric approval replies), schedule/approval/health
+  notifications, multi-server and multi-transport config. `cmd/annealctl` adds
+  a small status/schedule CLI.
+- `core/agent/gentoo.go`: rootless chroot builds via bwrap user namespaces +
+  overlayfs; validated atoms, `--buildpkgonly`, binpkg/distfiles bind mounts,
+  audit log, preflight. No host root; docs explain clone and ACL setup.
+- Docs: `SCHEDULING.md`, `GATEWAY.md`, `GENTOO.md`, `SECURITY.md`; CONFIG,
+  PROTOCOL, ARCHITECTURE, README, PLAN updated.
 
 ### 2026-11-01 — wrap-up: issues #13–#16 and the approval/queue/perf work
 - All ten phases landed; `make ci` green (vet + tests + pane and script-UI

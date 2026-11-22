@@ -16,6 +16,7 @@ import (
 
 	"github.com/uidbz/anneal/core/improve"
 	"github.com/uidbz/anneal/core/paths"
+	"github.com/uidbz/anneal/core/schedule"
 )
 
 const (
@@ -314,10 +315,16 @@ func (s *Server) methods() map[string]handler {
 		return map[string]any{"ok": true}, nil
 	}
 	m["server.info"] = func(json.RawMessage) (any, error) {
+		next, nextID, hasNext := a.ScheduleNextRun()
+		nextStr := ""
+		if hasNext {
+			nextStr = next.UTC().Format(time.RFC3339)
+		}
 		return map[string]any{
 			"version": s.Version, "proto": ProtoVersion,
 			"workdir": a.Runner.Cwd(), "mode": a.Runner.Mode(),
 			"session": a.Runner.SessionID(), "busy": a.Runner.Busy(),
+			"schedule_busy": a.ScheduleBusy(), "schedule_next": nextStr, "schedule_job": nextID,
 			"idle_timeout_s": s.cfg.IdleTimeoutS,
 			"uptime_s":       int(time.Since(s.up).Seconds()),
 		}, nil
@@ -437,13 +444,155 @@ func (s *Server) methods() map[string]handler {
 		return nil, nil
 	}
 
+	// scheduled tasks
+	sched := func() (*schedule.Manager, error) {
+		if a.Schedule == nil {
+			return nil, &wrapped{codeHandler, fmt.Errorf("schedule: not available")}
+		}
+		return a.Schedule, nil
+	}
+	m["schedule.list"] = func(json.RawMessage) (any, error) {
+		s, err := sched()
+		if err != nil {
+			return nil, err
+		}
+		jobs := s.List()
+		schedule.SortJobs(jobs)
+		return jobs, nil
+	}
+	m["schedule.state"] = func(json.RawMessage) (any, error) {
+		s, err := sched()
+		if err != nil {
+			return nil, err
+		}
+		return s.StateEvent(), nil
+	}
+	m["schedule.get"] = func(params json.RawMessage) (any, error) {
+		var p pID
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		s, err := sched()
+		if err != nil {
+			return nil, err
+		}
+		job, ok := s.Get(p.ID)
+		if !ok {
+			return nil, &wrapped{codeHandler, fmt.Errorf("job %q not found", p.ID)}
+		}
+		return job, nil
+	}
+	m["schedule.create"] = func(params json.RawMessage) (any, error) {
+		var job schedule.Job
+		if err := decode(params, &job); err != nil {
+			return nil, err
+		}
+		s, err := sched()
+		if err != nil {
+			return nil, err
+		}
+		out, err := s.Create(job)
+		if err != nil {
+			return nil, argErr(err)
+		}
+		return out, nil
+	}
+	m["schedule.update"] = func(params json.RawMessage) (any, error) {
+		var job schedule.Job
+		if err := decode(params, &job); err != nil {
+			return nil, err
+		}
+		s, err := sched()
+		if err != nil {
+			return nil, err
+		}
+		out, err := s.Update(job)
+		if err != nil {
+			return nil, argErr(err)
+		}
+		return out, nil
+	}
+	m["schedule.remove"] = func(params json.RawMessage) (any, error) {
+		var p pID
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		s, err := sched()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": true}, s.Remove(p.ID)
+	}
+	m["schedule.pause"] = func(params json.RawMessage) (any, error) {
+		var p pID
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		s, err := sched()
+		if err != nil {
+			return nil, err
+		}
+		return s.Pause(p.ID)
+	}
+	m["schedule.resume"] = func(params json.RawMessage) (any, error) {
+		var p pID
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		s, err := sched()
+		if err != nil {
+			return nil, err
+		}
+		return s.Resume(p.ID)
+	}
+	m["schedule.run"] = func(params json.RawMessage) (any, error) {
+		var p pID
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		s, err := sched()
+		if err != nil {
+			return nil, err
+		}
+		if !s.Started() {
+			return nil, &wrapped{codeHandler, fmt.Errorf("scheduler is not running (set schedule.enabled and start anneald)")}
+		}
+		id, err := s.RunNow(p.ID)
+		if err != nil {
+			return nil, &wrapped{codeHandler, err}
+		}
+		return map[string]any{"ok": true, "id": id}, nil
+	}
+	m["schedule.runs"] = func(params json.RawMessage) (any, error) {
+		var p struct {
+			Limit int   `json:"limit"`
+			Since int64 `json:"since"` // unix seconds; 0 = no lower bound
+		}
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return nil, argErr(err)
+			}
+		}
+		s, err := sched()
+		if err != nil {
+			return nil, err
+		}
+		if p.Limit <= 0 {
+			p.Limit = 50
+		}
+		if p.Since > 0 {
+			return s.RunsSince(p.Since, p.Limit)
+		}
+		return s.Runs(p.Limit)
+	}
+
 	// permissions
 	m["perm.respond"] = func(params json.RawMessage) (any, error) {
 		var p pIDAction
 		if err := decode(params, &p); err != nil {
 			return nil, err
 		}
-		a.Runner.RespondPerm(p.ID, p.Action)
+		a.RespondPerm(p.ID, p.Action)
 		return nil, nil
 	}
 	m["perm.saved"] = func(json.RawMessage) (any, error) {

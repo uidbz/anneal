@@ -39,9 +39,22 @@ func Overlays() string     { return filepath.Join(Root(), "overlays") }
 // interrupted by a stop or time limit), so the work can be re-applied.
 func Recovery() string { return filepath.Join(Root(), "recovery") }
 
+// Scheduled tasks: jobs.json is the durable definition store, runs.jsonl the
+// append-only result ledger used by notification gateways.
+func Schedules() string    { return filepath.Join(Root(), "schedules") }
+func ScheduleJobs() string { return filepath.Join(Schedules(), "jobs.json") }
+func ScheduleRuns() string { return filepath.Join(Schedules(), "runs.jsonl") }
+func ScheduleLock() string { return filepath.Join(Schedules(), "scheduler.lock") }
+
+// GatewayConfig is the anneal-gateway configuration document.
+func GatewayConfig() string { return filepath.Join(Root(), "gateway.json") }
+
+// Gentoo holds transient overlays and the audit log for rootless chroot builds.
+func Gentoo() string { return filepath.Join(Root(), "gentoo") }
+
 // Ensure creates the standard state directories.
 func Ensure() error {
-	for _, d := range []string{Root(), Sessions(), Memories(), Skills(), SkillsArchive(), Pending(), Logs(), Harness(), HarnessLib(), Overlays(), Recovery()} {
+	for _, d := range []string{Root(), Sessions(), Memories(), Skills(), SkillsArchive(), Pending(), Logs(), Harness(), HarnessLib(), Overlays(), Recovery(), Schedules(), Gentoo()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
 		}

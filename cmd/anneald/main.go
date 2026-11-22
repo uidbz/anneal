@@ -31,6 +31,12 @@ func main() {
 	listen := flag.String("listen", "", "comma-separated listen addresses override (unix:/path or host:port)")
 	flag.Parse()
 
+	if isRoot() && os.Getenv("ANNEAL_ALLOW_ROOT") != "1" {
+		fmt.Fprintln(os.Stderr, "anneald: refusing to run as root: the agent has shell/file tools.")
+		fmt.Fprintln(os.Stderr, "anneald: run as a dedicated unprivileged user; set ANNEAL_ALLOW_ROOT=1 only for a disposable, fully trusted sandbox.")
+		os.Exit(1)
+	}
+
 	// config.Load honors ANNEAL_HOME (state root) plus the ANNEAL_LISTEN /
 	// ANNEAL_IDLE_TIMEOUT_S / ANNEAL_WORK_DIR container overrides. Flags win
 	// over config: -listen is exported as ANNEAL_LISTEN so the config load
@@ -70,6 +76,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
 	a.StartBlocking(ctx) // tie/MCP connect inline; monitor + review async
+	if err := a.StartSchedules(ctx); err != nil {
+		// A second anneald (or the GUI's scheduler) may own the lock; the
+		// server still serves management and foreground runs.
+		fmt.Fprintf(os.Stderr, "anneald: schedule: %v\n", err)
+	}
 	if err := srv.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "anneald:", err)
 		os.Exit(1)

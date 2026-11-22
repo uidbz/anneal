@@ -260,6 +260,20 @@ func (r *Runner) SetMode(mode string) {
 // Mode returns the active permission mode.
 func (r *Runner) Mode() string { return string(r.perm.Mode()) }
 
+// ConfigurePermissions installs a per-run permission profile without writing
+// the shared config. Scheduled jobs use it to apply their own mode and rules
+// while the foreground runner keeps its settings.
+func (r *Runner) ConfigurePermissions(mode string, rules permission.Config) {
+	if !permission.ValidMode(mode) {
+		mode = string(permission.ModeDontAsk)
+	}
+	cfg := *r.cfg
+	cfg.Agent.PermissionMode = mode
+	cfg.Agent.Permission = rules
+	cfg.Agent.Permissions = nil
+	r.perm = newPermManager(&cfg, r.harn, r.cwd)
+}
+
 // countApproval records one card for the approval-churn flag.
 func (r *Runner) countApproval(req permission.Request) {
 	r.mu.Lock()

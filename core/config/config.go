@@ -87,6 +87,56 @@ type Review struct {
 	Notify         bool `json:"notify"`
 }
 
+// Schedule configures durable scheduled tasks. Jobs themselves live in
+// ~/.anneal/schedules/jobs.json so editing schedules does not rewrite the
+// main config document.
+type Schedule struct {
+	Enabled         bool   `json:"enabled"`
+	Timezone        string `json:"timezone"`          // IANA zone; "" = system local
+	TickS           int    `json:"tick_s"`            // due-scan interval (default 15)
+	DefaultTimeoutS int    `json:"default_timeout_s"` // per-run fallback (default 1800)
+	GraceS          int    `json:"grace_s"`           // missed-run grace (default 900)
+	MaxJobs         int    `json:"max_jobs"`          // default 50
+}
+
+// Gentoo configures rootless chroot builds via bubblewrap. The agent never
+// runs as root: bwrap creates a user namespace, the chroot is a user-owned
+// clone (or an ACL-enabled tree), and packages are written to a shared binhost
+// directory.
+type Gentoo struct {
+	Enabled   bool         `json:"enabled"`
+	BwrapPath string       `json:"bwrap_path,omitempty"` // default: bwrap from PATH
+	TimeoutS  int          `json:"timeout_s,omitempty"`  // default 7200
+	TmpfsMB   int          `json:"tmpfs_mb,omitempty"`   // /dev/shm size (default 16384)
+	Roots     []GentooRoot `json:"roots,omitempty"`
+}
+
+// GentooRoot names one chroot and its writable build paths.
+type GentooRoot struct {
+	Name string `json:"name"`
+	// Source is the real chroot, mounted read-only as the overlay lower.
+	Source string `json:"source"`
+	// Base is an optional user-owned reflink clone used as the overlay lower.
+	// Empty means Source is used directly and must be writable by the anneal
+	// user (ACL mode).
+	Base string `json:"base,omitempty"`
+	// OverlayDir holds upper/ and work/ (default ~/.anneal/gentoo/<name>).
+	OverlayDir string `json:"overlay_dir,omitempty"`
+	// PkgDir and DistDir are the paths inside the chroot that get bound to
+	// BinpkgDir and DistfilesDir.
+	PkgDir  string `json:"pkgdir,omitempty"`  // default /var/cache/binpkgs
+	DistDir string `json:"distdir,omitempty"` // default /var/cache/distfiles
+	// BinpkgDir is the host directory published to the LAN binhost.
+	BinpkgDir string `json:"binpkg_dir"`
+	// DistfilesDir is a shared host download cache.
+	DistfilesDir string `json:"distfiles_dir,omitempty"`
+	// NoNetwork unshares the network namespace (distfiles must be cached).
+	NoNetwork  bool              `json:"no_network,omitempty"`
+	Features   string            `json:"features,omitempty"`    // default "-userpriv -usersandbox buildpkg"
+	EmergeArgs []string          `json:"emerge_args,omitempty"` // config-trusted flags, e.g. --update --deep --newuse
+	Env        map[string]string `json:"env,omitempty"`
+}
+
 // Tie configures the tie-backed episodic index (session_search).
 type Tie struct {
 	Enabled    bool   `json:"enabled"`
@@ -205,10 +255,12 @@ type Config struct {
 	Memory      Memory            `json:"memory"`
 	Skills      Skills            `json:"skills"`
 	Review      Review            `json:"review"`
+	Schedule    Schedule          `json:"schedule"`
 	Tie         Tie               `json:"tie"`
 	MCP         MCP               `json:"mcp"`
 	Harness     Harness           `json:"harness"`
 	Improve     Improve           `json:"improve"`
+	Gentoo      Gentoo            `json:"gentoo"`
 	UI          UI                `json:"ui"`
 	Server      Server            `json:"server"`
 
@@ -249,11 +301,13 @@ func Default() *Config {
 		// window evicts the live conversation's prompt cache right when the
 		// user comes back. Ten minutes (review) / thirty (improve) still runs
 		// while a coffee break happens.
-		Review:  Review{Enabled: true, DeferUntilIdle: true, IdleSettleS: 600, MaxAgeS: 1800, MaxInputTokens: 48000, Notify: true},
-		Tie:     Tie{Enabled: true, Collection: "anneal", ConfigName: ""},
-		MCP:     MCP{Enabled: true, AutoDetect: true, Servers: map[string]MCPServer{}},
-		Harness: Harness{Enabled: true, CharLimit: 6000},
-		Improve: Improve{Enabled: true, Auto: true, AutoIdleS: 1800, Library: true, K: 1, Mode: "sequential"},
+		Review:   Review{Enabled: true, DeferUntilIdle: true, IdleSettleS: 600, MaxAgeS: 1800, MaxInputTokens: 48000, Notify: true},
+		Schedule: Schedule{Enabled: false, TickS: 15, DefaultTimeoutS: 1800, GraceS: 900, MaxJobs: 50},
+		Tie:      Tie{Enabled: true, Collection: "anneal", ConfigName: ""},
+		MCP:      MCP{Enabled: true, AutoDetect: true, Servers: map[string]MCPServer{}},
+		Harness:  Harness{Enabled: true, CharLimit: 6000},
+		Improve:  Improve{Enabled: true, Auto: true, AutoIdleS: 1800, Library: true, K: 1, Mode: "sequential"},
+		Gentoo:   Gentoo{Enabled: false, TimeoutS: 7200, TmpfsMB: 16384},
 		UI: UI{
 			TextScale:      1.0,
 			Theme:          "system",
@@ -420,6 +474,24 @@ func (c *Config) normalize() {
 	}
 	if c.Review.MaxAgeS <= 0 {
 		c.Review.MaxAgeS = d.Review.MaxAgeS
+	}
+	if c.Schedule.TickS <= 0 {
+		c.Schedule.TickS = d.Schedule.TickS
+	}
+	if c.Schedule.DefaultTimeoutS <= 0 {
+		c.Schedule.DefaultTimeoutS = d.Schedule.DefaultTimeoutS
+	}
+	if c.Schedule.GraceS < 0 {
+		c.Schedule.GraceS = d.Schedule.GraceS
+	}
+	if c.Schedule.MaxJobs <= 0 {
+		c.Schedule.MaxJobs = d.Schedule.MaxJobs
+	}
+	if c.Gentoo.TimeoutS <= 0 {
+		c.Gentoo.TimeoutS = d.Gentoo.TimeoutS
+	}
+	if c.Gentoo.TmpfsMB <= 0 {
+		c.Gentoo.TmpfsMB = d.Gentoo.TmpfsMB
 	}
 	if len(c.Server.Listen) == 0 {
 		c.Server.Listen = d.Server.Listen

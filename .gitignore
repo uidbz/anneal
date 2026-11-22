@@ -1,6 +1,8 @@
 /bin/
 /anneal
 /anneal-headless
+/anneal-gateway
+/annealctl
 *.test
 *.log
 .DS_Store
@@ -9,3 +11,4 @@ vendor/
 
 # local build artifacts (go build ./cmd/anneal run inside the package dir)
 /cmd/anneal/anneal
+/anneald

@@ -112,7 +112,7 @@ accepted — their effects arrive as events).
 | method | params | result |
 |--------|--------|--------|
 | `server.ping` | – | `{"ok":true}` |
-| `server.info` | – | `{version,proto,workdir,mode,session,busy,idle_timeout_s,uptime_s}` |
+| `server.info` | – | `{version,proto,workdir,mode,session,busy,schedule_busy,schedule_next,schedule_job,idle_timeout_s,uptime_s}` |
 | `server.quit` | `{reason}` | `{"ok":true}` |
 | `agent.send` | `{text}` or `{text,ref,queue:true[,work]}` | legacy: `{id,ok}` (run id; `ok:false` if busy). With `queue:true`: `{ok:true,id:<input id>,run,queued,position}` — never rejected for a busy runner. `work` (either form) is a work-root-relative directory for that run (see "The work tree") |
 | `agent.interrupt` | – | null (first call: soft stop after the running step; second: hard cancel) |
@@ -124,9 +124,17 @@ accepted — their effects arrive as events).
 | `queue.promote` | `{id}` | `{"ok":true}` (move to the front) |
 | `background.preempt` | – | null (stands the reviewer/improve down so a foreground run owns the model server) |
 | `run.status` | – | `{busy,mode,session}` |
-| `sessions.list` | – | `[{id,title,updated,events}]` |
+| `sessions.list` | – | `[{id,title,updated,events,origin,job_id}]` |
 | `sessions.new` | – | null |
 | `sessions.open` | `{id}` | null (replay via `session.opened`) |
+| `schedule.list` | – | `[job]` (see docs/SCHEDULING.md) |
+| `schedule.state` | – | `{jobs,running,job,now}` |
+| `schedule.get` | `{id}` | job |
+| `schedule.create` / `schedule.update` | job document | job |
+| `schedule.remove` | `{id}` | `{ok:true}` |
+| `schedule.pause` / `schedule.resume` | `{id}` | job |
+| `schedule.run` | `{id}` | `{ok:true,id:<run-record-id>}` |
+| `schedule.runs` | `{limit,since}` | `[record]` (newest first; `since` unix seconds) |
 | `perm.respond` | `{id,action}` `once\|allow_session\|session\|always\|reject` | null (`allow_session` is an in-memory grant cleared when the session changes) |
 | `perm.saved` | – | `[{action,resource,effect}]` saved grants for this project |
 | `perm.saved_remove` | `{action,resource}` | null |
@@ -209,6 +217,19 @@ something strictly inside the root (`.` is invalid). A violation is
   the ordinary `improve.start/…/done` stream. It never starts while a
   run, another improve, or the reviewer is active, and at most once per
   session.
+
+## Scheduled tasks
+
+`anneald` can execute durable jobs (docs/SCHEDULING.md). Jobs run in a worker
+`Runner` with their own session and a private event bus; only `schedule.*`
+events reach protocol clients. A scheduled run shares the process-wide run
+gate with foreground runs, so the two never chdir over each other.
+
+When schedules are enabled, idle shutdown is disabled: a sleeping server cannot
+fire jobs. Clients should use `schedule.state` on connect (it is also part of
+the normal replay) and may use `schedule.runs {since}` to catch up on results
+missed while disconnected. `anneal-gateway` does exactly this for phone
+notifications.
 
 ## Versioning
 

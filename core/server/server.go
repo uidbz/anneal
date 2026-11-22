@@ -150,7 +150,11 @@ func (s *Server) Run(ctx context.Context) error {
 			_ = httpSrv.Serve(ln) // returns when the listener closes
 		}(ln)
 	}
-	go s.idleLoop(ctx)
+	if s.cfg.IdleTimeoutS > 0 && (s.App.Schedule == nil || !s.App.Schedule.Enabled()) {
+		go s.idleLoop(ctx)
+	} else if s.cfg.IdleTimeoutS > 0 {
+		fmt.Fprintln(os.Stderr, "anneald: idle shutdown is disabled while schedules are enabled")
+	}
 
 	<-ctx.Done()
 	s.closeConns() // drain window: events still flow until here
@@ -224,7 +228,7 @@ func (s *Server) idleLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if s.App.Runner.Busy() || s.App.ImproveBusy() {
+			if s.App.Runner.Busy() || s.App.ImproveBusy() || s.App.ScheduleBusy() {
 				continue
 			}
 			s.mu.Lock()

@@ -222,6 +222,30 @@ func (r *Runner) inspectCall(name string, raw json.RawMessage, readOnly bool) ca
 			message:   "Search past sessions?",
 			readOnly:  true,
 		}
+	case "schedule_manage":
+		id := field(in, "id")
+		if id == "" {
+			id = "*"
+		}
+		return callIntent{
+			action:    "schedule",
+			resources: []string{id},
+			save:      []string{"*"},
+			message:   "Manage scheduled tasks?",
+			readOnly:  readOnly,
+		}
+	case "gentoo":
+		root := field(in, "root")
+		if root == "" {
+			root = "*"
+		}
+		return callIntent{
+			action:    "gentoo",
+			resources: []string{root},
+			save:      []string{"*"},
+			message:   "Build packages in the Gentoo chroot?",
+			readOnly:  false,
+		}
 	}
 
 	// MCP tools and future tools: the action is the tool name. This is what

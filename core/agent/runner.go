@@ -48,6 +48,7 @@ type Runner struct {
 	harn    *harness.Store
 	review  *review.Manager
 	mcp     *mcp.Manager
+	sched   ScheduleAPI
 	lastAct time.Time
 
 	mu       sync.Mutex
@@ -70,6 +71,8 @@ type Runner struct {
 	permWait   time.Duration // time blocked on approval cards, per run
 	lastPerf   *perfSummary
 	preempt    func() // cancels background model work (review/improve)
+	gate       *RunGate
+	gateHeld   bool // this run owns gate (guarded by mu)
 
 	permMu       sync.Mutex // guards pendingPerms and doom counts
 	permSeq      int
@@ -85,7 +88,9 @@ type Runner struct {
 
 	mcpMu sync.Mutex // guards mcp: it is attached asynchronously at boot
 
-	indexCh chan indexJob // background tie indexing (see search.go)
+	indexCh   chan indexJob // background tie indexing (see search.go)
+	indexDone chan struct{}
+	closeIdx  sync.Once
 
 	sessMu      sync.Mutex
 	sessCache   []SessionInfo
@@ -225,6 +230,13 @@ func copyTree(src, dst string) error {
 // SetReview attaches the background review manager (nil = no loop).
 func (r *Runner) SetReview(m *review.Manager) { r.review = m }
 
+// SetRunGate installs the process-wide run gate shared by other Runners.
+func (r *Runner) SetRunGate(g *RunGate) {
+	r.mu.Lock()
+	r.gate = g
+	r.mu.Unlock()
+}
+
 // SetPreempt registers the callback that yields the model server: it is
 // invoked when a foreground run starts and when the user starts typing.
 func (r *Runner) SetPreempt(fn func()) {
@@ -256,6 +268,7 @@ func NewRunner(cfg *config.Config, monitor *model.Monitor, bus *events.Bus, cwd 
 		pendingPerms: make(map[string]*pendingPerm),
 		doom:         make(map[string]int),
 		indexCh:      make(chan indexJob, 8),
+		indexDone:    make(chan struct{}),
 	}
 	r.perm = newPermManager(cfg, r.harn, cwd)
 	if err := r.initStore(); err != nil {
@@ -389,6 +402,13 @@ func (r *Runner) startTask(input, inputID, ref string, cont bool, work string) (
 		r.bus.Emit(map[string]any{"type": "run.busy"})
 		return 0, false
 	}
+	if r.gate != nil && !r.gate.TryAcquire() {
+		r.mu.Unlock()
+		cancel()
+		r.bus.Emit(map[string]any{"type": "run.busy"})
+		return 0, false
+	}
+	r.gateHeld = r.gate != nil
 	r.running = true
 	r.runSeq++
 	r.runWork = work
@@ -521,6 +541,12 @@ func (r *Runner) run(ctx context.Context, id int, input, inputID, ref string, co
 		seq(toolkit.NewBashTool()),
 		seq(toolkit.NewFetchTool()),
 		seq(r.todoTool()),
+	}
+	if r.sched != nil {
+		tools = append(tools, seq(r.scheduleTool()))
+	}
+	if r.cfg.Gentoo.Enabled {
+		tools = append(tools, seq(r.gentooTool()))
 	}
 	if r.index != nil && r.index.Enabled() {
 		tools = append(tools, r.sessionSearchTool())
@@ -797,6 +823,12 @@ func (r *Runner) clearRun(id int) {
 	r.softCancel = nil
 	r.stopping = false
 	r.lastAct = time.Now()
+	if r.gateHeld {
+		r.gateHeld = false
+		if r.gate != nil {
+			r.gate.Release()
+		}
+	}
 }
 
 // compactionThreshold maps ctx window + config percentage to a token budget

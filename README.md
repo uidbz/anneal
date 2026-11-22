@@ -21,11 +21,16 @@ A self-improving, opencode-style desktop coding agent in Go.
   plan/build permission modes, session replay,
   context compaction, headless CLI.
 
-All milestones (M0–M16) are complete. The hybrid UI migration has landed its
+All milestones (M0–M18) are complete. The hybrid UI migration has landed its
 rename, Go shell, scripted harness pane, event-bus split, and headless
 decoupling, and the shell was redesigned into a professional IDE-style layout
 (see [docs/UI-REDESIGN.md](docs/UI-REDESIGN.md) and
 [progress.md](progress.md)).
+
+M18 adds durable scheduled tasks, the `anneal-gateway` phone bridge, and
+rootless Gentoo chroot builds:
+[SCHEDULING.md](docs/SCHEDULING.md) · [GATEWAY.md](docs/GATEWAY.md) ·
+[GENTOO.md](docs/GENTOO.md) · [SECURITY.md](docs/SECURITY.md).
 
 ## Features
 
@@ -46,6 +51,9 @@ decoupling, and the shell was redesigned into a professional IDE-style layout
 | Subagents | `Agent` tool (general-purpose/explore/plan) inheriting permission hooks |
 | Headless | `anneal-headless -p … / -i / -json` with permission policy flags |
 | Backend/frontend split | `anneald` server + WebSocket protocol ([docs/PROTOCOL.md](docs/PROTOCOL.md)); `anneal-headless -server <addr>` drives it remotely; container deployment with idle auto-shutdown ([docs/CONTAINERS.md](docs/CONTAINERS.md)) |
+| Scheduled tasks | durable cron/interval/one-shot jobs in `anneald`, isolated worker sessions, run ledger, `schedule_manage` agent tool, `annealctl` CLI ([docs/SCHEDULING.md](docs/SCHEDULING.md)) |
+| Phone gateway | `anneal-gateway` bridges events to ntfy and plain-text Matrix (Telegram planned): job summaries, approvals, status/commands, multi-server/multi-transport ([docs/GATEWAY.md](docs/GATEWAY.md)) |
+| Rootless Gentoo builds | `gentoo` tool compiles inside a chroot with bubblewrap user namespaces, overlayfs, validated atoms and a binhost output; no host root ([docs/GENTOO.md](docs/GENTOO.md)) |
 | Scripted panes | `CanvasObject`-embedded Risor (harness editor now; more panes later) |
 | Script tool | sandboxed Risor v2 data glue for the agent (fynerisor headless `core`; confined fs, no exec/net) |
 
@@ -62,7 +70,7 @@ decoupling, and the shell was redesigned into a professional IDE-style layout
 ## Build
 
 ```sh
-make build            # bin/anneal, bin/anneal-headless
+make build            # bin/anneal, bin/anneal-headless, bin/anneald, bin/anneal-gateway, bin/annealctl
 make test             # hermetic unit tests
 make ci               # vet + test + pane/script-UI compile gates
 make live-tie-test    # tie round-trip against the real triplestore (opt-in)
@@ -76,7 +84,8 @@ make install PREFIX=/usr/local      # system-wide (run with appropriate privileg
 make uninstall
 ```
 
-`make install` installs `anneal`, `anneal-headless`, `anneald`, an
+`make install` installs `anneal`, `anneal-headless`, `anneald`,
+`anneal-gateway`, `annealctl`, and an
 `anneal.desktop` launcher under `$PREFIX/share/applications`, and the
 hicolor icon under `$PREFIX/share/icons/hicolor/scalable/apps`.
 `DESTDIR` is supported for packaging.

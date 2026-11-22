@@ -46,6 +46,11 @@ func (r *Runner) initStore() error {
 			if s.Metadata != nil {
 				cwd, _ = s.Metadata["cwd"].(string)
 			}
+			// Scheduled-job sessions are owned by the scheduler; resuming one
+			// in the foreground would hide the user's actual conversation.
+			if origin, _ := s.Metadata["origin"].(string); origin == "schedule" {
+				continue
+			}
 			if cwd == "" && fallback == "" {
 				fallback = s.ID
 			}
@@ -107,6 +112,9 @@ type SessionInfo struct {
 	// Cwd is the project directory the session was created in ("" for
 	// sessions recorded before this was tracked).
 	Cwd string `json:"cwd,omitempty"`
+	// Origin is "user" for normal sessions and "schedule" for job runs.
+	Origin string `json:"origin,omitempty"`
+	JobID  string `json:"job_id,omitempty"`
 }
 
 // Sessions lists sessions (newest first) for UI code. FileStore.List parses
@@ -129,8 +137,12 @@ func (r *Runner) Sessions() []SessionInfo {
 	out := make([]SessionInfo, 0, len(res.Sessions))
 	for _, s := range res.Sessions {
 		cwd := ""
+		origin := ""
+		jobID := ""
 		if s.Metadata != nil {
 			cwd, _ = s.Metadata["cwd"].(string)
+			origin, _ = s.Metadata["origin"].(string)
+			jobID, _ = s.Metadata["job_id"].(string)
 		}
 		out = append(out, SessionInfo{
 			ID:      s.ID,
@@ -138,6 +150,8 @@ func (r *Runner) Sessions() []SessionInfo {
 			Updated: s.UpdatedAt.Format("2006-01-02 15:04"),
 			Events:  s.EventCount,
 			Cwd:     cwd,
+			Origin:  origin,
+			JobID:   jobID,
 		})
 	}
 	r.sessMu.Lock()
@@ -176,6 +190,7 @@ func (r *Runner) NewSession() {
 		return
 	}
 	sess.SetMetadata("cwd", r.cwd)
+	sess.SetMetadata("origin", "user")
 	_ = r.store.Put(context.Background(), sess)
 	// Queued messages belong to the session that was active when typed.
 	r.ClearQueue()
@@ -202,6 +217,10 @@ func (r *Runner) OpenSession(id string) {
 		r.emit(map[string]any{"type": "session.error", "id": id, "error": err.Error()})
 		return
 	}
+	if md := sess.Metadata(); md == nil || md["origin"] == nil {
+		sess.SetMetadata("origin", "user")
+		_ = r.store.Put(context.Background(), sess)
+	}
 	blocks := transcriptBlocks(context.Background(), sess)
 	r.ClearQueue()
 	r.mu.Lock()
@@ -217,6 +236,32 @@ func (r *Runner) OpenSession(id string) {
 	r.emit(map[string]any{"type": "session.opened", "id": id, "title": sess.Title(), "blocks": blocks})
 	// Always emit: an empty list must clear the previous session's panel.
 	r.emit(map[string]any{"type": "todo.updated", "items": todos})
+}
+
+// ConfigureSession tags the open session with its project cwd and origin
+// (user or schedule) and persists the metadata. Scheduled-job sessions set
+// origin=schedule and job_id so the foreground never auto-resumes them.
+func (r *Runner) ConfigureSession(cwd, origin, jobID string) {
+	r.mu.Lock()
+	sess := r.sess
+	r.mu.Unlock()
+	if sess == nil {
+		return
+	}
+	if cwd == "" {
+		cwd = r.cwd
+	}
+	sess.SetMetadata("cwd", cwd)
+	if origin != "" {
+		sess.SetMetadata("origin", origin)
+	}
+	if jobID != "" {
+		sess.SetMetadata("job_id", jobID)
+	}
+	if r.store != nil {
+		_ = r.store.Put(context.Background(), sess)
+	}
+	r.invalidateSessions()
 }
 
 func (r *Runner) busy() bool {

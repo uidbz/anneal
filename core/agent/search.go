@@ -56,17 +56,33 @@ type indexJob struct {
 // re-indexed the whole session on the next run. The index is rebuildable, so
 // a full queue drops work instead of blocking the agent.
 func (r *Runner) startIndexWorker() {
+	ch, done := r.indexCh, r.indexDone
 	go func() {
-		for job := range r.indexCh {
-			if r.index == nil || !r.index.Enabled() {
-				continue
-			}
-			sd := SessionToData(context.Background(), job.sess, r.cwd, job.model)
-			if err := r.index.IndexSession(sd); err != nil {
-				r.emit(map[string]any{"type": "tie.state", "state": r.index.State()})
+		for {
+			select {
+			case <-done:
+				return
+			case job := <-ch:
+				if r.index == nil || !r.index.Enabled() {
+					continue
+				}
+				sd := SessionToData(context.Background(), job.sess, r.cwd, job.model)
+				if err := r.index.IndexSession(sd); err != nil {
+					r.emit(map[string]any{"type": "tie.state", "state": r.index.State()})
+				}
 			}
 		}
 	}()
+}
+
+// Close stops background indexing. It is safe to call once a run has finished;
+// a worker Runner created for one scheduled job calls it before being dropped.
+func (r *Runner) Close() {
+	r.closeIdx.Do(func() {
+		if r.indexDone != nil {
+			close(r.indexDone)
+		}
+	})
 }
 
 // queueIndex schedules an incremental index update after the run. It never
@@ -77,6 +93,7 @@ func (r *Runner) queueIndex(sess *session.Session, modelID string) {
 	}
 	select {
 	case r.indexCh <- indexJob{sess: sess, model: modelID}:
+	case <-r.indexDone:
 	default:
 	}
 }

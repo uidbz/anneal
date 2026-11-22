@@ -15,7 +15,11 @@ same core behind a WebSocket protocol (docs/PROTOCOL.md).
                     │ cmd/anneald  backend server (docs/PROTOCOL.md) │
                     │  core/server: hello+auth, JSON-RPC table,      │
                     │  one bus tap fanned out per connection         │
+                    │  + core/schedule due loop & worker sessions    │
                     │  core/client: protocol client (both -server)   │
+                    ├────────────────────────────────────────────────┤
+                    │ cmd/anneal-gateway (ntfy first; Matrix next)   │
+                    │ cmd/annealctl (status/send/schedule CLI)       │
                     └──────────┬────────────────────────────────────┘
                                │        core/app (wiring)
                     ┌──────────┴────────────────────────────────────┐
@@ -81,6 +85,20 @@ same core behind a WebSocket protocol (docs/PROTOCOL.md).
   bind-mount container layout make environments disposable
   (docs/CONTAINERS.md). `core/client` is the client side (currently
   `anneal-headless -server`; the GUI remote mode will use it).
+- **Scheduled tasks (M18).** `core/schedule` owns the job document,
+  parse/next-run, run ledger, and a single-owner lock. `anneald` starts it;
+  `core/app` executes each job in a fresh worker `agent.Runner` with a private
+  event bus, so job tool traffic never enters the interactive transcript. A
+  shared `agent.RunGate` serializes any two runners because per-run work dirs
+  use process-wide `chdir`. Jobs default to `dontAsk` and fresh sessions tagged
+  `origin=schedule`; foreground boot resume skips them. Idle shutdown is
+  disabled while schedules are enabled.
+- **Phone gateway.** `cmd/anneal-gateway` is a thin `core/client` consumer that
+  fans `schedule.*`, `perm.request`, provider and shutdown events to messaging
+  transports (ntfy and a plain-text Matrix room; Telegram behind the same
+  interface). It persists a delivery cursor, turns inbound chat text into
+  protocol calls, and never executes tools itself. `cmd/annealctl` is a small
+  status/schedule CLI.
 
 ## Events (Go → UI)
 
@@ -117,6 +135,9 @@ on missing keys is a hard error. The Go shell consumes the same values as maps
 | `gortex.untracked` / `gortex.tracked` | working directory not tracked by gortex (tools omitted, Track action offered) / tracking succeeded |
 | `compaction.done` | context compaction (before/after tokens, msgs) |
 | `server.shutting_down` | anneald idle/quit shutdown started (reason, eta_s) |
+| `schedule.state` / `schedule.created` / `schedule.updated` / `schedule.removed` / `schedule.paused` / `schedule.resumed` | durable job store and management state |
+| `schedule.started` / `schedule.finished` / `schedule.missed` / `schedule.error` | job execution lifecycle (finished carries status/text/error/session/next_run) |
+| `gentoo.start` / `gentoo.done` | rootless chroot build start/result (action, root, status, binpkgs) |
 
 ## Permissions
 
@@ -202,6 +223,10 @@ a transport error reports `unreachable` without touching a nil response.
   ANNEAL_HOME for stores) — `make test`.
 - Go shell event-rendering tests with `fyne.io/fyne/v2/test` (no display).
 - Live-infrastructure tests opt-in (`make live-tie-test`).
+- Schedule parser/store/manager tests use a fake clock and fake executor
+  (`core/schedule`); gateway tests use `httptest` ntfy servers and a fake
+  transport; gentoo tests check bwrap argv/preflight without touching a real
+  chroot (`core/agent/gentoo_test.go`).
 - Legacy Risor driver scripts exercising the real binary end-to-end —
   `testing/e2e/README.md` (`anneal -script-ui`).
 - `make ci` = vet + test + pane `-check-ui` + driver `-check-script-ui`.

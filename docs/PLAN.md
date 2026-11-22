@@ -252,6 +252,14 @@ Milestones:
   work-style deficiencies to `harness-queue.json` (it never edits harness
   files: no evidence → no edits); the next `/improve` consumes up to 6 as
   CHECK-me hints; panel/REPL show pending flags; docs pass.
+- **M18 scheduled tasks + phone gateway + rootless builds** ✔ — durable
+  `core/schedule` jobs (cron/interval/one-shot, timezone, missed/overlap
+  policy, run ledger, single-owner lock), `anneald` worker sessions behind a
+  shared run gate, `schedule_manage` agent tool, protocol methods and
+  `annealctl`; `anneal-gateway` with ntfy and plain-text Matrix transports,
+  command/approval routing and durable cursor; rootless `gentoo` build tool
+  using bubblewrap user namespaces, overlayfs, validated atoms and an audit
+  log. Docs: SCHEDULING.md, GATEWAY.md, GENTOO.md, SECURITY.md.
 
 Out of scope: editable middleware/plugin component (dive Hooks stay
 compiled Go), benchmark suites, second editor endpoint (config leaves room).

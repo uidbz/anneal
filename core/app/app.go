@@ -21,6 +21,7 @@ import (
 	"github.com/uidbz/anneal/core/model"
 	"github.com/uidbz/anneal/core/paths"
 	"github.com/uidbz/anneal/core/review"
+	"github.com/uidbz/anneal/core/schedule"
 	"github.com/uidbz/anneal/core/skills"
 	"github.com/uidbz/anneal/core/tieindex"
 
@@ -43,6 +44,14 @@ type App struct {
 	Review  *review.Manager
 	Journey *journey.Log
 	MCP     *mcp.Manager
+	// RunGate serializes foreground and scheduled runs (process-wide chdir).
+	RunGate *agent.RunGate
+	// Schedule owns durable jobs; StartSchedules runs them (anneald only).
+	Schedule *schedule.Manager
+
+	schedMu      sync.Mutex
+	schedRunner  *agent.Runner
+	schedPermIDs map[string]string
 
 	improveMu      sync.Mutex
 	improveRunning bool
@@ -77,6 +86,14 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	a.RunGate = agent.NewRunGate()
+	a.Runner.SetRunGate(a.RunGate)
+	a.Schedule, err = schedule.New(cfg.Schedule, scheduleStore(), a.Bus, nil)
+	if err != nil {
+		return nil, err
+	}
+	a.Schedule.SetExecutor(a)
+	a.Runner.SetScheduler(a.Schedule)
 	a.Tie = tieindex.New(cfg.Tie)
 	a.Runner.SetIndex(a.Tie)
 	a.Mem = memory.NewStore(&cfg.Memory)
@@ -133,7 +150,13 @@ func (a *App) ReplayState() { a.Runner.ReplayState() }
 
 // StateEvents returns the replay for one newly attached client (the server
 // targets a single connection; a broadcast would reset every other GUI).
-func (a *App) StateEvents() []map[string]any { return a.Runner.StateEvents() }
+func (a *App) StateEvents() []map[string]any {
+	events := a.Runner.StateEvents()
+	if a.Schedule != nil {
+		events = append(events, a.Schedule.StateEvent())
+	}
+	return events
+}
 
 // journeyTap appends self-improvement events to the journey log. Only a
 // handful of event types matter here, so plain maps (every streaming delta is

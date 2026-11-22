@@ -11,11 +11,11 @@ DATADIR ?= $(PREFIX)/share
 APPDIR  ?= $(DATADIR)/applications
 ICONDIR ?= $(DATADIR)/icons/hicolor/scalable/apps
 
-.PHONY: all build test vet fmt check-ui check-script-ui anneal headless anneald docker clean install uninstall live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke live-m16-test
+.PHONY: all build test vet fmt check-ui check-script-ui anneal headless anneald gateway annealctl docker clean install uninstall live-tie-test live-m10-test live-probe-test live-m13-test live-m14-test gui-m15-smoke live-m16-test
 
 all: build
 
-build: anneal headless anneald
+build: anneal headless anneald gateway annealctl
 
 anneal:
 	$(GO) build -o $(BIN)/anneal ./cmd/anneal
@@ -25,6 +25,12 @@ headless:
 
 anneald:
 	$(GO) build -o $(BIN)/anneald ./cmd/anneald
+
+gateway:
+	$(GO) build -o $(BIN)/anneal-gateway ./cmd/anneal-gateway
+
+annealctl:
+	$(GO) build -o $(BIN)/annealctl ./cmd/annealctl
 
 # Container image (docs/CONTAINERS.md): backend + default dev toolchain.
 docker:
@@ -82,6 +88,8 @@ install: build
 	$(INSTALL) -m 0755 $(BIN)/anneal $(DESTDIR)$(BINDIR)/anneal
 	$(INSTALL) -m 0755 $(BIN)/anneal-headless $(DESTDIR)$(BINDIR)/anneal-headless
 	$(INSTALL) -m 0755 $(BIN)/anneald $(DESTDIR)$(BINDIR)/anneald
+	$(INSTALL) -m 0755 $(BIN)/anneal-gateway $(DESTDIR)$(BINDIR)/anneal-gateway
+	$(INSTALL) -m 0755 $(BIN)/annealctl $(DESTDIR)$(BINDIR)/annealctl
 	@# Point the launcher at the installed binary: a bare Exec=anneal resolves
 	@# through the desktop session's PATH, which may find an older install.
 	@sed -e 's|^Exec=.*|Exec=$(BINDIR)/anneal|' \
@@ -96,10 +104,12 @@ install: build
 		gtk-update-icon-cache -q -t $(DATADIR)/icons/hicolor || true; \
 	fi
 	@echo "installed anneal -> $(BINDIR)/anneal"
+	@echo "gateway -> $(BINDIR)/anneal-gateway"
+	@echo "ctl -> $(BINDIR)/annealctl"
 	@echo "desktop entry -> $(APPDIR)/anneal.desktop"
 
 uninstall:
-	rm -f $(DESTDIR)$(BINDIR)/anneal $(DESTDIR)$(BINDIR)/anneal-headless $(DESTDIR)$(BINDIR)/anneald
+	rm -f $(DESTDIR)$(BINDIR)/anneal $(DESTDIR)$(BINDIR)/anneal-headless $(DESTDIR)$(BINDIR)/anneald $(DESTDIR)$(BINDIR)/anneal-gateway $(DESTDIR)$(BINDIR)/annealctl
 	rm -f $(DESTDIR)$(APPDIR)/anneal.desktop $(DESTDIR)$(ICONDIR)/anneal.svg
 	@echo "uninstalled anneal"
 
